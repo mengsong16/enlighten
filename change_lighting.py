@@ -186,9 +186,9 @@ def spin_robot():
 
     # create config and set lighting in config
     cfg = make_configuration()
-    #cfg.sim_cfg.scene_light_setup = "current_scene_lighting"
+    cfg.sim_cfg.scene_light_setup = "current_scene_lighting"
     #cfg.sim_cfg.scene_light_setup = habitat_sim.gfx.DEFAULT_LIGHTING_KEY
-    cfg.sim_cfg.scene_light_setup = habitat_sim.gfx.NO_LIGHT_KEY
+    #cfg.sim_cfg.scene_light_setup = habitat_sim.gfx.NO_LIGHT_KEY
 
     # create simulator
     sim = habitat_sim.Simulator(cfg)

@@ -276,6 +276,7 @@ class NavEnv(gym.Env):
         return habitat_sim.Configuration(sim_config, [agent_cfg])
 
     def create_sim_action_space(self):
+        self.action_mapping = ["move_forward", "turn_left", "turn_right", "look_up", "look_down"]
         action_space = {
             "move_forward": habitat_sim.agent.ActionSpec(
                 "move_forward", habitat_sim.agent.ActuationSpec(amount=0.25)  # move -a meter along z axis (global)
@@ -377,10 +378,11 @@ class NavEnv(gym.Env):
             new_agent_state.rotation = get_rotation_quat(np.array(new_rotation, dtype="float32"))
         self.agent.set_state(new_agent_state, is_initial=is_initial)
 
-    
+
     def step(self, action):
-        sim_obs = self.sim.step(action)
-        #print(sim_obs.keys)
+        action_name = self.action_mapping[action]
+        sim_obs = self.sim.step(action_name)
+        
         observations = self.sensor_suite.get_observations(sim_obs)
         return observations               
 
@@ -401,5 +403,5 @@ if __name__ == "__main__":
     env.get_agent_state()
     #print(env.get_sim_sensors()["color_sensor"])
     print(env.get_gym_observation_space())
-    env.step("move_forward")
+    env.step(0)
     print("===========================")

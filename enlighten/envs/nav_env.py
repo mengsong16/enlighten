@@ -8,6 +8,8 @@ from matplotlib import pyplot as plt
 import gym
 from gym import spaces
 
+import random
+
 import habitat_sim
 from habitat_sim.gfx import LightInfo, LightPositionModel, DEFAULT_LIGHTING_KEY, NO_LIGHT_KEY
 from habitat_sim.utils.common import quat_from_angle_axis
@@ -23,6 +25,7 @@ from typing import (
     Callable,
     Dict,
     List,
+    Tuple,
     Optional,
     Sequence,
     Set,
@@ -34,6 +37,8 @@ from typing import (
 from collections import OrderedDict
 from enum import Enum
 
+from garage import Environment, EnvSpec, EnvStep, StepType
+from garage.envs import GymEnv
 
 VisualObservation = Union[np.ndarray]
 
@@ -118,11 +123,11 @@ class HabitatSimDepthSensor(HabitatSensor):
             self.min_depth_value = float(config.get("min_depth"))
             self.max_depth_value = float(config.get("max_depth"))
 
-        print("========================")
-        print(self.normalize_depth)
-        print(self.min_depth_value)    
-        print(self.max_depth_value) 
-        print("========================")
+        #print("========================")
+        #print(self.normalize_depth)
+        #print(self.min_depth_value)    
+        #print(self.max_depth_value) 
+        #print("========================")
 
         # must be after initialize min and max depth value
         super().__init__(uuid=uuid, config=config)
@@ -178,10 +183,12 @@ class HabitatSimSemanticSensor(HabitatSensor):
         self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
     ) -> VisualObservation:
         obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
+        obs = np.expand_dims(obs, axis=2)
         
         return obs
 
-class Observations(Dict[str, Any]):
+# A dictionary data structure
+class Dictionary_Observations(Dict[str, Any]):
     r"""Dictionary containing sensor observations"""
 
     def __init__(
@@ -194,10 +201,13 @@ class Observations(Dict[str, Any]):
         """
 
         data = [
+            # sensor.get_observation need parameter sim_obs
             (uuid, sensor.get_observation(*args, **kwargs))
             for uuid, sensor in sensors.items()
         ]
         super().__init__(data)
+
+
 
 class SensorSuite:
     r"""Represents a set of sensors, with each sensor being identified
@@ -207,12 +217,14 @@ class SensorSuite:
     sensors: Dict[str, HabitatSensor]
     observation_spaces: spaces.Dict
 
-    def __init__(self, sensors: Iterable[HabitatSensor]) -> None:
+    def __init__(self, sensors: Iterable[HabitatSensor], dictionary_observation_space) -> None:
         """Constructor
 
         :param sensors: list containing sensors for the environment, uuid of
             each sensor must be unique.
         """
+
+        # get a dictionary of sensor spaces 
         self.sensors = OrderedDict()
         ordered_spaces: OrderedDict[str, gym.Space] = OrderedDict()
         for sensor in sensors:
@@ -222,18 +234,77 @@ class SensorSuite:
             self.sensors[sensor.uuid] = sensor
             ordered_spaces[sensor.uuid] = sensor.observation_space
 
-        # get a dictionary observation space   
-        self.observation_spaces = gym.spaces.Dict(spaces=ordered_spaces)
+        # get a dictionary observation space for gym  
+        self.dictionary_observation_space = dictionary_observation_space
 
-    def get(self, uuid: str) -> HabitatSensor:
+        # dictionary
+        if self.dictionary_observation_space:
+            self.observation_spaces = gym.spaces.Dict(spaces=ordered_spaces)
+        # numpy array    
+        else:
+            self.observation_spaces = self.concatenate_observation_space(ordered_spaces)   
+
+    def get_specific_sensor(self, uuid: str) -> HabitatSensor:
         return self.sensors[uuid]
 
-    def get_observations(self, *args: Any, **kwargs: Any) -> Observations:
+    def get_observations(self, *args: Any, **kwargs: Any):
         r"""Collects data from all sensors and returns it packaged inside
         :ref:`Observations`.
         """
-        return Observations(self.sensors, *args, **kwargs)
+        # dictionary
+        if self.dictionary_observation_space:
+            return Dictionary_Observations(self.sensors, *args, **kwargs)
+        # numpy array    
+        else:
+            return self.get_array_observations(*args, **kwargs)    
 
+    def get_specific_observation(self, uuid: str, *args, **kwargs):
+        assert uuid in self.sensors, "mode {} sensor is not active".format(uuid)
+
+        # sensor.get_observation need parameter sim_obs
+        return self.sensors[uuid].get_observation(*args, **kwargs)
+
+
+    # Return a numpy array concatenating all observation modes
+    def get_array_observations(self, *args: Any, **kwargs: Any):
+        r"""Numpy array containing sensor observations"""
+
+        # no need to handle the first item
+        data = [
+            # sensor.get_observation need parameter sim_obs
+            sensor.get_observation(*args, **kwargs)
+            for _, sensor in self.sensors.items()
+        ]
+    
+        concat_data = np.dstack(data)
+
+        return concat_data
+
+    def concatenate_observation_space(self, ordered_spaces):
+        self.channel_num = 0
+        self.image_height = None
+        self.image_width = None
+        low = np.inf
+        high = -np.inf
+
+        for _, space in ordered_spaces.items():
+            if self.image_height is None:
+                self.image_height = space.shape[0]
+            if self.image_width is None:    
+                self.image_width = space.shape[1]
+                
+            self.channel_num += space.shape[2]
+            
+            low = min(low, np.amin(space.low))
+            high = max(high, np.amax(space.high))
+
+        # [H,W,C]
+        return gym.spaces.Box(
+            low=low,
+            high=high,
+            shape=(self.image_height, self.image_width, self.channel_num),
+            dtype=np.float32
+        )    
 
 class NavEnv(gym.Env):
     r"""Base gym navigation environment
@@ -241,17 +312,18 @@ class NavEnv(gym.Env):
 
     def __init__(self, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml")):
         self.config = parse_config(config_file)
-        self.sim_config = self.create_sim_config()
+    
+        # create simulator configuration
+        self.sim_config, sensors = self.create_sim_config()
         # create simulator
         self.sim = habitat_sim.Simulator(self.sim_config) 
-        # create agent
-        self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id)
-        # initialize agent
-        self.set_agent_state(new_position=self.config.get('agent_initial_position'), new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
-        # create gym action space and observation space
+        # create gym observation space
+        self.observation_space = self.create_gym_observation_space(sensors)
+        # create agent and set agent's initial state
+        self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id, initial_state=self.create_agent_state(new_position=self.config.get('agent_initial_position'), new_rotation=self.config.get('agent_initial_rotation')))
+        # create gym action space
         self.action_space = self.create_gym_action_space()
-       
-
+        
     def create_sim_config(self):
         # simulator configuration
         sim_config = habitat_sim.SimulatorConfiguration()
@@ -265,15 +337,15 @@ class NavEnv(gym.Env):
         # enable scene lighting change
         sim_config.override_scene_light_defaults = True
 
-        # sensor configuration
-        sensor_specs = self.create_sim_observation_space()
+        # sensors and sensor specifications
+        sensor_specs, sensors = self.create_sensors_and_sensor_specs()
         
         # agent configuration
         agent_cfg = habitat_sim.agent.AgentConfiguration()
         agent_cfg.action_space = self.create_sim_action_space()
         agent_cfg.sensor_specifications = sensor_specs
 
-        return habitat_sim.Configuration(sim_config, [agent_cfg])
+        return habitat_sim.Configuration(sim_config, [agent_cfg]), sensors
 
     def create_sim_action_space(self):
         self.action_mapping = ["move_forward", "turn_left", "turn_right", "look_up", "look_down"]
@@ -306,7 +378,7 @@ class NavEnv(gym.Env):
         return self.action_space  
 
     # ref: class ImageExtractor
-    def create_sim_observation_space(self):
+    def create_sensors_and_sensor_specs(self):
         image_height = int(self.config.get("image_height"))
         image_width = int(self.config.get("image_width"))
         sensor_height = 1.5
@@ -344,12 +416,17 @@ class NavEnv(gym.Env):
             sensor_specs.append(semantic_sensor_spec) 
             sensors.append(HabitatSimSemanticSensor(uuid="semantic_sensor", config=self.config))
 
-        self.sensor_suite = SensorSuite(sensors)    
+        # set render mode according to sensors
+        self.set_render_mode()
 
-        return sensor_specs 
+        return sensor_specs, sensors 
+
+    def create_gym_observation_space(self, sensors):
+        self.sensor_suite = SensorSuite(sensors, self.config.get('dictionary_observation_space')) 
+        return self.sensor_suite.observation_spaces    
 
     def get_gym_observation_space(self):
-        return self.sensor_suite.observation_spaces
+        return self.observation_space
     
     def get_sim_sensors(self):
         return self.sim._sensors
@@ -358,50 +435,164 @@ class NavEnv(gym.Env):
         agent_state = self.agent.get_state()
         # position: [x,y,z]
         # rotation: quarternion [x,y,z,q]
-        print("agent_state: position", agent_state.position, "rotation", agent_state.rotation)
+        
         return agent_state
 
-    def set_agent_state(self, new_position, new_rotation=None, is_initial=False):
+    def print_agent_state(self):  
+        agent_state = self.agent.get_state() 
+
+        print("agent state: position: ", agent_state.position, ", rotation: ", agent_state.rotation) 
+
+    def create_agent_state(self, new_position, new_rotation=None):
         new_agent_state = habitat_sim.AgentState()
         # global system, must be casted to float32
         new_agent_state.position = np.array(new_position, dtype="float32")  
 
-        #print("===================")
-        #print(new_agent_state.position)
-        #print(type(new_agent_state.position))
-        #print("===================")
-
         if new_rotation is not None:
-            #print("===================")
-            #print(get_rotation_quat(new_rotation))
-            #print("===================")
             new_agent_state.rotation = get_rotation_quat(np.array(new_rotation, dtype="float32"))
-        self.agent.set_state(new_agent_state, is_initial=is_initial)
+        
+        return new_agent_state
 
+    def set_agent_state(self, new_position, new_rotation=None, is_initial=False):
+        self.agent.set_state(self.create_agent_state(new_position=new_position, new_rotation=new_rotation), is_initial=is_initial)
+
+    def action_index_to_name(self, index):
+        return self.action_mapping[index]
 
     def step(self, action):
         action_name = self.action_mapping[action]
         sim_obs = self.sim.step(action_name)
-        
-        observations = self.sensor_suite.get_observations(sim_obs)
-        return observations               
+        self.did_collide = self.extract_collisions(sim_obs)
+        if self.did_collide:
+            self.collision_count_per_episode += 1
+        # sim_obs includes all modes
+        obs = self.sensor_suite.get_observations(sim_obs)
+
+        reward = 0
+
+        done = random.choice([True, False])
+
+        info = {}
+        return obs, reward, done, info              
 
     def reset(self):
-        self.initialize_agent()
+        # will reset agent to its initial pose
+        sim_obs = self.sim.reset()
+        # sim_obs includes all modes
+        obs = self.sensor_suite.get_observations(sim_obs)
+
+        self.did_collide = self.extract_collisions(sim_obs)
+        self.collision_count_per_episode = 0
+
+        return obs
 
     def seed(self, seed):    
         self.sim.seed(seed)
+    
+    def get_render_mode(self):
+        return self.metadata['render.modes']
 
-    #def render(self, mode):    
+    def set_render_mode(self):
+        self.metadata['render.modes'] = ['color_sensor', 'depth_sensor', 'semantic_sensor']  
+
+    def render(self, mode: str = "color_sensor") -> Any:
+        r"""
+        Args:
+            mode: sensor whose observation is used for returning the frame,
+                eg: "rgb", "depth", "semantic"
+
+        Returns:
+            rendered frame according to the mode
+        """
+        sim_obs = self.sim.get_sensor_observations()
+        obs = self.sensor_suite.get_specific_observation(uuid=mode, sim_obs=sim_obs)
+
+        if not isinstance(obs, np.ndarray):
+            # If it is not a numpy array, it is a torch tensor
+            # The function expects the result to be a numpy array
+            obs = obs.to("cpu").numpy()
+
+        return obs 
+
+    # whether agent collided with the scene
+    def extract_collisions(self, sim_obs):
+        # obs contains collided only when sim.step() is called
+        if "collided" in sim_obs:
+            colls = sim_obs["collided"]
+        else:
+            colls = None    
+        return colls
+ 
+
+    def print_collide_info(self):
+        if self.did_collide is None:
+            print("collide: Unknown")
+        else:
+            print('collide: %s'%(str(self.did_collide)))         
+    
+  
+
+def test_env(gym_env=True):
+    if gym_env:
+        env =  NavEnv()
+    else:
+        env = GymEnv(NavEnv())     
+        assert isinstance(env.spec, EnvSpec)
+    
+    
+    for episode in range(20):
+        print("***********************************")
+        print('Episode: {}'.format(episode))
+        step = 0
+        env.reset()
+        print('-----------------------------')
+        print('Reset')
+        env.print_agent_state()
+        env.print_collide_info()
+        print('-----------------------------')
+
+        for _ in range(10):  # 10 seconds
+            action = env.action_space.sample()
+            if gym_env:
+                obs, reward, done, info = env.step(action)
+            else:
+                env_step = env.step(action)
+                obs = env_step.observation
+                reward = env_step.reward
+                info = env_step.env_info
+                done = env_step.terminal
+            print('-----------------------------')
+            print('action: %s'%(env.action_index_to_name(action)))
+            print('observation: %s, %s'%(str(obs.shape), str(type(obs))))
+            #print(obs["color_sensor"].shape)
+            #print(obs["depth_sensor"].shape)
+            #print(obs["semantic_sensor"].shape)
+            env.print_agent_state()
+            print('reward: %f'%(reward))
+            env.print_collide_info()
+            
+            # Garage env needs set render mode explicitly
+            render_obs = env.render(mode="color_sensor")
+            print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
+            print('-------------------------------')
+            
+            step += 1
+            if done:
+                break
+               
+        print('Episode finished after {} timesteps.'.format(step))
+        print('Collision count: %d'%(env.collision_count_per_episode))
+    
+    print('-----------------------------')
+    if gym_env:
+        print("Gym env")
+    else:
+        print("Garage env")    
+    print("Action space: %s"%(env.action_space)) 
+    print("Observation space: %s"%(env.observation_space))  
+    print('-----------------------------') 
+    
+    env.close() 
 
 if __name__ == "__main__":    
-    env =  NavEnv()
-    #print(env.sim_config)
-    #print(env.get_sim_action_space())
-    print("===========================")
-    print(env.get_gym_action_space())
-    env.get_agent_state()
-    #print(env.get_sim_sensors()["color_sensor"])
-    print(env.get_gym_observation_space())
-    env.step(0)
-    print("===========================")
+    test_env(gym_env=False)

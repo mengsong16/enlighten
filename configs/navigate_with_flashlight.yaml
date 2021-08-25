@@ -35,8 +35,8 @@ out_of_bound_reward: -1000.0
 
 
 # episode termination condition
-max_step: 200
-max_collisions_allowed: 200
+max_steps_per_episode: 200
+max_collisions_per_episode: 200
 
 
 

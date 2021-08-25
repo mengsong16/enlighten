@@ -324,6 +324,9 @@ class NavEnv(gym.Env):
         self.sim_config, sensors = self.create_sim_config()
         # create simulator
         self.sim = habitat_sim.Simulator(self.sim_config) 
+        # register dynamic lighting in simulator for dark mode
+        if self.dark_mode:
+            self.sim.set_light_setup([], "current_scene_lighting")
         # create gym observation space
         self.observation_space = self.create_gym_observation_space(sensors)
         # create agent and set agent's initial state
@@ -345,6 +348,11 @@ class NavEnv(gym.Env):
 
         # enable scene lighting change
         sim_config.override_scene_light_defaults = True
+
+        # create a new lighting for dark mode
+        self.dark_mode = self.config.get('dark_mode')
+        if self.dark_mode:
+            sim_config.scene_light_setup = "current_scene_lighting"
 
         # sensors and sensor specifications
         sensor_specs, sensors = self.create_sensors_and_sensor_specs()
@@ -477,6 +485,12 @@ class NavEnv(gym.Env):
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
 
+        # update flashlight: point light x m in front of the robot 
+        if self.dark_mode:
+            self.sim.set_light_setup([
+            LightInfo(vector=[0.0, 0.0, -0.5, 1.0], model=LightPositionModel.Camera)
+        ], "current_scene_lighting")
+
         reward = 0
 
         #done = random.choice([True, False])
@@ -569,9 +583,26 @@ class NavEnv(gym.Env):
         if self.did_collide is None:
             print("collide: Unknown")
         else:
-            print('collide: %s'%(str(self.did_collide)))         
+            print('collide: %s'%(str(self.did_collide))) 
+
+    def get_current_scene_light_vector(self):
+        print("******************************************************************")
+        if not self.sim.get_current_light_setup():
+            print("Current scene light setup: No Light")
+        else:    
+            print("Current scene light setup: vector=%s"%self.sim.get_current_light_setup()[0].vector)
+        print("******************************************************************")
+
+    def get_specific_scene_light_vector(self, key):
+        print("******************************************************************")
+        if not self.sim.get_light_setup(key):
+            print("Scene light setup: No Light, key=%s"%(key))
+        else:    
+            print("Scene light setup: key=%s, vector=%s"%(key, self.sim.get_light_setup(key)[0].vector))
+        print("******************************************************************")                
     
     def close(self):
+        self.sim.close()
         if self.viewer is not None:
             self.viewer.close()
 
@@ -616,7 +647,7 @@ def test_env(gym_env=True):
             env.print_collide_info()
             
             # Garage env needs set render mode explicitly
-            render_obs = env.render(mode="depth_sensor")
+            render_obs = env.render(mode="color_sensor")
             print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
             print('-------------------------------')
             

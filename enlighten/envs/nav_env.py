@@ -7,6 +7,7 @@ import random
 from matplotlib import pyplot as plt
 import gym
 from gym import spaces
+from gym.envs.classic_control.rendering import SimpleImageViewer
 
 import random
 
@@ -39,6 +40,10 @@ from enum import Enum
 
 from garage import Environment, EnvSpec, EnvStep, StepType
 from garage.envs import GymEnv
+from PIL import Image
+from enlighten.utils.viewer import MyViewer
+import cv2
+from skimage.color import label2rgb 
 
 VisualObservation = Union[np.ndarray]
 
@@ -306,6 +311,8 @@ class SensorSuite:
             dtype=np.float32
         )    
 
+# gym.Env definition: https://github.com/openai/gym/blob/267916b9d268c37cc948bafe35606c665aac53ac/gym/core.py
+
 class NavEnv(gym.Env):
     r"""Base gym navigation environment
     """
@@ -323,6 +330,8 @@ class NavEnv(gym.Env):
         self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id, initial_state=self.create_agent_state(new_position=self.config.get('agent_initial_position'), new_rotation=self.config.get('agent_initial_rotation')))
         # create gym action space
         self.action_space = self.create_gym_action_space()
+        # viewer
+        self.viewer = None
         
     def create_sim_config(self):
         # simulator configuration
@@ -470,7 +479,8 @@ class NavEnv(gym.Env):
 
         reward = 0
 
-        done = random.choice([True, False])
+        #done = random.choice([True, False])
+        done = False
 
         info = {}
         return obs, reward, done, info              
@@ -504,6 +514,13 @@ class NavEnv(gym.Env):
         Returns:
             rendered frame according to the mode
         """
+
+        assert self.config.get(mode), "render mode should be active in the config file"
+        # create viewer
+        if self.viewer is None:
+            #self.viewer = SimpleImageViewer()
+            self.viewer = MyViewer()
+
         sim_obs = self.sim.get_sensor_observations()
         obs = self.sensor_suite.get_specific_observation(uuid=mode, sim_obs=sim_obs)
 
@@ -512,7 +529,31 @@ class NavEnv(gym.Env):
             # The function expects the result to be a numpy array
             obs = obs.to("cpu").numpy()
 
-        return obs 
+        # show image in viewer
+        if obs.shape[2] == 3:
+            img = np.asarray(obs).astype(np.uint8)
+            # RGB
+            self.viewer.imshow(img)
+        elif obs.shape[2] == 1:
+            if mode == "depth_sensor":
+                img = np.asarray(obs * 255).astype(np.uint8)
+                # not the same with dstack the single channel
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+                self.viewer.imshow(img)
+            # label image    
+            else:
+                img = np.asarray(np.squeeze(obs, axis=2)).astype(np.uint8)
+                img = label2rgb(label=img)
+                # float to int
+                img = np.asarray(img).astype(np.uint8)
+                #print("*****************")
+                #print(np.ptp(img))
+                self.viewer.imshow(img)
+        else:
+            print("Error: image channel is neither 1 nor 3!")
+        
+    
+        return img
 
     # whether agent collided with the scene
     def extract_collisions(self, sim_obs):
@@ -530,7 +571,9 @@ class NavEnv(gym.Env):
         else:
             print('collide: %s'%(str(self.did_collide)))         
     
-  
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
 
 def test_env(gym_env=True):
     if gym_env:
@@ -551,7 +594,7 @@ def test_env(gym_env=True):
         env.print_collide_info()
         print('-----------------------------')
 
-        for _ in range(10):  # 10 seconds
+        for i in range(50):  # max steps per episode
             action = env.action_space.sample()
             if gym_env:
                 obs, reward, done, info = env.step(action)
@@ -562,6 +605,7 @@ def test_env(gym_env=True):
                 info = env_step.env_info
                 done = env_step.terminal
             print('-----------------------------')
+            print('step: %d'%(i+1))
             print('action: %s'%(env.action_index_to_name(action)))
             print('observation: %s, %s'%(str(obs.shape), str(type(obs))))
             #print(obs["color_sensor"].shape)
@@ -572,7 +616,7 @@ def test_env(gym_env=True):
             env.print_collide_info()
             
             # Garage env needs set render mode explicitly
-            render_obs = env.render(mode="color_sensor")
+            render_obs = env.render(mode="depth_sensor")
             print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
             print('-------------------------------')
             
@@ -589,7 +633,9 @@ def test_env(gym_env=True):
     else:
         print("Garage env")    
     print("Action space: %s"%(env.action_space)) 
-    print("Observation space: %s"%(env.observation_space))  
+    print("Observation space: %s"%(env.observation_space)) 
+    #print(np.amin(env.observation_space.low))
+    #print(np.amax(env.observation_space.high))
     print('-----------------------------') 
     
     env.close() 

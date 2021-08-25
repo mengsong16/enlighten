@@ -9,7 +9,7 @@ agent_target_pos: [0.5, 0.5, 0]
 # observation space
 color_sensor: true
 depth_sensor: true
-semantic_sensor: true
+semantic_sensor: false
 image_width: 224
 image_height: 224
 normalize_depth: false
@@ -20,6 +20,7 @@ dictionary_observation_space: false
 
 # task
 task: navigate_goal_fixed
+dark_mode: true
 
 # reward
 use_goal_dist_reward: false

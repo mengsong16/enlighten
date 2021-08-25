@@ -18,8 +18,10 @@ from typing import Dict, List, Optional, Tuple
 
 import imageio
 import tqdm
+ 
+from enlighten.utils.path import *
 
-
+import cv2
 
 def parse_config(config):
 
@@ -105,4 +107,21 @@ def images_to_video(
     print("Video created: {os.path.join(output_dir, video_name)}")
     for im in tqdm.tqdm(images):
         writer.append_data(im)
-    writer.close()    
+    writer.close()  
+
+def create_video():
+    images = []
+    for file in os.listdir(output_path):
+        if file.endswith(".jpg"):
+            #print(os.path.join(output_path, file))
+            img = cv2.imread(os.path.join(output_path, file))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            images.append(img)
+
+    if len(images) > 0:
+        images_to_video(images, output_dir=output_path, video_name="video")
+    else:
+        print("Error: no images exist!")    
+
+if __name__ == "__main__":
+    create_video()

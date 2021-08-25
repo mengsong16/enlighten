@@ -485,6 +485,8 @@ class NavEnv(gym.Env):
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
 
+        self.step_num += 1
+
         # update flashlight: point light x m in front of the robot 
         if self.dark_mode:
             self.sim.set_light_setup([
@@ -507,6 +509,7 @@ class NavEnv(gym.Env):
 
         self.did_collide = self.extract_collisions(sim_obs)
         self.collision_count_per_episode = 0
+        self.step_num = 0
 
         return obs
 
@@ -565,6 +568,10 @@ class NavEnv(gym.Env):
                 self.viewer.imshow(img)
         else:
             print("Error: image channel is neither 1 nor 3!")
+
+        if self.config.get("save_observations"):
+            filename = str(self.step_num) + ".jpg"
+            cv2.imwrite(os.path.join(output_path, filename), img)    
         
     
         return img
@@ -625,7 +632,7 @@ def test_env(gym_env=True):
         env.print_collide_info()
         print('-----------------------------')
 
-        for i in range(50):  # max steps per episode
+        for i in range(100):  # max steps per episode
             action = env.action_space.sample()
             if gym_env:
                 obs, reward, done, info = env.step(action)

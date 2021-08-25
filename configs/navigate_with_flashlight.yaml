@@ -1,5 +1,7 @@
 # scene
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
+#scene_id: /home/meng/habitat-sim/data/replica/stages/frl_apartment_stage.glb
+#scene_id: /home/meng/habitat-sim/data/replica/stages/Stage_v3_sc0_staging.glb
 
 # robot
 agent_initial_position: [0, 0, 0]
@@ -37,6 +39,9 @@ out_of_bound_reward: -1000.0
 # episode termination condition
 max_steps_per_episode: 200
 max_collisions_per_episode: 200
+
+# others
+save_observations: false
 
 
 

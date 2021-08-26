@@ -45,6 +45,10 @@ from enlighten.utils.viewer import MyViewer
 import cv2
 from skimage.color import label2rgb 
 
+from habitat.utils.visualizations import maps
+import magnum as mn
+import quaternion as qt
+
 VisualObservation = Union[np.ndarray]
 
 
@@ -327,6 +331,7 @@ class NavEnv(gym.Env):
         # register dynamic lighting in simulator for dark mode
         if self.dark_mode:
             self.sim.set_light_setup([], "current_scene_lighting")
+            self.flashlight_z = float(self.config.get('flashlight_z'))
         # create gym observation space
         self.observation_space = self.create_gym_observation_space(sensors)
         # create agent and set agent's initial state
@@ -335,6 +340,8 @@ class NavEnv(gym.Env):
         self.action_space = self.create_gym_action_space()
         # viewer
         self.viewer = None
+        # set start and goal positions
+        self.set_start_goal()
         
     def create_sim_config(self):
         # simulator configuration
@@ -455,6 +462,14 @@ class NavEnv(gym.Env):
         
         return agent_state
 
+    def get_agent_position(self):    
+        return self.get_agent_state().position
+
+    def get_agent_rotation_euler(self):
+        agent_state = self.agent.get_state()
+        
+        return qt.as_euler_angles(agent_state.rotation)    
+
     def print_agent_state(self):  
         agent_state = self.agent.get_state() 
 
@@ -476,6 +491,11 @@ class NavEnv(gym.Env):
     def action_index_to_name(self, index):
         return self.action_mapping[index]
 
+    def set_start_goal(self):
+        self.random_goal = self.config.get('random_goal') 
+        if not self.random_goal: 
+            self.goal_position = self.config.get('goal_position')  
+
     def step(self, action):
         action_name = self.action_mapping[action]
         sim_obs = self.sim.step(action_name)
@@ -490,7 +510,7 @@ class NavEnv(gym.Env):
         # update flashlight: point light x m in front of the robot 
         if self.dark_mode:
             self.sim.set_light_setup([
-            LightInfo(vector=[0.0, 0.0, -0.5, 1.0], model=LightPositionModel.Camera)
+            LightInfo(vector=[0.0, 0.0, -self.flashlight_z, 1.0], model=LightPositionModel.Camera)
         ], "current_scene_lighting")
 
         reward = 0
@@ -515,7 +535,9 @@ class NavEnv(gym.Env):
 
     def seed(self, seed):    
         self.sim.seed(seed)
-    
+        if self.sim.pathfinder.is_loaded:
+            self.sim.pathfinder.seed(seed)
+
     def get_render_mode(self):
         return self.metadata['render.modes']
 
@@ -536,7 +558,7 @@ class NavEnv(gym.Env):
         # create viewer
         if self.viewer is None:
             #self.viewer = SimpleImageViewer()
-            self.viewer = MyViewer()
+            self.viewer = MyViewer(sim=self.sim)
 
         sim_obs = self.sim.get_sensor_observations()
         obs = self.sensor_suite.get_specific_observation(uuid=mode, sim_obs=sim_obs)
@@ -546,17 +568,24 @@ class NavEnv(gym.Env):
             # The function expects the result to be a numpy array
             obs = obs.to("cpu").numpy()
 
-        # show image in viewer
+        # get map
+        if self.sim.pathfinder.is_loaded:
+            path_points = self.get_optimal_trajectory()
+            topdown_map = self.get_map(path_points)
+        else:
+            topdown_map = None    
+
+        # show image and map in viewer
         if obs.shape[2] == 3:
             img = np.asarray(obs).astype(np.uint8)
             # RGB
-            self.viewer.imshow(img)
+            self.viewer.imshow(img, topdown_map)
         elif obs.shape[2] == 1:
             if mode == "depth_sensor":
                 img = np.asarray(obs * 255).astype(np.uint8)
                 # not the same with dstack the single channel
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-                self.viewer.imshow(img)
+                self.viewer.imshow(img, topdown_map)
             # label image    
             else:
                 img = np.asarray(np.squeeze(obs, axis=2)).astype(np.uint8)
@@ -565,7 +594,7 @@ class NavEnv(gym.Env):
                 img = np.asarray(img).astype(np.uint8)
                 #print("*****************")
                 #print(np.ptp(img))
-                self.viewer.imshow(img)
+                self.viewer.imshow(img, topdown_map)
         else:
             print("Error: image channel is neither 1 nor 3!")
 
@@ -608,6 +637,100 @@ class NavEnv(gym.Env):
             print("Scene light setup: key=%s, vector=%s"%(key, self.sim.get_light_setup(key)[0].vector))
         print("******************************************************************")                
     
+    def shortest_path(self, start_point=None, end_point=None):
+        if not self.sim.pathfinder.is_loaded:
+            print("Pathfinder not initialized, aborting.")
+            return
+        
+        if start_point is None:
+            start_point = self.sim.pathfinder.get_random_navigable_point()
+
+        if end_point is None:    
+            end_point = self.sim.pathfinder.get_random_navigable_point()
+
+        path = habitat_sim.ShortestPath()
+        path.requested_start = start_point
+        path.requested_end = end_point
+
+        # compute path
+        found_path = self.sim.pathfinder.find_path(path)
+        geodesic_distance = path.geodesic_distance
+        path_points = path.points
+        
+        #print("start point: "+str(start_point))
+        #print("end point: "+str(end_point))
+        #print("found_path : " + str(found_path))
+        #print("geodesic_distance : " + str(geodesic_distance))
+        #print("path_points : " + str(path_points))
+
+        return found_path, geodesic_distance, path_points
+
+    # from current position to goal
+    def get_optimal_trajectory(self):
+        _, _, path_points = self.shortest_path(start_point=self.get_agent_position(), end_point=self.goal_position)
+        return path_points
+
+    # Display the map with agent and path overlay        
+    def get_map(self, path_points):
+        #sim_topdown_map = self.sim.pathfinder.get_topdown_view(self.meters_per_pixel, self.height)
+        #sim_topdown_map = sim_topdown_map.astype(np.uint8)
+        
+        #print("path_points : " + str(path_points))
+
+        self.meters_per_pixel = 0.1 
+        self.height = self.sim.pathfinder.get_bounds()[0][1]
+
+        top_down_map = maps.get_topdown_map(self.sim.pathfinder, self.height, meters_per_pixel=self.meters_per_pixel)
+        
+        # background, walkable area, obstacle and boundary
+        recolor_map = np.array([[255, 255, 255], [128, 128, 128], [0, 0, 0]], dtype=np.uint8)
+        top_down_map = recolor_map[top_down_map]
+
+        grid_dimensions = (top_down_map.shape[0], top_down_map.shape[1])
+
+        # no trajectory
+        if not path_points:
+            start_point = self.get_agent_position()
+            end_point = self.goal_position 
+            path_points = [start_point, end_point]  
+
+        # convert world trajectory points to maps module grid points
+        trajectory = [
+                maps.to_grid(
+                    path_point[2],  # realworld-x
+                    path_point[0],  # realworld-y
+                    grid_dimensions,
+                    pathfinder=self.sim.pathfinder,
+                )
+                for path_point in path_points
+            ]     
+
+        grid_tangent = mn.Vector2(
+            trajectory[1][1] - trajectory[0][1], trajectory[1][0] - trajectory[0][0]
+        )
+
+        # trajectory point 0 and point 1 overlap
+        if grid_tangent.is_zero():
+            initial_angle = self.get_agent_rotation_euler()[1]  # angle around z
+        else:
+            path_initial_tangent = grid_tangent / grid_tangent.length()
+            initial_angle = math.atan2(path_initial_tangent[0], path_initial_tangent[1])
+        
+        # draw the trajectory on the map
+        # color: (B,G,R)
+        maps.draw_path(top_down_map=top_down_map, path_points=trajectory, color=(0, 0, 255), thickness=1)
+
+        #print('grid_tangent: '+str(grid_tangent))
+        #print('path_initial_tangent: '+str(path_initial_tangent))
+        #print('agent rotation: '+str(initial_angle))
+
+        # draw the agent
+        maps.draw_agent(
+            image=top_down_map, agent_center_coord=trajectory[0], agent_rotation=initial_angle, agent_radius_px=4
+        )
+        
+        return top_down_map
+
     def close(self):
         self.sim.close()
         if self.viewer is not None:
@@ -621,7 +744,7 @@ def test_env(gym_env=True):
         assert isinstance(env.spec, EnvSpec)
     
     
-    for episode in range(20):
+    for episode in range(10):
         print("***********************************")
         print('Episode: {}'.format(episode))
         step = 0
@@ -650,6 +773,7 @@ def test_env(gym_env=True):
             #print(obs["depth_sensor"].shape)
             #print(obs["semantic_sensor"].shape)
             env.print_agent_state()
+            print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
             print('reward: %f'%(reward))
             env.print_collide_info()
             
@@ -678,5 +802,10 @@ def test_env(gym_env=True):
     
     env.close() 
 
+def test_shortest_path(start_point=None, end_point=None):
+    env =  NavEnv()
+    env.shortest_path(start_point=start_point, end_point=end_point)
+
 if __name__ == "__main__":    
     test_env(gym_env=False)
+    #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])

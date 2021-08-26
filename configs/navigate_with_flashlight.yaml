@@ -2,11 +2,11 @@
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
 #scene_id: /home/meng/habitat-sim/data/replica/stages/frl_apartment_stage.glb
 #scene_id: /home/meng/habitat-sim/data/replica/stages/Stage_v3_sc0_staging.glb
+#scene_id: /dataset/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb
 
 # robot
 agent_initial_position: [0, 0, 0]
 agent_initial_rotation: [0, 90, 0]
-agent_target_pos: [0.5, 0.5, 0]
 
 # observation space
 color_sensor: true
@@ -21,8 +21,12 @@ dictionary_observation_space: false
 
 
 # task
-task: navigate_goal_fixed
+task: point_goal_navigation
 dark_mode: true
+flashlight_z: 0.2
+goal_position: [1, 0, 0]
+random_goal: false
+random_start: false
 
 # reward
 use_goal_dist_reward: false

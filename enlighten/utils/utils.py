@@ -74,6 +74,9 @@ def get_rotation_quat(rotation):
 
     return quat
 
+def euclidean_distance(position_a, position_b):
+    return np.linalg.norm(position_b - position_a, ord=2)
+
 def images_to_video(
     images: List[np.ndarray],
     output_dir: str,

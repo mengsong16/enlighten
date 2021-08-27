@@ -1,7 +1,7 @@
 import math
 import os
 import numpy as np
-from numpy import ndarray
+from numpy import euler_gamma, ndarray
 import sys
 import random
 from matplotlib import pyplot as plt
@@ -15,7 +15,7 @@ import habitat_sim
 from habitat_sim.gfx import LightInfo, LightPositionModel, DEFAULT_LIGHTING_KEY, NO_LIGHT_KEY
 from habitat_sim.utils.common import quat_from_angle_axis
 
-from enlighten.utils.utils import parse_config, get_rotation_quat 
+from enlighten.utils.utils import parse_config, get_rotation_quat, euclidean_distance 
 from enlighten.utils.path import *
 
 import abc
@@ -561,7 +561,7 @@ class NavEnv(gym.Env):
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
 
-        self.step_num += 1
+        self.step_count_per_episode += 1
 
         # update flashlight: point light x m in front of the robot 
         if self.dark_mode:
@@ -569,10 +569,11 @@ class NavEnv(gym.Env):
             LightInfo(vector=[0.0, 0.0, -self.flashlight_z, 1.0], model=LightPositionModel.Camera)
         ], "current_scene_lighting")
 
-        reward = 0
+        # compute reward
+        reward, is_success = self.get_reward()
 
         #done = random.choice([True, False])
-        done = False
+        done = self.get_done(is_success=is_success)
 
         info = {}
         return obs, reward, done, info              
@@ -589,7 +590,9 @@ class NavEnv(gym.Env):
 
         self.did_collide = self.extract_collisions(sim_obs)
         self.collision_count_per_episode = 0
-        self.step_num = 0
+        self.step_count_per_episode = 0
+
+        self.previous_measure = self.get_measure()
 
         return obs
 
@@ -661,7 +664,7 @@ class NavEnv(gym.Env):
 
         # save observation 
         if self.config.get("save_observations"):
-            filename = str(self.step_num) + ".jpg"
+            filename = str(self.step_count_per_episode) + ".jpg"
             cv2.imwrite(os.path.join(output_path, filename), img)    
         
     
@@ -729,6 +732,15 @@ class NavEnv(gym.Env):
     def get_optimal_trajectory(self):
         _, _, path_points = self.shortest_path(start_point=self.get_agent_position(), end_point=self.goal_position)
         return path_points
+
+    # get geodesic distance from current position to goal
+    def get_geodesic_distance(self):
+        found_path, geodesic_distance, _ = self.shortest_path(start_point=self.get_agent_position(), end_point=self.goal_position)
+        return found_path, geodesic_distance    
+
+    # get euclidean distance from current position to goal
+    def get_euclidean_distance(self):
+        return euclidean_distance(position_a=self.get_agent_position(), position_b=self.goal_position)
 
     # Display the map with agent and path overlay        
     def get_map(self, path_points):
@@ -803,6 +815,52 @@ class NavEnv(gym.Env):
         
         return top_down_map
 
+    def is_success(self, distance):
+        if distance <= float(self.config.get("success_distance")):
+            return True
+        else:
+            return False
+    
+    def get_measure(self):
+        found_path, geodesic_distance = self.get_geodesic_distance()
+        if found_path:
+            current_measure = geodesic_distance
+        else:    
+            current_measure = self.get_euclidean_distance()
+
+        return current_measure
+
+    def get_reward(self):
+        reward = float(self.config.get("slack_reward"))
+
+        #print("slack reward: "+str(float(self.config.get("slack_reward"))))
+        
+        current_measure = self.get_measure()
+
+        reward += (self.previous_measure - current_measure)
+        self.previous_measure = current_measure
+
+        if self.is_success(distance=current_measure):
+            reward += float(self.config.get("success_reward"))
+            is_success = True
+        else:
+            is_success = False    
+        
+        return reward, is_success
+
+    def episode_over(self):
+        if self.collision_count_per_episode >= int(self.config.get("max_collisions_per_episode")) \
+            or self.step_count_per_episode >= int(self.config.get("max_steps_per_episode")):
+            return True
+        else:
+            return False    
+
+    def get_done(self, is_success):
+        if self.episode_over() or is_success:
+            return True
+        else:
+            return False
+    
     def close(self):
         self.sim.close()
         if self.viewer is not None:
@@ -879,7 +937,7 @@ def test_env(gym_env=True):
         print("Goal position: %s"%(env.goal_position))
         print('-----------------------------')
 
-        for i in range(200):  # max steps per episode
+        for i in range(50):  # max steps per episode
             action = env.action_space.sample()
             if gym_env:
                 obs, reward, done, info = env.step(action)
@@ -900,6 +958,7 @@ def test_env(gym_env=True):
             env.print_agent_state()
             print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
             print('reward: %f'%(reward))
+            print('done: '+str(done))
             env.print_collide_info()
             
             # Garage env needs set render mode explicitly

@@ -917,14 +917,20 @@ def check_coordinate_system():
     #move_forward(env)
     turn_left_move_forward(env)
 
+def create_gym_env(config_filename="navigate_with_flashlight.yaml"):
+    config_file=os.path.join(config_path, config_filename)
+    config = parse_config(config_file)
+    env = GymEnv(env=NavEnv(), is_image=True, max_episode_length=int(config.get("max_steps_per_episode"))) 
+    assert isinstance(env.spec, EnvSpec)
+
+    return env
+
 def test_env(gym_env=True):
     if gym_env:
         env =  NavEnv()
     else:
-        env = GymEnv(NavEnv())     
-        assert isinstance(env.spec, EnvSpec)
-    
-    
+        env = create_gym_env()
+
     for episode in range(10):
         print("***********************************")
         print('Episode: {}'.format(episode))

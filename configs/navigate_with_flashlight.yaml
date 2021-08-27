@@ -5,8 +5,11 @@ scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gog
 #scene_id: /dataset/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb
 
 # robot
-agent_initial_position: [0, 0, 0]
-agent_initial_rotation: [0, 90, 0]
+agent_initial_position: [3, 0, 1]
+agent_initial_rotation: [0, 70, 0] #[0, 90, 0]
+forward_resolution: 0.25
+rotate_resolution: 10
+
 
 # observation space
 color_sensor: true
@@ -22,9 +25,9 @@ dictionary_observation_space: false
 
 # task
 task: point_goal_navigation
-dark_mode: true
+dark_mode: false
 flashlight_z: 0.2
-goal_position: [1, 0, 0]
+goal_position: [4, 0, -1]
 random_goal: false
 random_start: false
 

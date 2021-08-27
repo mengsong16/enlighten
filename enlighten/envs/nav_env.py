@@ -48,6 +48,7 @@ from skimage.color import label2rgb
 from habitat.utils.visualizations import maps
 import magnum as mn
 import quaternion as qt
+from habitat_sim.utils.common import quat_from_angle_axis
 
 VisualObservation = Union[np.ndarray]
 
@@ -334,8 +335,8 @@ class NavEnv(gym.Env):
             self.flashlight_z = float(self.config.get('flashlight_z'))
         # create gym observation space
         self.observation_space = self.create_gym_observation_space(sensors)
-        # create agent and set agent's initial state
-        self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id, initial_state=self.create_agent_state(new_position=self.config.get('agent_initial_position'), new_rotation=self.config.get('agent_initial_rotation')))
+        # create agent and set agent's initial state to a navigable random position and z rotation
+        self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id)
         # create gym action space
         self.action_space = self.create_gym_action_space()
         # viewer
@@ -375,19 +376,19 @@ class NavEnv(gym.Env):
         self.action_mapping = ["move_forward", "turn_left", "turn_right", "look_up", "look_down"]
         action_space = {
             "move_forward": habitat_sim.agent.ActionSpec(
-                "move_forward", habitat_sim.agent.ActuationSpec(amount=0.25)  # move -a meter along z axis (global)
+                "move_forward", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("forward_resolution")))  # move -a meter along z axis (translate along local frame)
             ),
             "turn_left": habitat_sim.agent.ActionSpec(
-                "turn_left", habitat_sim.agent.ActuationSpec(amount=10.0) # rotate a degree along y axis (rotate local) 
+                "turn_left", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate a degree along y axis (rotate along local frame) 
             ),
             "turn_right": habitat_sim.agent.ActionSpec(
-                "turn_right", habitat_sim.agent.ActuationSpec(amount=10.0) # rotate a degree along y axis (rotate local)
+                "turn_right", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along y axis (rotate along local frame)
             ),
             "look_up": habitat_sim.agent.ActionSpec(
-                "look_up", habitat_sim.agent.ActuationSpec(amount=10.0) # rotate a degree along x axis (rotate local)
+                "look_up", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate a degree along x axis (rotate along local frame)
             ),
             "look_down": habitat_sim.agent.ActionSpec(
-                "look_down", habitat_sim.agent.ActuationSpec(amount=10.0) # rotate -a degree along x axis (rotate local)
+                "look_down", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along x axis (rotate along local frame)
             )
         }
         return action_space
@@ -475,26 +476,81 @@ class NavEnv(gym.Env):
 
         print("agent state: position: ", agent_state.position, ", rotation: ", agent_state.rotation) 
 
-    def create_agent_state(self, new_position, new_rotation=None):
+    def create_agent_state(self, new_position, new_rotation=None, quaternion=False):
         new_agent_state = habitat_sim.AgentState()
         # global system, must be casted to float32
         new_agent_state.position = np.array(new_position, dtype="float32")  
 
         if new_rotation is not None:
-            new_agent_state.rotation = get_rotation_quat(np.array(new_rotation, dtype="float32"))
+            if quaternion:
+                new_agent_state.rotation = new_rotation
+            # euler     
+            else:    
+                new_agent_state.rotation = get_rotation_quat(np.array(new_rotation, dtype="float32"))
         
         return new_agent_state
 
-    def set_agent_state(self, new_position, new_rotation=None, is_initial=False):
-        self.agent.set_state(self.create_agent_state(new_position=new_position, new_rotation=new_rotation), is_initial=is_initial)
+    def set_agent_state(self, new_position, new_rotation=None, is_initial=False, quaternion=False):
+        self.agent.set_state(self.create_agent_state(new_position=new_position, new_rotation=new_rotation, quaternion=quaternion), is_initial=is_initial)
 
     def action_index_to_name(self, index):
         return self.action_mapping[index]
 
+    def action_name_to_index(self, name):
+        index = self.action_mapping.index(name) 
+        return index   
+
     def set_start_goal(self):
+        trajectory_not_exist = True
+        while trajectory_not_exist:
+            self.set_start_goal_once()
+            found_path, _, _ = self.shortest_path(self.get_agent_position(), self.goal_position)
+            if found_path:
+                trajectory_not_exist = False
+            else:
+                if (not self.random_goal) and (not self.random_start):
+                    print("There is no optimal trajectory exists between the provided start and goal position")
+                    exit()    
+
+        print("Optimal trajectory exists between start position %s and goal position %s"%(self.get_agent_position(), self.goal_position))        
+
+    # may need to fix y coordinate of start and goal position
+    def set_start_goal_once(self):
         self.random_goal = self.config.get('random_goal') 
+
         if not self.random_goal: 
-            self.goal_position = self.config.get('goal_position')  
+            end_point = np.array(self.config.get('goal_position'), dtype="float32")
+            
+            if self.sim.pathfinder.is_navigable(end_point):
+                self.goal_position = end_point
+            else:
+                print("Error: provided goal position is not navigable!")
+                exit()
+            
+            #self.goal_position = end_point        
+        else:
+            self.goal_position = self.sim.pathfinder.get_random_navigable_point()
+
+        self.random_start = self.config.get('random_start')
+
+        if not self.random_start:
+            start_point = np.array(self.config.get('agent_initial_position'), dtype="float32")
+            
+            if self.sim.pathfinder.is_navigable(start_point):
+                self.set_agent_state(new_position=start_point, 
+                    new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
+            else:
+                print("Error: provided start position is not navigable!")
+                exit() 
+            
+            #print(start_point)
+            #self.set_agent_state(new_position=start_point, \
+            #    new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)             
+        else:
+            start_point = self.sim.pathfinder.get_random_navigable_point()
+            start_rotation = quat_from_angle_axis(self.sim.random.uniform_float(0, 2.0 * np.pi), np.array([0, 1, 0]))
+            self.set_agent_state(new_position=start_point, \
+                new_rotation=start_rotation, is_initial=True, quaternion=True)         
 
     def step(self, action):
         action_name = self.action_mapping[action]
@@ -522,8 +578,12 @@ class NavEnv(gym.Env):
         return obs, reward, done, info              
 
     def reset(self):
-        # will reset agent to its initial pose
+        # will reset agent.initial_state to its initial pose
         sim_obs = self.sim.reset()
+
+        # reset start and goal
+        self.set_start_goal()
+
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
 
@@ -576,11 +636,12 @@ class NavEnv(gym.Env):
             topdown_map = None    
 
         # show image and map in viewer
+        # color
         if obs.shape[2] == 3:
             img = np.asarray(obs).astype(np.uint8)
-            # RGB
             self.viewer.imshow(img, topdown_map)
         elif obs.shape[2] == 1:
+            # depth
             if mode == "depth_sensor":
                 img = np.asarray(obs * 255).astype(np.uint8)
                 # not the same with dstack the single channel
@@ -598,6 +659,7 @@ class NavEnv(gym.Env):
         else:
             print("Error: image channel is neither 1 nor 3!")
 
+        # save observation 
         if self.config.get("save_observations"):
             filename = str(self.step_num) + ".jpg"
             cv2.imwrite(os.path.join(output_path, filename), img)    
@@ -637,16 +699,10 @@ class NavEnv(gym.Env):
             print("Scene light setup: key=%s, vector=%s"%(key, self.sim.get_light_setup(key)[0].vector))
         print("******************************************************************")                
     
-    def shortest_path(self, start_point=None, end_point=None):
+    def shortest_path(self, start_point, end_point):
         if not self.sim.pathfinder.is_loaded:
             print("Pathfinder not initialized, aborting.")
             return
-        
-        if start_point is None:
-            start_point = self.sim.pathfinder.get_random_navigable_point()
-
-        if end_point is None:    
-            end_point = self.sim.pathfinder.get_random_navigable_point()
 
         path = habitat_sim.ShortestPath()
         path.requested_start = start_point
@@ -665,6 +721,10 @@ class NavEnv(gym.Env):
 
         return found_path, geodesic_distance, path_points
 
+    def get_env_bounds(self):
+        # 2*3 array
+        return self.sim.pathfinder.get_bounds()
+
     # from current position to goal
     def get_optimal_trajectory(self):
         _, _, path_points = self.shortest_path(start_point=self.get_agent_position(), end_point=self.goal_position)
@@ -677,12 +737,16 @@ class NavEnv(gym.Env):
         
         #print("path_points : " + str(path_points))
 
-        self.meters_per_pixel = 0.1 
+        self.meters_per_pixel = 0.1
+        # The height (min y coordinate) in the environment to make the topdown map 
         self.height = self.sim.pathfinder.get_bounds()[0][1]
 
         top_down_map = maps.get_topdown_map(self.sim.pathfinder, self.height, meters_per_pixel=self.meters_per_pixel)
         
         # background, walkable area, obstacle and boundary
+        # MAP_INVALID_POINT = 0, [255, 255, 255] white
+        # MAP_VALID_POINT = 1, [128, 128, 128] grey
+        # MAP_BORDER_INDICATOR = 2, [0, 0, 0] black
         recolor_map = np.array([[255, 255, 255], [128, 128, 128], [0, 0, 0]], dtype=np.uint8)
         top_down_map = recolor_map[top_down_map]
 
@@ -697,25 +761,33 @@ class NavEnv(gym.Env):
         # convert world trajectory points to maps module grid points
         trajectory = [
                 maps.to_grid(
-                    path_point[2],  # realworld-x
-                    path_point[0],  # realworld-y
+                    path_point[2],  # realworld-z --> grid row
+                    path_point[0],  # realworld-x --> grid column
                     grid_dimensions,
                     pathfinder=self.sim.pathfinder,
                 )
                 for path_point in path_points
             ]     
 
+        '''
+        # tangent =  z / x
+        # robot always facing towards next state
         grid_tangent = mn.Vector2(
             trajectory[1][1] - trajectory[0][1], trajectory[1][0] - trajectory[0][0]
         )
 
         # trajectory point 0 and point 1 overlap
         if grid_tangent.is_zero():
-            initial_angle = self.get_agent_rotation_euler()[1]  # angle around z
+            initial_angle = self.get_agent_rotation_euler()[1]  # angle around y 
         else:
             path_initial_tangent = grid_tangent / grid_tangent.length()
+            # [-pi, pi]
             initial_angle = math.atan2(path_initial_tangent[0], path_initial_tangent[1])
-        
+        '''
+
+        # robot rotation as robot angle on the map
+        initial_angle = self.get_agent_rotation_euler()[1]  # angle around y
+
         # draw the trajectory on the map
         # color: (B,G,R)
         maps.draw_path(top_down_map=top_down_map, path_points=trajectory, color=(0, 0, 255), thickness=1)
@@ -736,6 +808,57 @@ class NavEnv(gym.Env):
         if self.viewer is not None:
             self.viewer.close()
 
+def move_forward(env):
+    env.reset()
+    print("***********************************")
+    env.print_agent_state()
+    print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
+
+    # move forward (0.25m)
+    action_index = env.action_name_to_index("move_forward")
+    for i in range(4):
+        obs, reward, done, info = env.step(action_index)
+        print('-------------------------------------------')
+        print('action: move_forward')
+        env.print_agent_state()
+        print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
+        env.print_collide_info()
+    
+    print("***********************************")
+
+def turn_left_move_forward(env):
+    env.reset()
+    print("***********************************")
+    env.print_agent_state()
+    print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
+
+    # turn left (10*9 degree)
+    action_index_1 = env.action_name_to_index("turn_left")
+    for i in range(9):
+        obs, reward, done, info = env.step(action_index_1)
+        print('-------------------------------------------')
+        print('action: turn left')
+        env.print_agent_state()
+        print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
+        env.print_collide_info()
+
+    # move forward (0.25m)
+    action_index_2 = env.action_name_to_index("move_forward")
+    for i in range(2):
+        obs, reward, done, info = env.step(action_index_2)
+        print('-------------------------------------------')
+        print('action: move_forward')
+        env.print_agent_state()
+        print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
+        env.print_collide_info()
+    
+    print("***********************************")
+
+def check_coordinate_system():
+    env =  NavEnv()
+    #move_forward(env)
+    turn_left_move_forward(env)
+
 def test_env(gym_env=True):
     if gym_env:
         env =  NavEnv()
@@ -753,9 +876,10 @@ def test_env(gym_env=True):
         print('Reset')
         env.print_agent_state()
         env.print_collide_info()
+        print("Goal position: %s"%(env.goal_position))
         print('-----------------------------')
 
-        for i in range(100):  # max steps per episode
+        for i in range(200):  # max steps per episode
             action = env.action_space.sample()
             if gym_env:
                 obs, reward, done, info = env.step(action)
@@ -765,6 +889,7 @@ def test_env(gym_env=True):
                 reward = env_step.reward
                 info = env_step.env_info
                 done = env_step.terminal
+
             print('-----------------------------')
             print('step: %d'%(i+1))
             print('action: %s'%(env.action_index_to_name(action)))
@@ -781,7 +906,7 @@ def test_env(gym_env=True):
             render_obs = env.render(mode="color_sensor")
             print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
             print('-------------------------------')
-            
+
             step += 1
             if done:
                 break
@@ -798,6 +923,8 @@ def test_env(gym_env=True):
     print("Observation space: %s"%(env.observation_space)) 
     #print(np.amin(env.observation_space.low))
     #print(np.amax(env.observation_space.high))
+    bound = env.get_env_bounds()
+    print("Scene range: " + str(bound[1]-bound[0]))
     print('-----------------------------') 
     
     env.close() 
@@ -805,7 +932,9 @@ def test_env(gym_env=True):
 def test_shortest_path(start_point=None, end_point=None):
     env =  NavEnv()
     env.shortest_path(start_point=start_point, end_point=end_point)
+    print(env.get_env_bounds())
 
 if __name__ == "__main__":    
     test_env(gym_env=False)
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
+    #check_coordinate_system()

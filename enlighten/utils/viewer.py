@@ -21,7 +21,7 @@ class MyViewer:
         cv2.imshow('RobotView', image)
         self.isopen = True
 
-        # To get keyboard response, must after imshow in the first window
+        # To get keyboard response, must after imshow in the first window, and click robotview window to make it active
         q = cv2.waitKey(1)
 
         if q == 27:
@@ -29,6 +29,9 @@ class MyViewer:
 
         if map is not None:    
             cv2.imshow('MapView', map)
+            #print("*******************")
+            #print("map shape: " + str(map.shape))
+            #print("*******************")
 
         
     def close(self):

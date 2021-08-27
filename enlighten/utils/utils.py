@@ -63,6 +63,8 @@ def dump_config(config):
     return yaml.dump(config)
 
 
+# euler (degree) to quaternion
+# The default order for Euler angle rotations is "ZYX"
 def get_rotation_quat(rotation):
     x,y,z = rotation
     # z * y * x

@@ -9,8 +9,6 @@ import gym
 from gym import spaces
 from gym.envs.classic_control.rendering import SimpleImageViewer
 
-import random
-
 import habitat_sim
 from habitat_sim.gfx import LightInfo, LightPositionModel, DEFAULT_LIGHTING_KEY, NO_LIGHT_KEY
 from habitat_sim.utils.common import quat_from_angle_axis
@@ -917,7 +915,7 @@ def check_coordinate_system():
     #move_forward(env)
     turn_left_move_forward(env)
 
-def create_gym_env(config_filename="navigate_with_flashlight.yaml"):
+def create_garage_env(config_filename="navigate_with_flashlight.yaml"):
     config_file=os.path.join(config_path, config_filename)
     config = parse_config(config_file)
     env = GymEnv(env=NavEnv(), is_image=True, max_episode_length=int(config.get("max_steps_per_episode"))) 
@@ -929,7 +927,7 @@ def test_env(gym_env=True):
     if gym_env:
         env =  NavEnv()
     else:
-        env = create_gym_env()
+        env = create_garage_env()
 
     for episode in range(10):
         print("***********************************")

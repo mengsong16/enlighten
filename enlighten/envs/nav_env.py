@@ -988,6 +988,8 @@ def test_env(gym_env=True):
     #print(np.amax(env.observation_space.high))
     bound = env.get_env_bounds()
     print("Scene range: " + str(bound[1]-bound[0]))
+    #if not gym_env:
+    print("Env spec: " + str(env.spec))
     print('-----------------------------') 
     
     env.close() 

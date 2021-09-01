@@ -9,7 +9,7 @@ from garage.torch.policies import GaussianMLPPolicy
 from garage.torch.value_functions import GaussianMLPValueFunction
 from garage.trainer import Trainer
 
-from enlighten.envs import NavEnv, create_gym_env
+from enlighten.envs import NavEnv, create_garage_env
   
 
 
@@ -27,7 +27,7 @@ def ppo_nav(ctxt=None, seed=1):
     
     set_seed(seed)
 
-    env = create_gym_env(config_filename="navigate_with_flashlight.yaml") 
+    env = create_garage_env(config_filename="navigate_with_flashlight.yaml")
 
     #print(env.spec)
 

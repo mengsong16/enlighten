@@ -11,11 +11,11 @@ from torch import Tensor
 from torch import nn as nn
 from torch import optim as optim
 
-from habitat.utils import profiling_wrapper
-from habitat_baselines.common.rollout_storage import RolloutStorage
-from habitat_baselines.rl.ppo.policy import Policy
+from habitat_sim.utils import profiling_utils
+from enlighten.agents.common.rollout_storage import RolloutStorage
+from enlighten.agents.models import Policy
 
-EPS_PPO = 1e-5
+
 
 
 class PPO(nn.Module):
@@ -67,6 +67,7 @@ class PPO(nn.Module):
         if not self.use_normalized_advantage:
             return advantages
 
+        EPS_PPO = 1e-5
         return (advantages - advantages.mean()) / (advantages.std() + EPS_PPO)
 
     def update(self, rollouts: RolloutStorage) -> Tuple[float, float, float]:
@@ -77,7 +78,7 @@ class PPO(nn.Module):
         dist_entropy_epoch = 0.0
 
         for _e in range(self.ppo_epoch):
-            profiling_wrapper.range_push("PPO.update epoch")
+            profiling_utils.range_push("PPO.update epoch")
             data_generator = rollouts.recurrent_generator(
                 advantages, self.num_mini_batch
             )
@@ -142,7 +143,7 @@ class PPO(nn.Module):
                 action_loss_epoch += action_loss.item()
                 dist_entropy_epoch += dist_entropy.item()
 
-            profiling_wrapper.range_pop()  # PPO.update epoch
+            profiling_utils.range_pop()  # PPO.update epoch
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 

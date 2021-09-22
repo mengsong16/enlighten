@@ -74,6 +74,18 @@ def get_rotation_quat(rotation):
 
     return quat
 
+def quaternion_rotate_vector(quat: np.quaternion, v: np.array) -> np.array:
+    r"""Rotates a vector by a quaternion
+    Args:
+        quaternion: The quaternion to rotate by
+        v: The vector to rotate
+    Returns:
+        np.array: The rotated vector
+    """
+    vq = np.quaternion(0, 0, 0, 0)
+    vq.imag = v
+    return (quat * vq * quat.inverse()).imag
+
 def euclidean_distance(position_a, position_b):
     return np.linalg.norm(position_b - position_a, ord=2)
 
@@ -130,3 +142,18 @@ def create_video():
 
 if __name__ == "__main__":
     create_video()
+
+
+def cartesian_to_polar(x, y):
+    rho = np.sqrt(x ** 2 + y ** 2)
+    phi = np.arctan2(y, x)
+    return rho, phi
+
+
+def quaternion_from_coeff(coeffs: np.ndarray) -> np.quaternion:
+    r"""Creates a quaternions from coeffs in [x, y, z, w] format"""
+    quat = np.quaternion(0, 0, 0, 0)
+    quat.real = coeffs[3]
+    quat.imag = coeffs[0:3]
+    return quat    
+

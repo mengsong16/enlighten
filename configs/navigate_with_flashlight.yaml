@@ -20,14 +20,21 @@ image_height: 224
 normalize_depth: false
 min_depth: 0
 max_depth: 1
-dictionary_observation_space: false
+dictionary_observation_space: true
 
 
 # task
 dark_mode: true
 flashlight_z: 0.2
+
+
+# goal
+goal_conditioned: true
+goal_format: pointgoal # imagegoal
+goal_coord_system: polar  #  cartesian
+goal_dimension: 2
 goal_position: [4, 0, -1]
-random_goal: false
+random_goal: true
 random_start: false
 
 # reward
@@ -41,6 +48,12 @@ max_collisions_per_episode: 200
 
 # others
 save_observations: false
+seed: 1
+visual_encoder: ResNet # CNN 
+gpu_id: 0
+
+
+
 
 
 

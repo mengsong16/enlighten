@@ -253,6 +253,7 @@ class VectorEnv:
             command, data = connection_read_fn()
             while command != CLOSE_COMMAND:
                 if command == STEP_COMMAND:
+                    # check wrapped env types
                     # different step methods for enlighten.NavEnv and garage.GymEnv
                     if isinstance(env, (NavEnv, gym.Env)):
                         # enlighten.NavEnv

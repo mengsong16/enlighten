@@ -48,174 +48,7 @@ import magnum as mn
 import quaternion as qt
 from habitat_sim.utils.common import quat_from_angle_axis
 
-VisualObservation = Union[np.ndarray]
-
-
-class HabitatSensor(metaclass=abc.ABCMeta):
-    r"""Represents a sensor that provides data from the environment to agent.
-
-    :data uuid: universally unique id.
-    :data observation_space: ``gym.Space`` object corresponding to observation
-        of sensor.
-
-    The user of this class needs to implement the get_observation method and
-    the user is also required to set the below attributes:
-    """
-
-    uuid: str
-    observation_space: gym.Space
-
-    def __init__(self, uuid, config, *args: Any, **kwargs: Any) -> None:
-        self.config = config
-        self.uuid = uuid
-        
-        self.observation_space = self._get_observation_space(*args, **kwargs)
-
-    def _get_observation_space(self, *args: Any, **kwargs: Any) -> gym.Space:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def get_observation(self, *args: Any, **kwargs: Any) -> Any:
-        r"""
-        Returns:
-            current observation for Sensor.
-        """
-        raise NotImplementedError
-
-
-class HabitatSimRGBSensor(HabitatSensor):
-    _get_default_spec = habitat_sim.CameraSensorSpec
-    sim_sensor_type = habitat_sim.SensorType.COLOR
-
-    RGBSENSOR_DIMENSION = 3
-
-    def __init__(self, uuid, config) -> None:
-        super().__init__(uuid=uuid, config=config)
-
-    def _get_observation_space(self, *args: Any, **kwargs: Any) -> gym.spaces.Box:
-        return gym.spaces.Box(
-            low=0,
-            high=255,
-            shape=(
-                int(self.config.get("image_height")), 
-                int(self.config.get("image_width")),
-                self.RGBSENSOR_DIMENSION,
-            ),
-            dtype=np.uint8,
-        )
-
-    def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
-    ) -> VisualObservation:
-        obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
-        
-        # remove alpha channel
-        obs = obs[:, :, : self.RGBSENSOR_DIMENSION]  # type: ignore[index]
-        return obs
-
-
-class HabitatSimDepthSensor(HabitatSensor):
-    _get_default_spec = habitat_sim.CameraSensorSpec
-    sim_sensor_type = habitat_sim.SensorType.DEPTH
-
-    min_depth_value: float
-    max_depth_value: float
-
-    def __init__(self, uuid, config) -> None:
-        self.normalize_depth = config.get("normalize_depth")
-
-        if self.normalize_depth:
-            self.min_depth_value = 0.0
-            self.max_depth_value = 1.0
-        else:
-            self.min_depth_value = float(config.get("min_depth"))
-            self.max_depth_value = float(config.get("max_depth"))
-
-        #print("========================")
-        #print(self.normalize_depth)
-        #print(self.min_depth_value)    
-        #print(self.max_depth_value) 
-        #print("========================")
-
-        # must be after initialize min and max depth value
-        super().__init__(uuid=uuid, config=config)
-
-    def _get_observation_space(self, *args: Any, **kwargs: Any) -> gym.spaces.Box:
-        return gym.spaces.Box(
-            low=self.min_depth_value,
-            high=self.max_depth_value,
-            shape=(int(self.config.get("image_height")), int(self.config.get("image_width")), 1),
-            dtype=np.float32,
-        )
-
-    def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
-    ) -> VisualObservation:
-
-        obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
-        
-        if isinstance(obs, np.ndarray):
-            obs = np.clip(obs, self.min_depth_value, self.max_depth_value)
-
-            obs = np.expand_dims(
-                obs, axis=2
-            )  # make depth observation a 3D array
-        else:
-            obs = obs.clamp(self.min_depth_value, self.max_depth_value)  # type: ignore[attr-defined]
-
-            obs = obs.unsqueeze(-1)  # type: ignore[attr-defined]
-
-        if self.normalize_depth:
-            # normalize depth observation to [0, 1]
-            obs = (obs - self.min_depth_value) / (self.max_depth_value - self.min_depth_value)
-
-        return obs
-
-
-class HabitatSimSemanticSensor(HabitatSensor):
-    _get_default_spec = habitat_sim.CameraSensorSpec
-    sim_sensor_type = habitat_sim.SensorType.SEMANTIC
-
-    def __init__(self, uuid, config) -> None:
-        super().__init__(uuid=uuid, config=config)
-
-    def _get_observation_space(self, *args: Any, **kwargs: Any) -> gym.spaces.Box:
-        return gym.spaces.Box(
-            low=np.iinfo(np.uint32).min,
-            high=np.iinfo(np.uint32).max,
-            shape=(int(self.config.get("image_height")), int(self.config.get("image_width")), 1),
-            dtype=np.uint32,
-        )
-
-    def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
-    ) -> VisualObservation:
-        obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
-        obs = np.expand_dims(obs, axis=2)
-        
-        return obs
-
-# A dictionary data structure
-class Dictionary_Observations(Dict[str, Any]):
-    r"""Dictionary containing sensor observations"""
-
-    def __init__(
-        self, sensors: Dict[str, HabitatSensor], *args: Any, **kwargs: Any
-    ) -> None:
-        """Constructor
-
-        :param sensors: list of sensors whose observations are fetched and
-            packaged.
-        """
-
-        data = [
-            # sensor.get_observation need parameter sim_obs
-            (uuid, sensor.get_observation(*args, **kwargs))
-            for uuid, sensor in sensors.items()
-        ]
-        super().__init__(data)
-
-
+from enlighten.envs import HabitatSensor, Dictionary_Observations, HabitatSimRGBSensor, HabitatSimDepthSensor, HabitatSimSemanticSensor, ImageGoal, PointGoal
 
 class SensorSuite:
     r"""Represents a set of sensors, with each sensor being identified
@@ -244,12 +77,16 @@ class SensorSuite:
 
         # get a dictionary observation space for gym  
         self.dictionary_observation_space = dictionary_observation_space
+    
 
         # dictionary
         if self.dictionary_observation_space:
             self.observation_spaces = gym.spaces.Dict(spaces=ordered_spaces)
         # numpy array    
         else:
+            #if self.goal_conditioned == True and self.config.get("goal_format") == "pointgoal":
+            #    raise ValueError("Can only concatenate images not goal vectors when observation space is numpy array")
+            
             self.observation_spaces = self.concatenate_observation_space(ordered_spaces)   
 
     def get_specific_sensor(self, uuid: str) -> HabitatSensor:
@@ -264,6 +101,9 @@ class SensorSuite:
             return Dictionary_Observations(self.sensors, *args, **kwargs)
         # numpy array    
         else:
+            #if self.goal_conditioned == True and self.config.get("goal_format") == "pointgoal":
+            #    raise ValueError("Can only concatenate images not goal vectors when observation space is numpy array")
+            
             return self.get_array_observations(*args, **kwargs)    
 
     def get_specific_observation(self, uuid: str, *args, **kwargs):
@@ -333,6 +173,8 @@ class NavEnv(gym.Env):
             self.flashlight_z = float(self.config.get('flashlight_z'))
         # create gym observation space
         self.observation_space = self.create_gym_observation_space(sensors)
+        # create goal sensors (must be created after the main observation space is created)
+        self.create_goal_sensor()
         # create agent and set agent's initial state to a navigable random position and z rotation
         self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id)
         # create gym action space
@@ -408,6 +250,7 @@ class NavEnv(gym.Env):
         sensor_specs = []
         sensors = []
         
+        
         # Note: all sensors must have the same resolution
         if self.config.get("color_sensor"):
             color_sensor_spec = habitat_sim.CameraSensorSpec()
@@ -417,7 +260,7 @@ class NavEnv(gym.Env):
             color_sensor_spec.postition = [0.0, sensor_height, 0.0]
             color_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
             sensor_specs.append(color_sensor_spec)
-            sensors.append(HabitatSimRGBSensor(uuid="color_sensor", config=self.config))
+            sensors.append(HabitatSimRGBSensor(config=self.config))
 
         if self.config.get("depth_sensor"):
             depth_sensor_spec = habitat_sim.CameraSensorSpec()
@@ -427,7 +270,7 @@ class NavEnv(gym.Env):
             depth_sensor_spec.postition = [0.0, sensor_height, 0.0]
             depth_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
             sensor_specs.append(depth_sensor_spec)
-            sensors.append(HabitatSimDepthSensor(uuid="depth_sensor", config=self.config))
+            sensors.append(HabitatSimDepthSensor(config=self.config))
 
         if self.config.get("semantic_sensor"):
             semantic_sensor_spec = habitat_sim.CameraSensorSpec()
@@ -437,19 +280,54 @@ class NavEnv(gym.Env):
             semantic_sensor_spec.postition = [0.0, sensor_height, 0.0]
             semantic_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
             sensor_specs.append(semantic_sensor_spec) 
-            sensors.append(HabitatSimSemanticSensor(uuid="semantic_sensor", config=self.config))
-
-        # set render mode according to sensors
+            sensors.append(HabitatSimSemanticSensor(config=self.config))
+        
+        
+        # set render mode according to all available sensors
         self.set_render_mode()
 
         return sensor_specs, sensors 
 
+    def create_goal_sensor(self):
+        # add goal to observations
+        if self.config.get("goal_conditioned"):
+            assert self.config.get("goal_format") in ["pointgoal", "imagegoal"], "Goal format is not supported!"
+            if self.config.get("goal_format") == "pointgoal":
+                self.goal_sensor = PointGoal(config=self.config, env=self)
+            else:
+                self.goal_sensor = ImageGoal(config=self.config, env=self)
+        else:
+            self.goal_sensor = None
+    
+
+    def add_goal_obs(self, obs):
+        if self.goal_sensor is not None:
+            obs[self.goal_sensor._get_uuid()] = self.get_goal_observation()
+
+        return obs    
+
     def create_gym_observation_space(self, sensors):
-        self.sensor_suite = SensorSuite(sensors, self.config.get('dictionary_observation_space')) 
+        self.sensor_suite = SensorSuite(sensors, 
+            dictionary_observation_space=self.config.get('dictionary_observation_space')) 
+
         return self.sensor_suite.observation_spaces    
 
     def get_gym_observation_space(self):
         return self.observation_space
+
+    def get_goal_observation_space(self):
+        if self.goal_sensor is not None:
+            return self.goal_sensor._get_observation_space()  
+        else:
+            print("Goal space does not exist since the env is not goal conditioned")
+            return None 
+
+    def get_goal_observation(self):
+        if self.goal_sensor is not None:
+            return self.goal_sensor.get_observation(goal_position=self.goal_position) 
+        else:
+            print("Goal observation does not exist since the env is not goal conditioned")
+            return None               
     
     def get_sim_sensors(self):
         return self.sim._sensors
@@ -467,7 +345,8 @@ class NavEnv(gym.Env):
     def get_agent_rotation_euler(self):
         agent_state = self.agent.get_state()
         
-        return qt.as_euler_angles(agent_state.rotation)    
+        return qt.as_euler_angles(agent_state.rotation)   
+
 
     def print_agent_state(self):  
         agent_state = self.agent.get_state() 
@@ -491,6 +370,26 @@ class NavEnv(gym.Env):
     def set_agent_state(self, new_position, new_rotation=None, is_initial=False, quaternion=False):
         self.agent.set_state(self.create_agent_state(new_position=new_position, new_rotation=new_rotation, quaternion=quaternion), is_initial=is_initial)
 
+    def get_observations_at(self, position, rotation, keep_agent_at_new_pose=False):
+        current_state = self.get_agent_state()
+
+        self.set_agent_state(new_position=position, new_rotation=rotation, is_initial=False, quaternion=True)
+
+        sim_obs = self.sim.get_sensor_observations(agent_ids=self.sim._default_agent_id)
+
+        obs = self.sensor_suite.get_observations(sim_obs)
+
+        # get agent back to current pose
+        if not keep_agent_at_new_pose:
+            self.set_agent_state(
+                new_position=current_state.position,
+                new_rotation=current_state.rotation,
+                is_initial=False,
+                quaternion=True
+            )
+        return obs
+        
+    
     def action_index_to_name(self, index):
         return self.action_mapping[index]
 
@@ -556,8 +455,12 @@ class NavEnv(gym.Env):
         self.did_collide = self.extract_collisions(sim_obs)
         if self.did_collide:
             self.collision_count_per_episode += 1
+        
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
+
+        if self.config.get("goal_conditioned"):
+            obs = self.add_goal_obs(obs)
 
         self.step_count_per_episode += 1
 
@@ -585,6 +488,9 @@ class NavEnv(gym.Env):
 
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
+
+        if self.config.get("goal_conditioned"):
+            obs = self.add_goal_obs(obs)
 
         self.did_collide = self.extract_collisions(sim_obs)
         self.collision_count_per_episode = 0
@@ -621,7 +527,7 @@ class NavEnv(gym.Env):
             #self.viewer = SimpleImageViewer()
             self.viewer = MyViewer(sim=self.sim)
 
-        sim_obs = self.sim.get_sensor_observations()
+        sim_obs = self.sim.get_sensor_observations(agent_ids=self.sim._default_agent_id)
         obs = self.sensor_suite.get_specific_observation(uuid=mode, sim_obs=sim_obs)
 
         if not isinstance(obs, np.ndarray):
@@ -864,6 +770,8 @@ class NavEnv(gym.Env):
         if self.viewer is not None:
             self.viewer.close()
 
+
+################################ test ##########################################
 def move_forward(env):
     env.reset()
     print("***********************************")
@@ -916,8 +824,11 @@ def check_coordinate_system():
     turn_left_move_forward(env)
 
 def create_garage_env(config_filename="navigate_with_flashlight.yaml"):
-    config_file=os.path.join(config_path, config_filename)
+    config_file = os.path.join(config_path, config_filename)
     config = parse_config(config_file)
+    dictionary_observation_space = config.get('dictionary_observation_space')
+    assert dictionary_observation_space == False, "Garage env does NOT support dictionary observation space"
+    
     env = GymEnv(env=NavEnv(), is_image=True, max_episode_length=int(config.get("max_steps_per_episode"))) 
     assert isinstance(env.spec, EnvSpec)
 
@@ -939,8 +850,12 @@ def test_env(gym_env=True):
         env.print_agent_state()
         env.print_collide_info()
         print("Goal position: %s"%(env.goal_position))
+        print("Goal observation: "+str(env.get_goal_observation().shape))
+        #print("Goal observation: %s"%(env.get_goal_observation()))
+        
         print('-----------------------------')
 
+       
         for i in range(50):  # max steps per episode
             action = env.action_space.sample()
             if gym_env:
@@ -955,10 +870,14 @@ def test_env(gym_env=True):
             print('-----------------------------')
             print('step: %d'%(i+1))
             print('action: %s'%(env.action_index_to_name(action)))
-            print('observation: %s, %s'%(str(obs.shape), str(type(obs))))
+            #print('observation: %s, %s'%(str(obs.shape), str(type(obs))))
+            #print('observation: %s'%(str(type(obs))))
+            print('observation: %s'%(obs.keys()))
             #print(obs["color_sensor"].shape)
+            #print(obs["color_sensor"])
             #print(obs["depth_sensor"].shape)
             #print(obs["semantic_sensor"].shape)
+            #print(obs)
             env.print_agent_state()
             print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
             print('reward: %f'%(reward))
@@ -984,6 +903,8 @@ def test_env(gym_env=True):
         print("Garage env")    
     print("Action space: %s"%(env.action_space)) 
     print("Observation space: %s"%(env.observation_space)) 
+    print("Goal observation space: %s"%(env.get_goal_observation_space()))
+    
     #print(np.amin(env.observation_space.low))
     #print(np.amax(env.observation_space.high))
     bound = env.get_env_bounds()
@@ -999,7 +920,22 @@ def test_shortest_path(start_point=None, end_point=None):
     env.shortest_path(start_point=start_point, end_point=end_point)
     print(env.get_env_bounds())
 
+def test_rollout_storage():
+    env =  NavEnv()
+    assert env.sensor_suite.dictionary_observation_space
+    print(env.observation_space.spaces)
+    print(env.observation_space.spaces['color_sensor'].shape[:2])
+    print(env.observation_space.spaces['depth_sensor'].shape[:2])
+    print(env.observation_space.spaces['color_sensor'].shape[:2] == env.observation_space.spaces['depth_sensor'].shape[:2])
+    print('color_sensor' in env.observation_space.spaces)
+    print(env.action_space.__class__.__name__)
+    print(env.action_space.shape)
+    print(env.action_space)
+    print("Goal observation space: %s"%(env.get_goal_observation_space()))
+    print("Goal observation space dim: %s"%(len(env.get_goal_observation_space().shape)))
+
 if __name__ == "__main__":    
-    test_env(gym_env=False)
+    #test_env(gym_env=True)
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
+    test_rollout_storage()

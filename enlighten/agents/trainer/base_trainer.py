@@ -12,16 +12,20 @@ import torch
 from numpy import ndarray
 from torch import Tensor
 
-from habitat import Config, logger
-from habitat.core.env import Env, RLEnv
-from habitat.core.vector_env import VectorEnv
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
-from habitat_baselines.rl.ddppo.ddp_utils import SAVE_STATE, is_slurm_batch_job
-from habitat_baselines.utils.common import (
+from habitat import logger
+
+from enlighten.envs import VectorEnv, NavEnv
+from enlighten.utils.tensorboard_utils import TensorboardWriter
+from enlighten.utils.ddp_utils import SAVE_STATE, is_slurm_batch_job
+from enlighten.agents.common.checkpoint import (
     get_checkpoint_id,
     poll_checkpoint_folder,
 )
 
+from enlighten.utils.config_utils import parse_config
+from enlighten.utils.path import *
+
+import copy
 
 class BaseTrainer:
     r"""Generic trainer class that serves as a base template for more
@@ -34,11 +38,19 @@ class BaseTrainer:
     def train(self) -> None:
         raise NotImplementedError
 
-    def _setup_eval_config(self, checkpoint_config: Config) -> Config:
+    def merge_config1_to_config2(config1, config2):
+        assert isinstance(config1, dict) and isinstance(config2, dict)
+        for k, v in config1.iteritems():
+            config2[k] = v
+
+        return config2    
+
+    # TO DO: yaml config merge needs to be checked
+    def _setup_eval_config(self, checkpoint_config):
         r"""Sets up and returns a merged config for evaluation. Config
             object saved from checkpoint is merged into config file specified
             at evaluation time with the following overwrite priority:
-                  eval_opts > ckpt_opts > eval_cfg > ckpt_cfg
+                eval_opts > ckpt_opts > eval_cfg > ckpt_cfg
             If the saved config is outdated, only the eval config is returned.
 
         Args:
@@ -48,25 +60,29 @@ class BaseTrainer:
             Config: merged config for eval.
         """
 
-        config = self.config.clone()
+        #config = self.config.clone()
+        config = copy.deepcopy(self.config)
 
-        ckpt_cmd_opts = checkpoint_config.CMD_TRAILING_OPTS
-        eval_cmd_opts = config.CMD_TRAILING_OPTS
+        self.merge_config1_to_config2(checkpoint_config, config)
 
-        try:
-            config.merge_from_other_cfg(checkpoint_config)
-            config.merge_from_other_cfg(self.config)
-            config.merge_from_list(ckpt_cmd_opts)
-            config.merge_from_list(eval_cmd_opts)
-        except KeyError:
-            logger.info("Saved config is outdated, using solely eval config")
-            config = self.config.clone()
-            config.merge_from_list(eval_cmd_opts)
-        config.defrost()
-        if config.TASK_CONFIG.DATASET.SPLIT == "train":
-            config.TASK_CONFIG.DATASET.SPLIT = "val"
-        config.TASK_CONFIG.SIMULATOR.AGENT_0.SENSORS = self.config.SENSORS
-        config.freeze()
+        # CMD_TRAILING_OPTS: store command line options as list of strings
+        # ckpt_cmd_opts = checkpoint_config.CMD_TRAILING_OPTS
+        # eval_cmd_opts = config.CMD_TRAILING_OPTS
+
+        # try:
+        #     config.merge_from_other_cfg(checkpoint_config)
+        #     config.merge_from_other_cfg(self.config)
+        #     config.merge_from_list(ckpt_cmd_opts)
+        #     config.merge_from_list(eval_cmd_opts)
+        # except KeyError:
+        #     logger.info("Saved config is outdated, using solely eval config")
+        #     config = self.config.clone()
+        #     config.merge_from_list(eval_cmd_opts)
+        #config.defrost()
+        if config["split"] == "train":
+            config["split"] = "val"
+        #config.TASK_CONFIG.SIMULATOR.AGENT_0.SENSORS = self.config.SENSORS
+        #config.freeze()
 
         return config
 
@@ -79,46 +95,44 @@ class BaseTrainer:
             None
         """
         self.device = (
-            torch.device("cuda", self.config.TORCH_GPU_ID)
+            torch.device("cuda", int(self.config.get("torch_gpu_id")))
             if torch.cuda.is_available()
             else torch.device("cpu")
         )
 
-        if "tensorboard" in self.config.VIDEO_OPTION:
+        # video options when evaluate
+        if "tensorboard" in self.config.get("eval_video_option"):
             assert (
-                len(self.config.TENSORBOARD_DIR) > 0
+                len(self.config.get("tensorboard_dir")) > 0
             ), "Must specify a tensorboard directory for video display"
-            os.makedirs(self.config.TENSORBOARD_DIR, exist_ok=True)
-        if "disk" in self.config.VIDEO_OPTION:
-            assert (
-                len(self.config.VIDEO_DIR) > 0
-            ), "Must specify a directory for storing videos on disk"
+            os.makedirs(self.config.get("tensorboard_dir"), exist_ok=True)
+        if "disk" in self.config.get("eval_video_option"):
+            assert os.path.exists(video_path), "Must specify a directory for storing videos on disk"
 
         with TensorboardWriter(
-            self.config.TENSORBOARD_DIR, flush_secs=self.flush_secs
+            self.config.get("tensorboard_dir"), flush_secs=self.flush_secs
         ) as writer:
-            if os.path.isfile(self.config.EVAL_CKPT_PATH_DIR):
-                # evaluate singe checkpoint
-                proposed_index = get_checkpoint_id(
-                    self.config.EVAL_CKPT_PATH_DIR
-                )
+            single_checkpoint = os.path.join(self.config.get("checkpoint_folder"), self.config.get("eval_checkpoint_file"))
+            if os.path.isfile(single_checkpoint):
+                # evaluate a singe checkpoint
+                proposed_index = get_checkpoint_id(single_checkpoint)
                 if proposed_index is not None:
                     ckpt_idx = proposed_index
                 else:
                     ckpt_idx = 0
                 self._eval_checkpoint(
-                    self.config.EVAL_CKPT_PATH_DIR,
+                    single_checkpoint,
                     writer,
                     checkpoint_index=ckpt_idx,
                 )
             else:
-                # evaluate multiple checkpoints in order
+                # evaluate all checkpoints in the directory in order
                 prev_ckpt_ind = -1
                 while True:
                     current_ckpt = None
                     while current_ckpt is None:
                         current_ckpt = poll_checkpoint_folder(
-                            self.config.EVAL_CKPT_PATH_DIR, prev_ckpt_ind
+                            self.config.get("checkpoint_folder"), prev_ckpt_ind
                         )
                         time.sleep(2)  # sleep for 2 secs before polling again
                     logger.info(f"=======current_ckpt: {current_ckpt}=======")
@@ -149,77 +163,87 @@ class BaseRLTrainer(BaseTrainer):
     methods should be hosted here.
     """
     device: torch.device  # type: ignore
-    config: Config
     video_option: List[str]
     num_updates_done: int
     num_steps_done: int
     _flush_secs: int
     _last_checkpoint_percent: float
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config_filename) -> None:
         super().__init__()
-        assert config is not None, "needs config file to initialize trainer"
-        self.config = config
+        assert config_filename is not None, "needs config file to initialize trainer"
+        config_file = os.path.join(config_path, config_filename)
+        self.config = parse_config(config_file)
         self._flush_secs = 30
         self.num_updates_done = 0
         self.num_steps_done = 0
         self._last_checkpoint_percent = -1.0
 
-        if config.NUM_UPDATES != -1 and config.TOTAL_NUM_STEPS != -1:
+        self.num_updates = self.config.get("num_updates")
+        self.total_num_steps = self.config.get("total_num_steps")
+        self.num_checkpoints = self.config.get("num_checkpoints")
+        self.checkpoint_interval = self.config.get("checkpoint_interval")
+        self.validate_config_para()
+
+        
+    def validate_config_para(self):
+        if self.num_updates != -1 and self.total_num_steps != -1:
             raise RuntimeError(
                 "NUM_UPDATES and TOTAL_NUM_STEPS are both specified.  One must be -1.\n"
                 " NUM_UPDATES: {} TOTAL_NUM_STEPS: {}".format(
-                    config.NUM_UPDATES, config.TOTAL_NUM_STEPS
+                    self.num_updates, self.total_num_steps
                 )
             )
 
-        if config.NUM_UPDATES == -1 and config.TOTAL_NUM_STEPS == -1:
+        if self.num_updates == -1 and self.total_num_steps == -1:
             raise RuntimeError(
                 "One of NUM_UPDATES and TOTAL_NUM_STEPS must be specified.\n"
                 " NUM_UPDATES: {} TOTAL_NUM_STEPS: {}".format(
-                    config.NUM_UPDATES, config.TOTAL_NUM_STEPS
+                    self.num_updates, self.total_num_steps
                 )
             )
 
-        if config.NUM_CHECKPOINTS != -1 and config.CHECKPOINT_INTERVAL != -1:
+        if self.num_checkpoints != -1 and self.checkpoint_interval != -1:
             raise RuntimeError(
                 "NUM_CHECKPOINTS and CHECKPOINT_INTERVAL are both specified."
                 "  One must be -1.\n"
                 " NUM_CHECKPOINTS: {} CHECKPOINT_INTERVAL: {}".format(
-                    config.NUM_CHECKPOINTS, config.CHECKPOINT_INTERVAL
+                    self.num_checkpoints, self.checkpoint_interval 
                 )
             )
 
-        if config.NUM_CHECKPOINTS == -1 and config.CHECKPOINT_INTERVAL == -1:
+        if self.num_checkpoints == -1 and self.checkpoint_interval == -1:
             raise RuntimeError(
                 "One of NUM_CHECKPOINTS and CHECKPOINT_INTERVAL must be specified"
                 " NUM_CHECKPOINTS: {} CHECKPOINT_INTERVAL: {}".format(
-                    config.NUM_CHECKPOINTS, config.CHECKPOINT_INTERVAL
+                    self.num_checkpoints, self.checkpoint_interval
                 )
-            )
+            )    
 
     def percent_done(self) -> float:
-        if self.config.NUM_UPDATES != -1:
-            return self.num_updates_done / self.config.NUM_UPDATES
+        if self.num_updates != -1:
+            return self.num_updates_done / self.num_updates
         else:
-            return self.num_steps_done / self.config.TOTAL_NUM_STEPS
+            return self.num_steps_done / self.total_num_steps
 
     def is_done(self) -> bool:
         return self.percent_done() >= 1.0
 
     def should_checkpoint(self) -> bool:
         needs_checkpoint = False
-        if self.config.NUM_CHECKPOINTS != -1:
-            checkpoint_every = 1 / self.config.NUM_CHECKPOINTS
+        # use num_checkpoints
+        if self.num_checkpoints != -1:
+            checkpoint_every = 1 / self.num_checkpoints
             if (
                 self._last_checkpoint_percent + checkpoint_every
                 < self.percent_done()
             ):
                 needs_checkpoint = True
                 self._last_checkpoint_percent = self.percent_done()
+        # use checkpoint_interval
         else:
             needs_checkpoint = (
-                self.num_updates_done % self.config.CHECKPOINT_INTERVAL
+                self.num_updates_done % self.checkpoint_interval
             ) == 0
 
         return needs_checkpoint
@@ -227,13 +251,13 @@ class BaseRLTrainer(BaseTrainer):
     def _should_save_resume_state(self) -> bool:
         return SAVE_STATE.is_set() or (
             (
-                not self.config.RL.preemption.save_state_batch_only
+                not self.config.get("preemption_save_state_batch_only")
                 or is_slurm_batch_job()
             )
             and (
                 (
                     int(self.num_updates_done + 1)
-                    % self.config.RL.preemption.save_resume_state_interval
+                    % int(self.config.get("preemption_save_resume_state_interval"))
                 )
                 == 0
             )
@@ -278,7 +302,7 @@ class BaseRLTrainer(BaseTrainer):
     @staticmethod
     def _pause_envs(
         envs_to_pause: List[int],
-        envs: Union[VectorEnv, RLEnv, Env],
+        envs: Union[VectorEnv, NavEnv],
         test_recurrent_hidden_states: Tensor,
         not_done_masks: Tensor,
         current_episode_reward: Tensor,
@@ -286,7 +310,7 @@ class BaseRLTrainer(BaseTrainer):
         batch: Dict[str, Tensor],
         rgb_frames: Union[List[List[Any]], List[List[ndarray]]],
     ) -> Tuple[
-        Union[VectorEnv, RLEnv, Env],
+        Union[VectorEnv, NavEnv],
         Tensor,
         Tensor,
         Tensor,

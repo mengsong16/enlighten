@@ -27,11 +27,13 @@ from torch import nn as nn
 
 from habitat import logger
 
-from habitat_baselines.common.tensor_dict import DictTree, TensorDict
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
+from enlighten.agents.common.tensor_dict import DictTree, TensorDict
+from enlighten.utils.tensorboard_utils import TensorboardWriter
+
 from habitat_sim.utils import profiling_utils
 
-import cv2
+from enlighten.utils.image_utils import try_cv2_import
+cv2 = try_cv2_import()
 
 @attr.s(auto_attribs=True, slots=True)
 class ObservationBatchingCache:

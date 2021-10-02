@@ -30,7 +30,7 @@ from habitat import logger
 from enlighten.agents.models import CNNPolicy, ResNetPolicy
 from enlighten.agents.common.tensor_related import batch_obs
 from enlighten.agents.common.seed import set_seed
-from enlighten.utils.utils import parse_config
+from enlighten.utils.config_utils import parse_config
 from enlighten.utils.path import *
 from enlighten.envs import NavEnv
 
@@ -62,7 +62,7 @@ class PPOAgent(Agent):
         self.env = env
         self.config = parse_config(config_file)
         self.device = (
-            torch.device("cuda:{}".format(int(self.config.get("gpu_id"))))
+            torch.device("cuda:{}".format(int(self.config.get("torch_gpu_id"))))
             if torch.cuda.is_available()
             else torch.device("cpu")
         )

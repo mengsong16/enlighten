@@ -13,7 +13,8 @@ import habitat_sim
 from habitat_sim.gfx import LightInfo, LightPositionModel, DEFAULT_LIGHTING_KEY, NO_LIGHT_KEY
 from habitat_sim.utils.common import quat_from_angle_axis
 
-from enlighten.utils.utils import parse_config, get_rotation_quat, euclidean_distance 
+from enlighten.utils.config_utils import parse_config
+from enlighten.utils.geometry_utils import get_rotation_quat, euclidean_distance 
 from enlighten.utils.path import *
 
 import abc
@@ -40,7 +41,10 @@ from garage import Environment, EnvSpec, EnvStep, StepType
 from garage.envs import GymEnv
 from PIL import Image
 from enlighten.utils.viewer import MyViewer
-import cv2
+
+from enlighten.utils.image_utils import try_cv2_import
+cv2 = try_cv2_import()
+
 from skimage.color import label2rgb 
 
 from habitat.utils.visualizations import maps
@@ -159,9 +163,10 @@ class SensorSuite:
 class NavEnv(gym.Env):
     r"""Base gym navigation environment
     """
-
-    def __init__(self, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml")):
+    # config_file could be a string or a parsed config
+    def __init__(self, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml"), dataset=None):
         self.config = parse_config(config_file)
+        self.dataset = dataset
     
         # create simulator configuration
         self.sim_config, sensors = self.create_sim_config()
@@ -567,9 +572,9 @@ class NavEnv(gym.Env):
             print("Error: image channel is neither 1 nor 3!")
 
         # save observation 
-        if self.config.get("save_observations"):
+        if "disk" in list(self.config.get("eval_video_option")):
             filename = str(self.step_count_per_episode) + ".jpg"
-            cv2.imwrite(os.path.join(output_path, filename), img)    
+            cv2.imwrite(os.path.join(video_path, filename), img)    
         
     
         return img

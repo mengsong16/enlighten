@@ -23,6 +23,7 @@ from typing import (
     Union,
     cast,
 )
+from typing import Optional, Type
 
 import attr
 import gym
@@ -32,17 +33,25 @@ from gym import spaces
 # import habitat
 # from habitat.core.env import Env, RLEnv
 from habitat.core.logging import logger
-from habitat.core.utils import tile_images
-from habitat.utils import profiling_wrapper
-from habitat.utils.pickle5_multiprocessing import ConnectionWrapper
+
+from habitat_sim.utils import profiling_utils
+
+from enlighten.utils.image_utils import tile_images
+from enlighten.utils.pickle5_multiprocessing import ConnectionWrapper
 
 import os
 from enlighten.envs import NavEnv
 from enlighten.utils.path import *
-from enlighten.utils.utils import parse_config
+from enlighten.utils.config_utils import parse_config
+
 from garage.envs import GymEnv
 from garage import EnvSpec
 
+import copy
+
+import random
+
+from enlighten.datasets.pointnav_dataset import make_dataset
 
 try:
     # Use torch.multiprocessing if we can.
@@ -227,7 +236,7 @@ class VectorEnv:
         return self._num_envs - len(self._paused)
 
     @staticmethod
-    @profiling_wrapper.RangeContext("_worker_env")
+    @profiling_utils.RangeContext("_worker_env")
     def _worker_env(
         connection_read_fn: Callable,
         connection_write_fn: Callable,
@@ -260,7 +269,7 @@ class VectorEnv:
                         observations, reward, done, info = env.step(**data)
                         if auto_reset_done and done:
                             observations = env.reset()
-                        with profiling_wrapper.RangeContext(
+                        with profiling_utils.RangeContext(
                             "worker write after step"
                         ):
                             connection_write_fn(
@@ -308,7 +317,7 @@ class VectorEnv:
                 else:
                     raise NotImplementedError(f"Unknown command {command}")
 
-                with profiling_wrapper.RangeContext("worker wait for command"):
+                with profiling_utils.RangeContext("worker wait for command"):
                     command, data = connection_read_fn()
 
         except KeyboardInterrupt:
@@ -427,7 +436,7 @@ class VectorEnv:
         self._warn_cuda_tensors(action)
         self._connection_write_fns[index_env]((STEP_COMMAND, action))
 
-    @profiling_wrapper.RangeContext("wait_step_at")
+    @profiling_utils.RangeContext("wait_step_at")
     def wait_step_at(self, index_env: int) -> Any:
         return self._connection_read_fns[index_env]()
 
@@ -452,7 +461,7 @@ class VectorEnv:
         for index_env, act in enumerate(data):
             self.async_step_at(index_env, act)
 
-    @profiling_wrapper.RangeContext("wait_step")
+    @profiling_utils.RangeContext("wait_step")
     def wait_step(self) -> List[Any]:
         r"""Wait until all the asynchronized environments have synchronized."""
         return [
@@ -573,7 +582,7 @@ class VectorEnv:
         images = [read_fn() for read_fn in self._connection_read_fns]
         tile = tile_images(images)
         if mode == "human":
-            from habitat.core.utils import try_cv2_import
+            from enlighten.utils.image_utils import try_cv2_import
 
             cv2 = try_cv2_import()
 
@@ -664,3 +673,133 @@ class ThreadedVectorEnv(VectorEnv):
             for q, read_wrapper in zip(parent_write_queues, read_fns)
         ]
         return read_fns, write_fns
+
+# make one environment
+# def _make_nav_env_fn(
+#     config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
+# ) -> NavEnv:
+#     """Constructor for default enlighten :ref:`enlighten.NavEnv`.
+
+#     :param config_filename: configuration file name for environment.
+#     :param rank: rank for setting seed of environment
+#     :return: :ref:`enlighten.NavEnv` object
+#     """
+#     # get configuration
+#     config_file=os.path.join(config_path, config_filename)
+#     # create env
+#     env = NavEnv(config_file=config_file)
+#     # set seed
+#     env.seed(rank)
+
+#     return env
+
+
+# make env and dataset
+def make_env_dataset_fn(config, seed, dataset_type):
+    r"""Creates an env of type env_class with specified config and rank.
+    This is to be passed in as an argument when creating VectorEnv.
+
+    Args:
+        config: root exp config that has core env config node as well as
+            env-specific config node.
+        env_class: class type of the env to be created.
+
+    Returns:
+        env object created according to specification.
+    """
+    dataset = make_dataset(id_dataset=dataset_type, config=config)
+    env = NavEnv(config_file=config, dataset=dataset)
+    env.seed(seed)
+    return env
+
+# construct vector envs from a dataset
+# TO DO: check whether seed, scene_contents are different for each env
+def construct_envs(
+    config,
+    workers_ignore_signals: bool = False,
+) -> VectorEnv:
+    r"""Create VectorEnv object with specified config and env class type.
+    To allow better performance, dataset are split into small ones for
+    each individual env, grouped by scenes.
+
+    :param config: configs that contain num_environments as well as information
+    :param necessary to create individual environments.
+    :param workers_ignore_signals: Passed to :ref:`habitat.VectorEnv`'s constructor
+
+    :return: VectorEnv object created according to specification.
+    """
+
+    num_environments = int(config.get("num_environments"))
+    
+    # make dataset object
+    dataset = make_dataset(config.get("dataset_type"))
+    scenes = config.get("content_scenes")
+    # load all scenes in the dataset
+    if "*" in config.get("content_scenes"):
+        scenes = dataset.get_scenes_to_load(config)
+
+    # shuffle scenes
+    if num_environments > 1:
+        if len(scenes) == 0:
+            raise RuntimeError(
+                "No scenes to load, multiple process logic relies on being able to split scenes uniquely between processes"
+            )
+
+        if len(scenes) < num_environments:
+            raise RuntimeError(
+                "reduce the number of environments as there "
+                "aren't enough number of scenes.\n"
+                "num_environments: {}\tnum_scenes: {}".format(
+                    num_environments, len(scenes)
+                )
+            )
+
+        
+        random.shuffle(scenes)
+
+    # assign scenes to each env
+    scene_splits: List[List[str]] = [[] for _ in range(num_environments)]
+    for idx, scene in enumerate(scenes):
+        scene_splits[idx % len(scene_splits)].append(scene)
+
+    assert sum(map(len, scene_splits)) == len(scenes)
+
+    configs = []
+    seeds = []
+    dataset_types = []
+    for i in range(num_environments):
+        #proc_config = config.clone()
+        #proc_config.defrost()
+
+        #task_config = proc_config.TASK_CONFIG
+        seed = int(config.get("seed") + i)
+        seeds.append(seed)
+
+        cur_config = copy.deepcopy(config)
+        if len(scenes) > 0:
+            #task_config.DATASET.CONTENT_SCENES = scene_splits[i]
+            cur_config["content_scenes"] = scene_splits[i]
+
+        #task_config.SIMULATOR.HABITAT_SIM_V0.GPU_DEVICE_ID = (
+        #    config.get("simulator_gpu_id")
+        #)
+
+        #task_config.SIMULATOR.AGENT_0.SENSORS = config.SENSORS
+
+        #proc_config.freeze()
+        configs.append(cur_config)
+
+    env_fn_args = tuple(zip(configs, seeds, dataset_types))
+
+    envs = VectorEnv(
+        make_env_fn=make_env_dataset_fn,
+        env_fn_args=env_fn_args,
+        workers_ignore_signals=workers_ignore_signals,
+    ) 
+
+    # envs = VectorEnv(
+    #     make_env_fn=_make_env_fn,
+    #     env_fn_args=tuple(zip(configs, env_classes)),
+    #     workers_ignore_signals=workers_ignore_signals,
+    # )
+    return envs

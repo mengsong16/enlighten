@@ -1,5 +1,6 @@
 import numpy as np
-import cv2
+from enlighten.utils.image_utils import try_cv2_import
+cv2 = try_cv2_import()
 from habitat.utils.visualizations import maps
 import math
 import magnum as mn

@@ -5,8 +5,8 @@ import numpy as np
 from gym import spaces
 
 from enlighten.envs import HabitatSensor, Dictionary_Observations
-from enlighten.utils.utils import parse_config
-from enlighten.utils.utils import quaternion_rotate_vector, cartesian_to_polar, quaternion_from_coeff
+from enlighten.utils.config_utils import parse_config
+from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar, quaternion_from_coeff
 
 class PointGoal(HabitatSensor):
     r"""Sensor for PointGoal observations which are used in PointGoal Navigation.

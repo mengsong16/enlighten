@@ -8,7 +8,7 @@ import os
 
 from enlighten.envs import VectorEnv, NavEnv
 from enlighten.utils.path import *
-from enlighten.utils.utils import parse_config
+from enlighten.utils.config_utils import parse_config
 
 import cv2
 
@@ -66,7 +66,8 @@ def vec_env_test_fn():
         
         for idx, obs in enumerate(observations):
             # print(idx, obs)
-            cv2.imwrite(f'{idx}.jpg', obs[0])
+            print(obs)
+            cv2.imwrite(f'{idx}.jpg', obs[0]['color_sensor'])
 
 if __name__ == '__main__':
     vec_env_test_fn()

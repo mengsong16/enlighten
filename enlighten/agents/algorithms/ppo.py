@@ -16,8 +16,6 @@ from enlighten.agents.common.rollout_storage import RolloutStorage
 from enlighten.agents.models import Policy
 
 
-
-
 class PPO(nn.Module):
     def __init__(
         self,

@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 #from habitat_baselines.common.tensor_dict import TensorDict
-from enlighten.agents.common import TensorDict
+from enlighten.agents.common.tensor_dict import TensorDict
 
 # a buffer stores a segment of trajectory 
 # for on-policy algorithms, this is equal to store one segment rollout collected by num_envs workers

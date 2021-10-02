@@ -28,7 +28,7 @@ from typing import (
 from collections import OrderedDict
 from enum import Enum
 
-from enlighten.utils.utils import parse_config
+from enlighten.utils.config_utils import parse_config
 
 VisualObservation = Union[np.ndarray]
 

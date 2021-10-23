@@ -13,6 +13,8 @@ import habitat_sim
 from habitat_sim.gfx import LightInfo, LightPositionModel, DEFAULT_LIGHTING_KEY, NO_LIGHT_KEY
 from habitat_sim.utils.common import quat_from_angle_axis
 
+import attr
+
 from enlighten.utils.config_utils import parse_config
 from enlighten.utils.geometry_utils import get_rotation_quat, euclidean_distance 
 from enlighten.utils.path import *
@@ -158,7 +160,25 @@ class SensorSuite:
             dtype=np.float32
         )    
 
+# define new action stop in habitat simulator
+@attr.s(auto_attribs=True, slots=True)
+class StopSpec:
+    pass
 # gym.Env definition: https://github.com/openai/gym/blob/267916b9d268c37cc948bafe35606c665aac53ac/gym/core.py
+
+@habitat_sim.registry.register_move_fn(body_action=True)
+class Stop(habitat_sim.SceneNodeControl):
+    def __call__(
+        self, scene_node: habitat_sim.SceneNode, actuation_spec: StopSpec
+    ):
+        return
+
+# register the function with a custom name
+# move robot body according to this action definition
+habitat_sim.registry.register_move_fn(
+    Stop, name="stop", body_action=True
+)
+
 
 class NavEnv(gym.Env):
     r"""Base gym navigation environment
@@ -218,8 +238,9 @@ class NavEnv(gym.Env):
         return habitat_sim.Configuration(sim_config, [agent_cfg]), sensors
 
     def create_sim_action_space(self):
-        self.action_mapping = ["move_forward", "turn_left", "turn_right", "look_up", "look_down"]
+        self.action_mapping = ["stop", "move_forward", "turn_left", "turn_right", "look_up", "look_down"]
         action_space = {
+            "stop": habitat_sim.agent.ActionSpec("stop", habitat_sim.agent.ActuationSpec(amount=0.0)),
             "move_forward": habitat_sim.agent.ActionSpec(
                 "move_forward", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("forward_resolution")))  # move -a meter along z axis (translate along local frame)
             ),
@@ -939,8 +960,48 @@ def test_rollout_storage():
     print("Goal observation space: %s"%(env.get_goal_observation_space()))
     print("Goal observation space dim: %s"%(len(env.get_goal_observation_space().shape)))
 
+def test_stop_action():
+    env =  NavEnv()
+    for episode in range(2):
+        print("***********************************")
+        print('Episode: {}'.format(episode))
+        step = 0
+        env.reset()
+        print('-----------------------------')
+        print('Reset')
+        env.print_agent_state()
+        env.print_collide_info()
+        print("Goal position: %s"%(env.goal_position))
+        print("Goal observation: "+str(env.get_goal_observation().shape))
+        #print("Goal observation: %s"%(env.get_goal_observation()))
+        
+        print('-----------------------------')
+        for i in range(3):  # max steps per episode
+            obs, reward, done, info = env.step(0)
+            
+            print('-----------------------------')
+            print('step: %d'%(i+1))
+            print('action: %s'%(env.action_index_to_name(0)))
+            env.print_agent_state()
+            print('agent angle [euler]: '+str(env.get_agent_rotation_euler()))
+            print('reward: %f'%(reward))
+            print('done: '+str(done))
+            env.print_collide_info()
+            
+            print('-------------------------------')
+
+            step += 1
+            if done:
+                break
+               
+        print('Episode finished after {} timesteps.'.format(step))
+        print('Collision count: %d'%(env.collision_count_per_episode))
+
 if __name__ == "__main__":    
-    #test_env(gym_env=True)
+    test_env(gym_env=True)
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
-    test_rollout_storage()
+    #test_rollout_storage()
+    #test_stop_action()
+
+    

@@ -127,7 +127,6 @@ preemption_append_slurm_job_id: false
 preemption_save_state_batch_only: false
 # Number of gradient updates between saving the resume state
 preemption_save_resume_state_interval: 100
-force_distributed: true
 # The PyTorch distributed backend to use
 distrib_backend: GLOO
 

@@ -18,6 +18,7 @@ import attr
 from enlighten.utils.config_utils import parse_config
 from enlighten.utils.geometry_utils import get_rotation_quat, euclidean_distance 
 from enlighten.utils.path import *
+from enlighten.tasks.measures import Measurements
 
 import abc
 
@@ -204,11 +205,15 @@ class NavEnv(gym.Env):
         self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id)
         # create gym action space
         self.action_space = self.create_gym_action_space()
-        # viewer
+        # initialize viewer
         self.viewer = None
         # set start and goal positions
         self.set_start_goal()
+        # set measurements
+        measure_ids = list(self.config.get("measurements"))
+        self.measurements = Measurements(measure_ids=measure_ids, env=self, config=self.config)
         
+
     def create_sim_config(self):
         # simulator configuration
         sim_config = habitat_sim.SimulatorConfiguration()
@@ -478,9 +483,9 @@ class NavEnv(gym.Env):
     def step(self, action):
         action_name = self.action_mapping[action]
         sim_obs = self.sim.step(action_name)
-        self.did_collide = self.extract_collisions(sim_obs)
-        if self.did_collide:
-            self.collision_count_per_episode += 1
+        # self.did_collide = self.extract_collisions(sim_obs)
+        # if self.did_collide:
+        #     self.collision_count_per_episode += 1
         
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
@@ -488,7 +493,7 @@ class NavEnv(gym.Env):
         if self.config.get("goal_conditioned"):
             obs = self.add_goal_obs(obs)
 
-        self.step_count_per_episode += 1
+        #self.step_count_per_episode += 1
 
         # update flashlight: point light x m in front of the robot 
         if self.dark_mode:
@@ -496,11 +501,17 @@ class NavEnv(gym.Env):
             LightInfo(vector=[0.0, 0.0, -self.flashlight_z, 1.0], model=LightPositionModel.Camera)
         ], "current_scene_lighting")
 
-        # compute reward
-        reward, is_success = self.get_reward()
+        # update all measurements
+        self.measurements.update_measures(
+            measurements=self.measurements,
+            sim_obs=sim_obs,
+        )
 
-        #done = random.choice([True, False])
-        done = self.get_done(is_success=is_success)
+        #self.measurements.print_measures()
+        
+        reward = self.get_reward()
+
+        done = self.is_done()
 
         info = {}
         return obs, reward, done, info              
@@ -518,11 +529,13 @@ class NavEnv(gym.Env):
         if self.config.get("goal_conditioned"):
             obs = self.add_goal_obs(obs)
 
-        self.did_collide = self.extract_collisions(sim_obs)
-        self.collision_count_per_episode = 0
-        self.step_count_per_episode = 0
+        # self.did_collide = self.extract_collisions(sim_obs)
+        # self.collision_count_per_episode = 0
+        #self.step_count_per_episode = 0
 
-        self.previous_measure = self.get_measure()
+        self.measurements.reset_measures(measurements=self.measurements)
+
+        #self.previous_measure = self.get_current_distance()
 
         return obs
 
@@ -536,6 +549,15 @@ class NavEnv(gym.Env):
 
     def set_render_mode(self):
         self.metadata['render.modes'] = ['color_sensor', 'depth_sensor', 'semantic_sensor']  
+
+    def get_current_step(self):
+        return self.measurements.measures["steps"].get_metric()
+
+    def get_current_collision_counts(self):
+        return self.measurements.measures["collisions"].get_metric()["count"]   
+
+    def is_collision(self):
+        return self.measurements.measures["collisions"].get_metric()["is_collision"]         
 
     def render(self, mode: str = "color_sensor") -> Any:
         r"""
@@ -594,7 +616,10 @@ class NavEnv(gym.Env):
 
         # save observation 
         if "disk" in list(self.config.get("eval_video_option")):
-            filename = str(self.step_count_per_episode) + ".jpg"
+            filename = str(self.get_current_step()) + ".jpg"
+            if not os.path.exists(video_path):
+                os.mkdir(video_path)
+            
             cv2.imwrite(os.path.join(video_path, filename), img)    
         
     
@@ -611,10 +636,7 @@ class NavEnv(gym.Env):
  
 
     def print_collide_info(self):
-        if self.did_collide is None:
-            print("collide: Unknown")
-        else:
-            print('collide: %s'%(str(self.did_collide))) 
+        print('collide: %s'%(str(self.is_collision()))) 
 
     def get_current_scene_light_vector(self):
         print("******************************************************************")
@@ -664,10 +686,14 @@ class NavEnv(gym.Env):
         return path_points
 
     # get geodesic distance from current position to goal
-    def get_geodesic_distance(self):
+    def get_geodesic_distance_single_goal(self):
         found_path, geodesic_distance, _ = self.shortest_path(start_point=self.get_agent_position(), end_point=self.goal_position)
         return found_path, geodesic_distance    
 
+    def get_geodesic_distance_multi_goals(self, goal_positions):
+        found_path, geodesic_distance, _ = self.shortest_path(start_point=self.get_agent_position(), 
+        end_point=goal_positions)
+        return found_path, geodesic_distance
     # get euclidean distance from current position to goal
     def get_euclidean_distance(self):
         return euclidean_distance(position_a=self.get_agent_position(), position_b=self.goal_position)
@@ -745,14 +771,9 @@ class NavEnv(gym.Env):
         
         return top_down_map
 
-    def is_success(self, distance):
-        if distance <= float(self.config.get("success_distance")):
-            return True
-        else:
-            return False
     
-    def get_measure(self):
-        found_path, geodesic_distance = self.get_geodesic_distance()
+    def get_current_distance(self):
+        found_path, geodesic_distance = self.get_geodesic_distance_single_goal()
         if found_path:
             current_measure = geodesic_distance
         else:    
@@ -761,35 +782,14 @@ class NavEnv(gym.Env):
         return current_measure
 
     def get_reward(self):
-        reward = float(self.config.get("slack_reward"))
+        return self.measurements.measures["point_goal_reward"].get_metric()    
 
-        #print("slack reward: "+str(float(self.config.get("slack_reward"))))
-        
-        current_measure = self.get_measure()
 
-        reward += (self.previous_measure - current_measure)
-        self.previous_measure = current_measure
+    def is_done(self):
+        return self.measurements.measures["done"].get_metric()  
 
-        if self.is_success(distance=current_measure):
-            reward += float(self.config.get("success_reward"))
-            is_success = True
-        else:
-            is_success = False    
-        
-        return reward, is_success
-
-    def episode_over(self):
-        if self.collision_count_per_episode >= int(self.config.get("max_collisions_per_episode")) \
-            or self.step_count_per_episode >= int(self.config.get("max_steps_per_episode")):
-            return True
-        else:
-            return False    
-
-    def get_done(self, is_success):
-        if self.episode_over() or is_success:
-            return True
-        else:
-            return False
+    def is_success(self):
+        return bool(self.measurements.measures["success"].get_metric())      
     
     def close(self):
         self.sim.close()
@@ -812,7 +812,7 @@ def move_forward(env):
         print('action: move_forward')
         env.print_agent_state()
         print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
-        env.print_collide_info()
+        #env.print_collide_info()
     
     print("***********************************")
 
@@ -830,7 +830,7 @@ def turn_left_move_forward(env):
         print('action: turn left')
         env.print_agent_state()
         print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
-        env.print_collide_info()
+        #env.print_collide_info()
 
     # move forward (0.25m)
     action_index_2 = env.action_name_to_index("move_forward")
@@ -840,7 +840,7 @@ def turn_left_move_forward(env):
         print('action: move_forward')
         env.print_agent_state()
         print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
-        env.print_collide_info()
+        #env.print_collide_info()
     
     print("***********************************")
 
@@ -869,12 +869,12 @@ def test_env(gym_env=True):
     for episode in range(10):
         print("***********************************")
         print('Episode: {}'.format(episode))
-        step = 0
+        #step = 0
         env.reset()
         print('-----------------------------')
         print('Reset')
         env.print_agent_state()
-        env.print_collide_info()
+        #env.print_collide_info()
         print("Goal position: %s"%(env.goal_position))
         print("Goal observation: "+str(env.get_goal_observation().shape))
         #print("Goal observation: %s"%(env.get_goal_observation()))
@@ -904,23 +904,24 @@ def test_env(gym_env=True):
             #print(obs["depth_sensor"].shape)
             #print(obs["semantic_sensor"].shape)
             #print(obs)
-            env.print_agent_state()
             print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
             print('reward: %f'%(reward))
             print('done: '+str(done))
-            env.print_collide_info()
+            #env.print_collide_info()
             
             # Garage env needs set render mode explicitly
             render_obs = env.render(mode="color_sensor")
             print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
+
+            env.print_agent_state()
             print('-------------------------------')
 
-            step += 1
+            #step += 1
             if done:
                 break
                
-        print('Episode finished after {} timesteps.'.format(step))
-        print('Collision count: %d'%(env.collision_count_per_episode))
+        print('Episode finished after {} timesteps.'.format(i+1))
+        print('Collision count: %d'%(env.get_current_collision_counts()))
     
     print('-----------------------------')
     if gym_env:
@@ -936,7 +937,7 @@ def test_env(gym_env=True):
     bound = env.get_env_bounds()
     print("Scene range: " + str(bound[1]-bound[0]))
     #if not gym_env:
-    print("Env spec: " + str(env.spec))
+    #print("Env spec: " + str(env.spec))
     print('-----------------------------') 
     
     env.close() 
@@ -970,7 +971,7 @@ def test_stop_action():
         print('-----------------------------')
         print('Reset')
         env.print_agent_state()
-        env.print_collide_info()
+        #env.print_collide_info()
         print("Goal position: %s"%(env.goal_position))
         print("Goal observation: "+str(env.get_goal_observation().shape))
         #print("Goal observation: %s"%(env.get_goal_observation()))
@@ -986,7 +987,7 @@ def test_stop_action():
             print('agent angle [euler]: '+str(env.get_agent_rotation_euler()))
             print('reward: %f'%(reward))
             print('done: '+str(done))
-            env.print_collide_info()
+            #env.print_collide_info()
             
             print('-------------------------------')
 
@@ -995,7 +996,7 @@ def test_stop_action():
                 break
                
         print('Episode finished after {} timesteps.'.format(step))
-        print('Collision count: %d'%(env.collision_count_per_episode))
+        print('Collision count: %d'%(env.get_current_collision_counts()))
 
 if __name__ == "__main__":    
     test_env(gym_env=True)

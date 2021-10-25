@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Dict, Iterable, Union
 
 import attr
 import numpy as np
@@ -7,6 +7,9 @@ from gym import spaces
 from enlighten.datasets.pointnav_dataset import NavigationEpisode
 
 from habitat import logger
+
+from collections import OrderedDict
+
 
 class Measure:
     r"""Represents a measure that provides measurement on top of environment
@@ -25,14 +28,16 @@ class Measure:
     """
 
     _metric: Any
-    uuid: str
+    cls_uuid: str
+    #cls_uuid = "measure"
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.uuid = self._get_uuid(*args, **kwargs)
+        #self.cls_uuid = self._get_uuid(*args, **kwargs)
         self._metric = None
 
     def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
-        raise NotImplementedError
+        #raise NotImplementedError
+        return self.cls_uuid
 
     def reset_metric(self, *args: Any, **kwargs: Any) -> None:
         r"""Reset :ref:`_metric`, this method is called from :ref:`env.Env` on
@@ -53,129 +58,109 @@ class Measure:
         """
         return self._metric
 
+    def print_metric(self):
+        print(str(self.cls_uuid) + ":" + str(self._metric))
 
 class DistanceToGoal(Measure):
     """The measure calculates a distance towards the goal."""
 
-    cls_uuid: str = "distance_to_goal"
-
-    def __init__(
-        self, sim, config, *args: Any, **kwargs: Any
-    ):
+    # class attribute must have value
+    cls_uuid = "distance_to_goal"
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
         self._previous_position: Optional[Tuple[float, float, float]] = None
-        self._sim = sim
+        self._env = env
         self._config = config
-        self._episode_view_points: Optional[
-            List[Tuple[float, float, float]]
-        ] = None
 
-        super().__init__(**kwargs)
+        super().__init__()
 
-    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
-        return self.cls_uuid
-
-    def reset_metric(self, episode, *args: Any, **kwargs: Any):
+    
+    def reset_metric(self, episode=None, *args: Any, **kwargs: Any):
         self._previous_position = None
         self._metric = None
-        if self._config.get("distance_to") == "view_points":
-            self._episode_view_points = [
-                view_point.agent_state.position
-                for goal in episode.goals
-                for view_point in goal.view_points
-            ]
+        
         self.update_metric(episode=episode, *args, **kwargs)  # type: ignore
 
-    def update_metric(
-        self, episode: NavigationEpisode, *args: Any, **kwargs: Any
-    ):
-        current_position = self._sim.get_agent_state().position
+    def update_metric(self, episode: NavigationEpisode=None, *args: Any, **kwargs: Any):
+        current_position = self._env.get_agent_position()
 
+        # compute geodesic distance from current position to goal position
+        # if episode just starts or current position is far enough from previous position
         if self._previous_position is None or not np.allclose(
             self._previous_position, current_position, atol=1e-4
         ):
-            if self._config.get("distance_to") == "point":
-                distance_to_target = self._sim.geodesic_distance(
-                    current_position,
-                    [goal.position for goal in episode.goals],
-                    episode,
-                )
-            elif self._config.get("distance_to") == "view_points":
-                distance_to_target = self._sim.geodesic_distance(
-                    current_position, self._episode_view_points, episode
-                )
-            else:
-                wrong_distance_to = self._config.get("distance_to")
-                logger.error(
-                    f"Non valid distance_to parameter was provided: {wrong_distance_to}"
-                )
-
+            distance_to_target = self._env.get_current_distance()
+            
             self._previous_position = current_position
             self._metric = distance_to_target
 
+    
+
 class Collisions(Measure):
-    def __init__(self, sim, config, *args: Any, **kwargs: Any):
-        self._sim = sim
+    cls_uuid = "collisions"
+
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
+        self._env = env
         self._config = config
-        self._metric = None
+        #self._metric = None
         super().__init__()
 
-    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
-        return "collisions"
 
-    def reset_metric(self, episode, *args: Any, **kwargs: Any):
-        self._metric = None
+    def reset_metric(self, episode=None, *args: Any, **kwargs: Any):
+        self._metric = {"count": 0, "is_collision": False}
 
-    def update_metric(self, episode, action, *args: Any, **kwargs: Any):
-        if self._metric is None:
-            self._metric = {"count": 0, "is_collision": False}
-        self._metric["is_collision"] = False
-        if self._sim.previous_step_collided:
-            self._metric["count"] += 1
-            self._metric["is_collision"] = True
+    def update_metric(self, sim_obs, episode=None, *args: Any, **kwargs: Any):
+        did_collide = self._env.extract_collisions(sim_obs)
+        if did_collide is None:
+            self._metric["is_collision"] = False
+        else:    
+            if did_collide:
+                self._metric["count"] += 1
+                self._metric["is_collision"] = True
+            else:
+                self._metric["is_collision"] = False
 
+#  count steps per episode
+class Steps(Measure):
+    cls_uuid = "steps"
+
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
+        self._env = env
+        self._config = config
+        #self._metric = None
+        super().__init__()
+
+    def reset_metric(self, episode=None, *args: Any, **kwargs: Any):
+        self._metric = 0
+
+    def update_metric(self, episode=None, *args: Any, **kwargs: Any):
+        self._metric += 1
 
 class Success(Measure):
     r"""Whether or not the agent succeeded at its task
 
     This measure depends on DistanceToGoal measure.
     """
+    cls_uuid = "success"
 
-    cls_uuid: str = "success"
-
-    def __init__(
-        self, sim, config, *args: Any, **kwargs: Any
-    ):
-        self._sim = sim
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
+        self._env = env
         self._config = config
 
         super().__init__()
 
-    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
-        return self.cls_uuid
+    
+    def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        measurements.check_measure_dependencies(self.cls_uuid, [DistanceToGoal.cls_uuid])
+        self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)  # type: ignore
 
-    def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
-        task.measurements.check_measure_dependencies(
-            self.uuid, [DistanceToGoal.cls_uuid]
-        )
-        self.update_metric(episode=episode, task=task, *args, **kwargs)  # type: ignore
+    def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        distance_to_target = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
 
-    def update_metric(
-        self, episode, task, *args: Any, **kwargs: Any
-    ):
-        distance_to_target = task.measurements.measures[
-            DistanceToGoal.cls_uuid
-        ].get_metric()
-
-        if (
-            hasattr(task, "is_stop_called")
-            and task.is_stop_called  # type: ignore
-            and distance_to_target < self._config.get("success_distance")
-        ):
+        # succeed
+        if (distance_to_target < self._config.get("success_distance")):
             self._metric = 1.0
         else:
             self._metric = 0.0
-
-
 
 class SPL(Measure):
     r"""SPL (Success weighted by Path Length)
@@ -187,47 +172,38 @@ class SPL(Measure):
     performance for sophisticated goal areas.
     """
 
-    def __init__(
-        self, sim, config, *args: Any, **kwargs: Any
-    ):
+    cls_uuid = "spl"
+
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
         self._previous_position = None
         self._start_end_episode_distance = None
         self._agent_episode_distance: Optional[float] = None
-        self._episode_view_points = None
-        self._sim = sim
+        self._env = env
         self._config = config
 
         super().__init__()
 
-    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
-        return "spl"
 
-    def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
-        task.measurements.check_measure_dependencies(
-            self.uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid]
+    def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        measurements.check_measure_dependencies(
+            self.cls_uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid]
         )
 
-        self._previous_position = self._sim.get_agent_state().position
+        self._previous_position = self._env.get_agent_position()
         self._agent_episode_distance = 0.0
-        self._start_end_episode_distance = task.measurements.measures[
+        self._start_end_episode_distance = measurements.measures[
             DistanceToGoal.cls_uuid
         ].get_metric()
-        self.update_metric(  # type:ignore
-            episode=episode, task=task, *args, **kwargs
-        )
+        self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)
 
     def _euclidean_distance(self, position_a, position_b):
         return np.linalg.norm(position_b - position_a, ord=2)
 
-    def update_metric(
-        self, episode, task, *args: Any, **kwargs: Any
-    ):
-        ep_success = task.measurements.measures[Success.cls_uuid].get_metric()
+    def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        ep_success = measurements.measures[Success.cls_uuid].get_metric()
 
-        current_position = self._sim.get_agent_state().position
-        self._agent_episode_distance += self._euclidean_distance(
-            current_position, self._previous_position
-        )
+        current_position = self._env.get_agent_position()
+        self._agent_episode_distance += self._euclidean_distance(current_position, self._previous_position)
 
         self._previous_position = current_position
 
@@ -239,7 +215,6 @@ class SPL(Measure):
         )
 
 
-
 class SoftSPL(SPL):
     r"""Soft SPL
 
@@ -247,24 +222,24 @@ class SoftSPL(SPL):
     success is now calculated as 1 - (ratio of distance covered to target).
     """
 
-    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
-        return "softspl"
+    cls_uuid = "softspl"
 
-    def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
-        task.measurements.check_measure_dependencies(
-            self.uuid, [DistanceToGoal.cls_uuid]
+    def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        measurements.check_measure_dependencies(
+            self.cls_uuid, [DistanceToGoal.cls_uuid]
         )
 
-        self._previous_position = self._sim.get_agent_state().position
+        self._previous_position = self._env.get_agent_position()
         self._agent_episode_distance = 0.0
-        self._start_end_episode_distance = task.measurements.measures[
+        self._start_end_episode_distance = measurements.measures[
             DistanceToGoal.cls_uuid
         ].get_metric()
-        self.update_metric(episode=episode, task=task, *args, **kwargs)  # type: ignore
+        self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)  # type: ignore
 
-    def update_metric(self, episode, task, *args: Any, **kwargs: Any):
-        current_position = self._sim.get_agent_state().position
-        distance_to_target = task.measurements.measures[
+    def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        current_position = self._env.get_agent_position()
+
+        distance_to_target = measurements.measures[
             DistanceToGoal.cls_uuid
         ].get_metric()
 
@@ -284,3 +259,151 @@ class SoftSPL(SPL):
                 self._start_end_episode_distance, self._agent_episode_distance
             )
         )
+
+class Done(Measure):
+    r"""Whether or not the episode ends
+    """
+    cls_uuid = "done"
+
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
+        self._env = env
+        self._config = config
+
+        super().__init__()
+
+    
+    def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        measurements.check_measure_dependencies(self.cls_uuid, [Success.cls_uuid, Steps.cls_uuid, Collisions.cls_uuid])
+        self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)  # type: ignore
+
+    def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        current_collision_count = measurements.measures[Collisions.cls_uuid].get_metric()["count"] 
+        current_step_count = measurements.measures[Steps.cls_uuid].get_metric()
+        success = measurements.measures[Success.cls_uuid].get_metric()
+
+        if bool(success):
+            self._metric = True
+        else:    
+            if current_collision_count >= int(self._config.get("max_collisions_per_episode")) \
+                or current_step_count >= int(self._config.get("max_steps_per_episode")):
+                self._metric = True
+            else:
+                self._metric = False 
+
+class PointGoalReward(Measure):
+    
+    cls_uuid = "point_goal_reward"
+
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
+        self._env = env
+        self._config = config
+        self._previous_measure = None
+
+        super().__init__()
+
+    
+    def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        measurements.check_measure_dependencies(self.cls_uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid])
+        self._previous_measure = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
+        
+        self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)  # type: ignore
+
+    def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        self._metric = float(self._config.get("slack_reward"))
+
+        current_measure = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
+
+        self._metric += (self._previous_measure - current_measure)
+        self._previous_measure = current_measure
+
+        success = measurements.measures[Success.cls_uuid].get_metric()
+        if bool(success):
+            self._metric += float(self._config.get("success_reward"))
+                  
+
+def create_one_measurement(measure_id, env, config):
+        if measure_id == "distance_to_goal":
+            return DistanceToGoal(env=env, config=config)
+        elif measure_id == "collisions":
+            return Collisions(env=env, config=config)
+        elif measure_id == "steps":
+            return Steps(env=env, config=config)
+        elif measure_id == "success":
+            return Success(env=env, config=config)
+        elif measure_id == "spl":
+            return SPL(env=env, config=config)   
+        elif measure_id == "softspl":
+            return SoftSPL(env=env, config=config)
+        elif measure_id == "done":
+            return Done(env=env, config=config)   
+        elif measure_id == "point_goal_reward":
+            return PointGoalReward(env=env, config=config)     
+        else:
+            print("Error: not defined measure id: "+str(measure_id)) 
+            return    
+
+# collection of all measurements
+class Measurements:
+    r"""Represents a set of Measures, with each :ref:`Measure` being
+    identified through a unique id.
+    """
+
+    measures: Dict[str, Measure]
+
+    def __init__(self, measure_ids, env, config) -> None:
+        """Constructor
+
+        :param measures: list containing :ref:`Measure`, uuid of each
+            :ref:`Measure` must be unique.
+        """
+        self.measures = OrderedDict()
+
+        for mid in measure_ids:
+            assert (
+                mid not in self.measures
+            ), "'{}' is duplicated measure uuid".format(mid)
+            
+            self.measures[mid] = create_one_measurement(measure_id=mid, env=env, config=config)
+
+            
+
+    def reset_measures(self, *args: Any, **kwargs: Any) -> None:
+        for measure in self.measures.values():
+            measure.reset_metric(*args, **kwargs)
+
+    def update_measures(self, *args: Any, **kwargs: Any) -> None:
+        for measure in self.measures.values():
+            measure.update_metric(*args, **kwargs)
+
+    def _get_measure_index(self, measure_name):
+        return list(self.measures.keys()).index(measure_name)
+
+
+    def print_measures(self):
+        print('-------------- Measures ---------------------')
+        for measure in self.measures.values():
+            measure.print_metric()   
+
+    # check if measure A depends on measure B (requires computing measure B), B should have smaller id
+    # e.g. success measure requires distanc to goal measure
+    def check_measure_dependencies(
+        self, measure_name: str, dependencies: List[str]
+    ):
+        r"""Checks if dependencies measures are enabled and calculate that the measure
+        :param measure_name: a name of the measure for which has dependencies.
+        :param dependencies: a list of a measure names that are required by
+        the measure.
+        :return:
+        """
+        measure_index = self._get_measure_index(measure_name)
+        for dependency_measure in dependencies:
+            assert (
+                dependency_measure in self.measures
+            ), f"""{measure_name} measure requires {dependency_measure}
+                listed in the measures list in the config."""
+
+        for dependency_measure in dependencies:
+            assert measure_index > self._get_measure_index(
+                dependency_measure
+            ), f"""{measure_name} measure requires be listed after {dependency_measure}
+                in the measures list in the config."""

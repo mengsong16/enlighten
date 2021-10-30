@@ -67,7 +67,7 @@ def vec_env_test_fn():
         for idx, obs in enumerate(observations):
             # print(idx, obs)
             print(obs)
-            cv2.imwrite(f'{idx}.jpg', obs[0]['color_sensor'])
+            #cv2.imwrite(f'{idx}.jpg', obs[0]['color_sensor'])
 
 if __name__ == '__main__':
     vec_env_test_fn()

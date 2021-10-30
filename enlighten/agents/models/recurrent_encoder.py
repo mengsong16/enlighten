@@ -158,8 +158,15 @@ class RecurrentVisualEncoder(Net):
         
         start_token = torch.zeros_like(prev_actions)
         # not done: action index, done: 0
+        # print('------------------')
+        # print(prev_actions+1)
+        # print('------------------')
+        # print(torch.where(masks.view(-1), prev_actions+1, start_token))
+        # print('------------------')
+
+        # input of nn.embedding should be long
         prev_action_embedding = self.prev_action_encoder(
-            torch.where(masks.view(-1), prev_actions+1, start_token)
+            (torch.where(masks.view(-1), prev_actions+1, start_token)).long()
         )
 
         x.append(prev_action_embedding)

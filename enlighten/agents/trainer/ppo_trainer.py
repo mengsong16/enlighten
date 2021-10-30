@@ -52,13 +52,15 @@ from enlighten.agents.common.tensor_related import (
 )
 from enlighten.utils.video_utils import generate_video
 
-from enlighten.envs.vec_env import construct_envs
+from enlighten.envs.vec_env import construct_envs_based_on_dataset, construct_envs_based_on_singel_scene
 
 from enlighten.agents.models import CNNPolicy, ResNetPolicy
 
 from enlighten.agents.common.seed import set_seed, set_seed_except_env_seed
 
 import copy
+
+from enlighten.utils.path import config_path
 
 class PPOTrainer(BaseRLTrainer):
     r"""Trainer class for PPO algorithm
@@ -124,7 +126,7 @@ class PPOTrainer(BaseRLTrainer):
     def _setup_actor_critic_agent(self) -> None:
         r"""Sets up actor critic and agent for PPO.
         """
-        logger.add_filehandler(self.config.get("train.log"))
+        logger.add_filehandler(self.config.get("log_file"))
 
         if self.config.get("goal_format") == "pointgoal" and self.config.get("goal_coord_system") == "polar":
             polar_point_goal = True
@@ -138,11 +140,18 @@ class PPOTrainer(BaseRLTrainer):
             observation_space, self.obs_transforms
         )
         self.obs_space = observation_space
+        
+        # print('-----------------------')
+        # print(observation_space)
+        # print(self.obs_space)
+        # print('-----------------------')
+
+        self._goal_obs_space = self.envs.get_goal_observation_space()
 
         # create actor critic
         if self.config.get("visual_encoder") == "CNN":
             self.actor_critic = CNNPolicy(observation_space=observation_space, 
-                goal_observation_space=env.get_goal_observation_space(), 
+                goal_observation_space=self._goal_obs_space, 
                 polar_point_goal=polar_point_goal,
                 action_space=self.envs.action_spaces[0],
                 hidden_size=int(self.config.get("hidden_size")))
@@ -150,7 +159,7 @@ class PPOTrainer(BaseRLTrainer):
             # normalize with running mean and var if rgb images exist
             # assume that 
             self.actor_critic = ResNetPolicy(observation_space=observation_space, 
-                goal_observation_space=env.get_goal_observation_space(), 
+                goal_observation_space=self._goal_obs_space, 
                 polar_point_goal=polar_point_goal,
                 action_space=self.envs.action_spaces[0],
                 hidden_size=int(self.config.get("hidden_size")),
@@ -197,14 +206,14 @@ class PPOTrainer(BaseRLTrainer):
         # create agent
         self.agent = (DDPPO if self._is_distributed else PPO)(
             actor_critic=self.actor_critic,
-            clip_param=self.config.get("clip_param"),
-            ppo_epoch=self.config.get("ppo_epoch"),
-            num_mini_batch=self.config.get("num_mini_batch"),
-            value_loss_coef=self.config.get("value_loss_coef"),
-            entropy_coef=self.config.get("entropy_coef"),
-            lr=self.config.get("lr"),
-            eps=self.config.get("eps"),
-            max_grad_norm=self.config("get.max_grad_norm"),
+            clip_param=float(self.config.get("clip_param")),
+            ppo_epoch=int(self.config.get("ppo_epoch")),
+            num_mini_batch=int(self.config.get("num_mini_batch")),
+            value_loss_coef=float(self.config.get("value_loss_coef")),
+            entropy_coef=float(self.config.get("entropy_coef")),
+            lr=float(self.config.get("lr")),
+            eps=float(self.config.get("eps")),
+            max_grad_norm=float(self.config.get("max_grad_norm")),
             use_normalized_advantage=self.config.get("use_normalized_advantage"),
         )
 
@@ -213,10 +222,17 @@ class PPOTrainer(BaseRLTrainer):
         if config is None:
             config = self.config
 
-        self.envs = construct_envs(
-            config,
-            workers_ignore_signals=is_slurm_batch_job(),
-        )
+        if config.get("single_scene") == True:
+            self.envs = construct_envs_based_on_singel_scene(
+                config,
+                workers_ignore_signals=is_slurm_batch_job(),
+            )
+        else:    
+            self.envs = construct_envs_based_on_dataset(
+                config,
+                workers_ignore_signals=is_slurm_batch_job(),
+            )
+
 
     # initialize training, reset envs
     def _init_train(self):
@@ -299,7 +315,7 @@ class PPOTrainer(BaseRLTrainer):
             )
         )
 
-        obs_space = self.obs_space
+        #obs_space = self._obs_space
         if self._static_encoder:
             self._encoder = self.actor_critic.net.visual_encoder
             # TO DO: static visual features as observations
@@ -316,12 +332,13 @@ class PPOTrainer(BaseRLTrainer):
             # )
 
         # create rollout buffer
+        self._combined_goal_obs_space = self.envs.get_combined_goal_obs_space()
         # use single or double buffer
         self._nbuffers = 2 if self.config.get("use_double_buffered_sampler") else 1
         self.rollouts = RolloutStorage(
             self.config.get("num_steps"),
             self.envs.num_envs,
-            obs_space,
+            self._combined_goal_obs_space,
             self.envs.action_spaces[0],
             self.config.get("hidden_size"),
             num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
@@ -510,10 +527,16 @@ class PPOTrainer(BaseRLTrainer):
         )
 
         t_step_env = time.time()
+        print("-------------------------------")
+        print(env_slice.start)
+        print(env_slice.stop)
+        print("-------------------------------")
         outputs = [
             self.envs.wait_step_at(index_env)
             for index_env in range(env_slice.start, env_slice.stop)
         ]
+        print(outputs)
+        print("-------------------------------")
 
         # step env
         observations, rewards_l, dones, infos = [
@@ -733,9 +756,9 @@ class PPOTrainer(BaseRLTrainer):
         # worker detects it will be a straggler, it preempts itself!
         return (
             rollout_step
-            >= self.config.RL.PPO.num_steps * self.SHORT_ROLLOUT_THRESHOLD
+            >= int(self.config.get("num_steps")) * self.SHORT_ROLLOUT_THRESHOLD
         ) and int(self.num_rollouts_done_store.get("num_done")) >= (
-            self.config.RL.DDPPO.sync_frac * torch.distributed.get_world_size()
+            float(self.config.get("sync_frac")) * torch.distributed.get_world_size()
         )
 
     # train process
@@ -1155,3 +1178,7 @@ class PPOTrainer(BaseRLTrainer):
             writer.add_scalars("eval_metrics", metrics, step_id)
 
         self.envs.close()
+
+if __name__ == "__main__":
+   trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"))
+   trainer.train()

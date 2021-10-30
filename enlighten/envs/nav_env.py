@@ -21,6 +21,7 @@ from enlighten.utils.path import *
 from enlighten.tasks.measures import Measurements
 
 import abc
+import copy
 
 from typing import (
     TYPE_CHECKING,
@@ -358,7 +359,16 @@ class NavEnv(gym.Env):
             return self.goal_sensor.get_observation(goal_position=self.goal_position) 
         else:
             print("Goal observation does not exist since the env is not goal conditioned")
-            return None               
+            return None 
+
+    def get_combined_goal_obs_space(self):
+        combined_observation_space = copy.deepcopy(self.observation_space)
+        goal_space = self.get_goal_observation_space()
+        if goal_space == None:
+            return combined_observation_space
+        else:
+            combined_observation_space.spaces[self.goal_sensor.uuid] = copy.deepcopy(goal_space) 
+            return combined_observation_space                     
     
     def get_sim_sensors(self):
         return self.sim._sensors
@@ -931,7 +941,7 @@ def test_env(gym_env=True):
     print("Action space: %s"%(env.action_space)) 
     print("Observation space: %s"%(env.observation_space)) 
     print("Goal observation space: %s"%(env.get_goal_observation_space()))
-    
+    print("Combined goal observation space: %s"%(env.get_combined_goal_obs_space()))
     #print(np.amin(env.observation_space.low))
     #print(np.amax(env.observation_space.high))
     bound = env.get_env_bounds()

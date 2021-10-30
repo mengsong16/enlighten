@@ -72,12 +72,15 @@ CLOSE_COMMAND = "close"
 CALL_COMMAND = "call"
 COUNT_EPISODES_COMMAND = "count_episodes"
 
+
 EPISODE_OVER_NAME = "episode_over"
 GET_METRICS_NAME = "get_metrics"
 CURRENT_EPISODE_NAME = "current_episode"
 NUMBER_OF_EPISODE_NAME = "number_of_episodes"
 ACTION_SPACE_NAME = "action_space"
 OBSERVATION_SPACE_NAME = "observation_space"
+GET_GOAL_OBS_SPACE_NAME = "get_goal_observation_space"
+GET_COMBINED_GOAL_OBS_SPACE_NAME = "get_combined_goal_obs_space"
 
 
 def _make_env_fn(
@@ -210,11 +213,14 @@ class VectorEnv:
 
         self._is_closed = False
 
+        # get observation space
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (OBSERVATION_SPACE_NAME, None)))
         self.observation_spaces = [
             read_fn() for read_fn in self._connection_read_fns
         ]
+
+        # get action spaces
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (ACTION_SPACE_NAME, None)))
         self.action_spaces = [
@@ -404,6 +410,23 @@ class VectorEnv:
             results.append(read_fn())
         return results
 
+    def get_goal_observation_space(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (GET_GOAL_OBS_SPACE_NAME, None)))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        return results[0]
+
+    def get_combined_goal_obs_space(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (GET_COMBINED_GOAL_OBS_SPACE_NAME, None)))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        return results[0]
+
+     
     def reset(self):
         r"""Reset all the vectorized environments
 
@@ -714,7 +737,7 @@ def make_env_dataset_fn(config, seed, dataset_type):
 
 # construct vector envs from a dataset
 # TO DO: check whether seed, scene_contents are different for each env
-def construct_envs(
+def construct_envs_based_on_dataset(
     config,
     workers_ignore_signals: bool = False,
 ) -> VectorEnv:
@@ -802,4 +825,32 @@ def construct_envs(
     #     env_fn_args=tuple(zip(configs, env_classes)),
     #     workers_ignore_signals=workers_ignore_signals,
     # )
+    return envs
+
+def _make_nav_env_fn(config: str="navigate_with_flashlight.yaml", seed: int = 0) -> NavEnv:
+    
+    # create env
+    env = NavEnv(config_file=config)
+    # set seed
+    env.seed(seed)
+
+    return env
+
+def construct_envs_based_on_singel_scene(config, workers_ignore_signals: bool = False):
+    num_environments = int(config.get("num_environments"))
+    configs = []
+    seeds = []
+    for i in range(num_environments):
+        seed = int(config.get("seed") + i)
+        seeds.append(seed)
+        cur_config = copy.deepcopy(config)
+        configs.append(cur_config)
+
+    env_fn_args = tuple(zip(configs, seeds))
+
+    envs = VectorEnv(
+        env_fn_args=env_fn_args,
+        make_env_fn=_make_nav_env_fn,
+        workers_ignore_signals=workers_ignore_signals,
+    )
     return envs

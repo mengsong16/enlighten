@@ -3,4 +3,5 @@ enlighten.egg-info
 .history
 .vscode
 output
+video
 enlighten/agents/data

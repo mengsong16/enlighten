@@ -14,7 +14,7 @@ from habitat_sim.utils.common import quat_from_angle_axis
 import math
 
 import textwrap
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import imageio
 import tqdm

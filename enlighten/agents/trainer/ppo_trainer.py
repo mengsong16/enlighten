@@ -459,8 +459,10 @@ class PPOTrainer(BaseRLTrainer):
 
         return results
 
-    # get action from policy
+    # execute a policy and step the env, push the data to rollout buffer
     def _compute_actions_and_step_envs(self, buffer_index: int = 0):
+        print("--------compute--------")
+
         num_envs = self.envs.num_envs
         env_slice = slice(
             int(buffer_index * num_envs / self._nbuffers),
@@ -502,6 +504,7 @@ class PPOTrainer(BaseRLTrainer):
 
         t_step_env = time.time()
 
+        # send the command of step env
         for index_env, act in zip(
             range(env_slice.start, env_slice.stop), actions.unbind(0)
         ):
@@ -509,7 +512,7 @@ class PPOTrainer(BaseRLTrainer):
 
         self.env_time += time.time() - t_step_env
 
-        # add action to rollout buffer
+        # add actions to rollout buffer
         self.rollouts.insert(
             next_recurrent_hidden_states=recurrent_hidden_states,
             actions=actions,
@@ -520,6 +523,7 @@ class PPOTrainer(BaseRLTrainer):
 
     #  step the env and collect obs
     def _collect_environment_result(self, buffer_index: int = 0):
+        print("--------collect---------")
         num_envs = self.envs.num_envs
         env_slice = slice(
             int(buffer_index * num_envs / self._nbuffers),
@@ -527,18 +531,21 @@ class PPOTrainer(BaseRLTrainer):
         )
 
         t_step_env = time.time()
-        print("-------------------------------")
-        print(env_slice.start)
-        print(env_slice.stop)
-        print("-------------------------------")
+        # print("-------------------------------")
+        # print(env_slice.start)
+        # print(env_slice.stop)
+        # print("-------------------------------")
+
+        print("--------------pt 1-----------------")
         outputs = [
+            # step env
             self.envs.wait_step_at(index_env)
             for index_env in range(env_slice.start, env_slice.stop)
         ]
         print(outputs)
-        print("-------------------------------")
+        print("--------------pt 2-----------------")
 
-        # step env
+        # unwrap the results
         observations, rewards_l, dones, infos = [
             list(x) for x in zip(*outputs)
         ]
@@ -607,7 +614,9 @@ class PPOTrainer(BaseRLTrainer):
 
     @profiling_utils.RangeContext("_collect_rollout_step")
     def _collect_rollout_step(self):
+        
         self._compute_actions_and_step_envs()
+        
         return self._collect_environment_result()
 
     # train/update policy
@@ -857,6 +866,7 @@ class PPOTrainer(BaseRLTrainer):
                 count_steps_delta = 0
                 profiling_utils.range_push("rollouts loop")
 
+                # act one step
                 profiling_utils.range_push("_collect_rollout_step")
                 for buffer_index in range(self._nbuffers):
                     self._compute_actions_and_step_envs(buffer_index)

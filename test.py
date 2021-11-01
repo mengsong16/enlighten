@@ -58,16 +58,18 @@ def vec_env_test_fn():
         multiprocessing_start_method="forkserver",
     ) as envs:
         envs.reset()
-        for _ in range(config.get("max_steps_per_episode")):
+        for step in range(10): # config.get("max_steps_per_episode")
             observations = envs.step(
                 sample_action(envs.action_spaces[0], NUM_ENVS)
             )
             assert len(observations) == NUM_ENVS
         
-        for idx, obs in enumerate(observations):
-            # print(idx, obs)
-            print(obs)
-            #cv2.imwrite(f'{idx}.jpg', obs[0]['color_sensor'])
+            print("----------- step %d ----------"%step)
+            for idx, obs in enumerate(observations):
+                # print(idx, obs)
+                print("----------- env %d ----------"%idx)
+                print(len(obs))
+                #cv2.imwrite(f'{idx}.jpg', obs[0]['color_sensor'])
 
 if __name__ == '__main__':
     vec_env_test_fn()

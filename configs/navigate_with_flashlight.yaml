@@ -67,7 +67,7 @@ use_double_buffered_sampler: false
 num_steps: 128  # rollout buffer length
 
 # vector env
-num_environments: 1
+num_environments: 4
 
 
 # training

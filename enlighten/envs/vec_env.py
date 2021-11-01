@@ -72,7 +72,6 @@ CLOSE_COMMAND = "close"
 CALL_COMMAND = "call"
 COUNT_EPISODES_COMMAND = "count_episodes"
 
-
 EPISODE_OVER_NAME = "episode_over"
 GET_METRICS_NAME = "get_metrics"
 CURRENT_EPISODE_NAME = "current_episode"
@@ -82,26 +81,25 @@ OBSERVATION_SPACE_NAME = "observation_space"
 GET_GOAL_OBS_SPACE_NAME = "get_goal_observation_space"
 GET_COMBINED_GOAL_OBS_SPACE_NAME = "get_combined_goal_obs_space"
 
+# def _make_env_fn(
+#     config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
+# ) -> GymEnv:
+#     """Constructor for default enlighten :ref:`garage.GymEnv`.
 
-def _make_env_fn(
-    config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
-) -> GymEnv:
-    """Constructor for default enlighten :ref:`garage.GymEnv`.
+#     :param config_filename: configuration file name for environment.
+#     :param rank: rank for setting seed of environment
+#     :return: :ref:`garage.GymEnv` object
+#     """
+#     # get configuration
+#     config_file=os.path.join(config_path, config_filename)
+#     config = parse_config(config_file)
+#     # create env
+#     env = GymEnv(env=NavEnv(), is_image=True, max_episode_length=int(config.get("max_steps_per_episode"))) 
+#     assert isinstance(env.spec, EnvSpec)
+#     # set seed
+#     env.seed(rank)
 
-    :param config_filename: configuration file name for environment.
-    :param rank: rank for setting seed of environment
-    :return: :ref:`garage.GymEnv` object
-    """
-    # get configuration
-    config_file=os.path.join(config_path, config_filename)
-    config = parse_config(config_file)
-    # create env
-    env = GymEnv(env=NavEnv(), is_image=True, max_episode_length=int(config.get("max_steps_per_episode"))) 
-    assert isinstance(env.spec, EnvSpec)
-    # set seed
-    env.seed(rank)
-
-    return env
+#     return env
 
 
 @attr.s(auto_attribs=True, slots=True)
@@ -165,7 +163,7 @@ class VectorEnv:
 
     def __init__(
         self,
-        make_env_fn: Callable[..., Union[NavEnv, GymEnv]] = _make_env_fn,
+        make_env_fn: Callable[..., Union[NavEnv, GymEnv]],
         env_fn_args: Sequence[Tuple] = None,
         auto_reset_done: bool = True,
         multiprocessing_start_method: str = "forkserver",
@@ -213,14 +211,11 @@ class VectorEnv:
 
         self._is_closed = False
 
-        # get observation space
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (OBSERVATION_SPACE_NAME, None)))
         self.observation_spaces = [
             read_fn() for read_fn in self._connection_read_fns
         ]
-
-        # get action spaces
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (ACTION_SPACE_NAME, None)))
         self.action_spaces = [
@@ -336,7 +331,7 @@ class VectorEnv:
     def _spawn_workers(
         self,
         env_fn_args: Sequence[Tuple],
-        make_env_fn: Callable[..., Union[NavEnv, GymEnv]] = _make_env_fn,
+        make_env_fn: Callable[..., Union[NavEnv, GymEnv]],
         workers_ignore_signals: bool = False,
     ) -> Tuple[List[_ReadWrapper], List[_WriteWrapper]]:
         parent_connections, worker_connections = zip(
@@ -426,7 +421,6 @@ class VectorEnv:
             results.append(read_fn())
         return results[0]
 
-     
     def reset(self):
         r"""Reset all the vectorized environments
 
@@ -499,6 +493,9 @@ class VectorEnv:
             :py:`[{"action": "TURN_LEFT", "action_args": {...}}, ...]`.
         :return: list of outputs from the step method of envs.
         """
+        # print("=========================")
+        # print(data)
+        # print("=========================")
         self.async_step(data)
         return self.wait_step()
 
@@ -662,7 +659,7 @@ class ThreadedVectorEnv(VectorEnv):
     def _spawn_workers(
         self,
         env_fn_args: Sequence[Tuple],
-        make_env_fn: Callable[..., Union[NavEnv, GymEnv]] = _make_env_fn,
+        make_env_fn: Callable[..., Union[NavEnv, GymEnv]],
         workers_ignore_signals: bool = False,
     ) -> Tuple[List[_ReadWrapper], List[_WriteWrapper]]:
         queues: Iterator[Tuple[Any, ...]] = zip(

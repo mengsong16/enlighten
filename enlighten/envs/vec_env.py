@@ -44,8 +44,8 @@ from enlighten.envs import NavEnv
 from enlighten.utils.path import *
 from enlighten.utils.config_utils import parse_config
 
-from garage.envs import GymEnv
-from garage import EnvSpec
+#from garage.envs import GymEnv
+#from garage import EnvSpec
 
 import copy
 
@@ -163,7 +163,7 @@ class VectorEnv:
 
     def __init__(
         self,
-        make_env_fn: Callable[..., Union[NavEnv, GymEnv]],
+        make_env_fn: Callable[..., Union[NavEnv]],
         env_fn_args: Sequence[Tuple] = None,
         auto_reset_done: bool = True,
         multiprocessing_start_method: str = "forkserver",
@@ -276,18 +276,18 @@ class VectorEnv:
                             connection_write_fn(
                                 (observations, reward, done, info)
                             )
-                    elif isinstance(env, GymEnv):  # type: ignore
-                        # garage.GymEnv
-                        env_step = env.step(**data)
-                        observations = env_step.observation
-                        reward = env_step.reward
-                        info = env_step.env_info
-                        done = env_step.terminal
-                        if auto_reset_done and done:
-                            observations, _ = env.reset()
-                        connection_write_fn(
-                            (observations, reward, done, info)
-                        )
+                    # elif isinstance(env, GymEnv):  # type: ignore
+                    #     # garage.GymEnv
+                    #     env_step = env.step(**data)
+                    #     observations = env_step.observation
+                    #     reward = env_step.reward
+                    #     info = env_step.env_info
+                    #     done = env_step.terminal
+                    #     if auto_reset_done and done:
+                    #         observations, _ = env.reset()
+                    #     connection_write_fn(
+                    #         (observations, reward, done, info)
+                    #     )
                     else:
                         raise NotImplementedError
 
@@ -331,7 +331,7 @@ class VectorEnv:
     def _spawn_workers(
         self,
         env_fn_args: Sequence[Tuple],
-        make_env_fn: Callable[..., Union[NavEnv, GymEnv]],
+        make_env_fn: Callable[..., Union[NavEnv]],
         workers_ignore_signals: bool = False,
     ) -> Tuple[List[_ReadWrapper], List[_WriteWrapper]]:
         parent_connections, worker_connections = zip(
@@ -465,7 +465,10 @@ class VectorEnv:
         :return: list containing the output of step method of indexed env.
         """
         self.async_step_at(index_env, action)
-        return self.wait_step_at(index_env)
+        print('-------after async step at--------')
+        r = self.wait_step_at(index_env)
+        print('-------after wait step at--------')
+        return r
 
     def async_step(self, data: List[Union[int, str, Dict[str, Any]]]) -> None:
         r"""Asynchronously step in the environments.
@@ -659,7 +662,7 @@ class ThreadedVectorEnv(VectorEnv):
     def _spawn_workers(
         self,
         env_fn_args: Sequence[Tuple],
-        make_env_fn: Callable[..., Union[NavEnv, GymEnv]],
+        make_env_fn: Callable[..., Union[NavEnv]],
         workers_ignore_signals: bool = False,
     ) -> Tuple[List[_ReadWrapper], List[_WriteWrapper]]:
         queues: Iterator[Tuple[Any, ...]] = zip(

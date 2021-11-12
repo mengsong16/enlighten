@@ -69,7 +69,6 @@ num_steps: 128  # rollout buffer length
 # vector env
 num_environments: 4
 
-
 # training
 torch_gpu_id: 0
 simulator_gpu_id: 0

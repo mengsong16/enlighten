@@ -41,8 +41,8 @@ from typing import (
 from collections import OrderedDict
 from enum import Enum
 
-from garage import Environment, EnvSpec, EnvStep, StepType
-from garage.envs import GymEnv
+#from garage import Environment, EnvSpec, EnvStep, StepType
+#from garage.envs import GymEnv
 from PIL import Image
 from enlighten.utils.viewer import MyViewer
 
@@ -859,22 +859,22 @@ def check_coordinate_system():
     #move_forward(env)
     turn_left_move_forward(env)
 
-def create_garage_env(config_filename="navigate_with_flashlight.yaml"):
-    config_file = os.path.join(config_path, config_filename)
-    config = parse_config(config_file)
-    dictionary_observation_space = config.get('dictionary_observation_space')
-    assert dictionary_observation_space == False, "Garage env does NOT support dictionary observation space"
+# def create_garage_env(config_filename="navigate_with_flashlight.yaml"):
+#     config_file = os.path.join(config_path, config_filename)
+#     config = parse_config(config_file)
+#     dictionary_observation_space = config.get('dictionary_observation_space')
+#     assert dictionary_observation_space == False, "Garage env does NOT support dictionary observation space"
     
-    env = GymEnv(env=NavEnv(), is_image=True, max_episode_length=int(config.get("max_steps_per_episode"))) 
-    assert isinstance(env.spec, EnvSpec)
+#     env = GymEnv(env=NavEnv(), is_image=True, max_episode_length=int(config.get("max_steps_per_episode"))) 
+#     assert isinstance(env.spec, EnvSpec)
 
-    return env
+#     return env
 
-def test_env(gym_env=True):
-    if gym_env:
-        env =  NavEnv()
-    else:
-        env = create_garage_env()
+def test_env():
+    #if gym_env:
+    env =  NavEnv()
+    #else:
+    #    env = create_garage_env()
 
     for episode in range(10):
         print("***********************************")
@@ -934,10 +934,10 @@ def test_env(gym_env=True):
         print('Collision count: %d'%(env.get_current_collision_counts()))
     
     print('-----------------------------')
-    if gym_env:
-        print("Gym env")
-    else:
-        print("Garage env")    
+    # if gym_env:
+    #     print("Gym env")
+    # else:
+    #     print("Garage env")    
     print("Action space: %s"%(env.action_space)) 
     print("Observation space: %s"%(env.observation_space)) 
     print("Goal observation space: %s"%(env.get_goal_observation_space()))
@@ -1009,7 +1009,7 @@ def test_stop_action():
         print('Collision count: %d'%(env.get_current_collision_counts()))
 
 if __name__ == "__main__":    
-    test_env(gym_env=True)
+    test_env()
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
     #test_rollout_storage()

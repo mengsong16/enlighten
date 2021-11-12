@@ -349,6 +349,7 @@ class PPOTrainer(BaseRLTrainer):
         # reset envs
         observations = self.envs.reset()
         # get initial observations and transform them
+        
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
         )
@@ -498,6 +499,9 @@ class PPOTrainer(BaseRLTrainer):
         # For backwards compatibility, we also call .item() to convert to
         # an int
         actions = actions.to(device="cpu")
+        print("========== actions =======")
+        print(actions)
+        print("==========================")
         self.pth_time += time.time() - t_sample_action
 
         profiling_utils.range_pop()  # compute actions
@@ -542,7 +546,7 @@ class PPOTrainer(BaseRLTrainer):
             self.envs.wait_step_at(index_env)
             for index_env in range(env_slice.start, env_slice.stop)
         ]
-        print(outputs)
+        
         print("--------------pt 2-----------------")
 
         # unwrap the results

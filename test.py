@@ -41,7 +41,7 @@ def sample_action(action_space, num_samples=1):
         samples.append({"action": action})
 
     if num_samples == 1:
-        return samples[0]["action"]
+        return samples[0] #["action"]
     else:
         return samples
 
@@ -87,29 +87,71 @@ def vec_env_test_async_fn():
         for step in range(10): # config.get("max_steps_per_episode")
 
             env_id = random.randint(0, NUM_ENVS-1)
-            action_id = envs.action_spaces[0].sample()
+            #action_id = envs.action_spaces[0].sample()
+            action  =  sample_action(envs.action_spaces[0], 1)
+            print(action)
             print("----------- step %d ----------"%step)
             
             print("----------- env %d ----------"%env_id)
-            print("----------- action %d ----------"%action_id)
-            observation = envs.step_at(index_env=env_id, action=action_id)
+            print("----------- action %s ----------"%action)
+            observation, reward, done, info = envs.step_at(index_env=env_id, action=action)
             
             
-            print(observation)
+            print(observation.keys())
 
-def test_cart_pole():
-    env  =  gym.make('CartPole-v0')
+def test_breakout():
+    env  =  gym.make('Breakout-v0')
     
     for episode_index in range(10): 
         env.reset()
         for step_index in range(100):
+            env.render()
             action  =  env.action_space.sample()
+            
+            print(action)
             observation, reward, done, info  =  env.step(action)
-            print(observation.shape)
+            #print(observation.shape)
+            
             if done:
                 break
 
+def vec_env_test_breakout():
+    with VectorEnv(
+        env_fn_args=[0,1,2,3],
+        make_env_fn=_make_breakout_env_fn,
+        multiprocessing_start_method="fork",
+    ) as envs:
+        envs.reset()
+        for step in range(10): # config.get("max_steps_per_episode")
+            observations = envs.step(
+                sample_action(envs.action_spaces[0], NUM_ENVS)
+            )
+            assert len(observations) == NUM_ENVS
+        
+            print("----------- step %d ----------"%step)
+            for idx, obs in enumerate(observations):
+                # print(idx, obs)
+                print("----------- env %d ----------"%idx)
+                print(len(obs))
+                #cv2.imwrite(f'{idx}.jpg', obs[0]['color_sensor'])
+
+def _make_breakout_env_fn(seed: int = 0):
+    """Constructor for default enlighten :ref:`enlighten.NavEnv`.
+
+    :param config_filename: configuration file name for environment.
+    :param rank: rank for setting seed of environment
+    :return: :ref:`enlighten.NavEnv` object
+    """
+
+    # create env
+    env = gym.make('Breakout-v0')
+    # set seed
+    env.seed(seed)
+
+    return env
+
 if __name__ == '__main__':
-    vec_env_test_fn()
-    #vec_env_test_async_fn()
-    #test_cart_pole()
+    #vec_env_test_fn()
+    vec_env_test_async_fn()
+    #test_breakout()
+    #vec_env_test_breakout()

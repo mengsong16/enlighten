@@ -43,7 +43,7 @@ class RecurrentVisualEncoder(Net):
         visual_encoder,
         hidden_size: int, # output size of visual encoder
         num_recurrent_layers: int = 1,
-        rnn_type: str="GRU",
+        rnn_type: str="gru",
         polar_point_goal=False,
         goal_visual_encoder=None
     ):

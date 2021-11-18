@@ -59,7 +59,15 @@ class Measure:
         return self._metric
 
     def print_metric(self):
-        print(str(self.cls_uuid) + ":" + str(self._metric))
+        string = str(self.cls_uuid) + ":" + str(self._metric)
+        print(string)
+        return string+"\n"
+
+    def set_metric_to_zero(self):
+        self._metric = 0   
+
+    def set_metric(self, new_value):
+        self._metric = new_value     
 
 class DistanceToGoal(Measure):
     """The measure calculates a distance towards the goal."""
@@ -199,6 +207,7 @@ class SPL(Measure):
     def _euclidean_distance(self, position_a, position_b):
         return np.linalg.norm(position_b - position_a, ord=2)
 
+    # not averaged by the number of total episodes
     def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
         ep_success = measurements.measures[Success.cls_uuid].get_metric()
 
@@ -236,6 +245,7 @@ class SoftSPL(SPL):
         ].get_metric()
         self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)  # type: ignore
 
+    # not averaged by the number of total episodes
     def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
         current_position = self._env.get_agent_position()
 
@@ -319,7 +329,29 @@ class PointGoalReward(Measure):
         success = measurements.measures[Success.cls_uuid].get_metric()
         if bool(success):
             self._metric += float(self._config.get("success_reward"))
-                  
+
+# episode return, undiscounted                  
+class Return(Measure):
+    
+    cls_uuid = "return"
+
+    def __init__(self, env, config, *args: Any, **kwargs: Any):
+        self._env = env
+        self._config = config
+        
+        super().__init__()
+
+    
+    def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        measurements.check_measure_dependencies(self.cls_uuid, [PointGoalReward.cls_uuid])
+        self._metric = 0
+        
+    def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+        
+        current_reward = measurements.measures[PointGoalReward.cls_uuid].get_metric()
+
+        self._metric += current_reward
+        
 
 def create_one_measurement(measure_id, env, config):
         if measure_id == "distance_to_goal":
@@ -337,7 +369,9 @@ def create_one_measurement(measure_id, env, config):
         elif measure_id == "done":
             return Done(env=env, config=config)   
         elif measure_id == "point_goal_reward":
-            return PointGoalReward(env=env, config=config)     
+            return PointGoalReward(env=env, config=config)
+        elif measure_id == "return":
+            return Return(env=env, config=config)         
         else:
             print("Error: not defined measure id: "+str(measure_id)) 
             return    
@@ -365,7 +399,14 @@ class Measurements:
             
             self.measures[mid] = create_one_measurement(measure_id=mid, env=env, config=config)
 
-            
+    def init_all_to_zero(self):
+        for measure in self.measures.values():
+            measure.set_metric_to_zero()
+
+    # def print(self):
+    #     for k,v in self.measures.items():
+    #         print(str(k)+": %f"%(v.get_metric()))
+    #         #print(str(k))         
 
     def reset_measures(self, *args: Any, **kwargs: Any) -> None:
         for measure in self.measures.values():
@@ -381,8 +422,13 @@ class Measurements:
 
     def print_measures(self):
         print('-------------- Measures ---------------------')
+        string = ""
         for measure in self.measures.values():
-            measure.print_metric()   
+            s = measure.print_metric()  
+            string += s 
+
+        print('---------------------------------------------') 
+        return string   
 
     # check if measure A depends on measure B (requires computing measure B), B should have smaller id
     # e.g. success measure requires distanc to goal measure

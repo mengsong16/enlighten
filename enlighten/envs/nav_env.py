@@ -213,7 +213,8 @@ class NavEnv(gym.Env):
         # set measurements
         measure_ids = list(self.config.get("measurements"))
         self.measurements = Measurements(measure_ids=measure_ids, env=self, config=self.config)
-        
+        # set current episode
+        self.current_episode = 0
 
     def create_sim_config(self):
         # simulator configuration
@@ -626,7 +627,8 @@ class NavEnv(gym.Env):
 
         # save observation 
         if "disk" in list(self.config.get("eval_video_option")):
-            filename = str(self.get_current_step()) + ".jpg"
+            filename = str(self.get_current_episode())+"_"+str(self.get_current_step()) + ".jpg"
+            video_path = os.path.join(root_path, self.config.get("video_dir"))
             if not os.path.exists(video_path):
                 os.mkdir(video_path)
             
@@ -794,12 +796,19 @@ class NavEnv(gym.Env):
     def get_reward(self):
         return self.measurements.measures["point_goal_reward"].get_metric()    
 
-
     def is_done(self):
         return self.measurements.measures["done"].get_metric()  
 
     def is_success(self):
-        return bool(self.measurements.measures["success"].get_metric())      
+        return bool(self.measurements.measures["success"].get_metric())  
+
+    #def number_of_episodes(self):
+
+    def get_current_episode(self):
+        return self.current_episode
+
+    def set_current_episode(self, episode_index):
+        self.current_episode = episode_index   
     
     def close(self):
         self.sim.close()
@@ -894,14 +903,14 @@ def test_env():
        
         for i in range(50):  # max steps per episode
             action = env.action_space.sample()
-            if gym_env:
-                obs, reward, done, info = env.step(action)
-            else:
-                env_step = env.step(action)
-                obs = env_step.observation
-                reward = env_step.reward
-                info = env_step.env_info
-                done = env_step.terminal
+            #if gym_env:
+            obs, reward, done, info = env.step(action)
+            # else:
+            #     env_step = env.step(action)
+            #     obs = env_step.observation
+            #     reward = env_step.reward
+            #     info = env_step.env_info
+            #     done = env_step.terminal
 
             print('-----------------------------')
             print('step: %d'%(i+1))

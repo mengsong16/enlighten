@@ -11,6 +11,7 @@ import torch
 from torch import distributed as distrib
 
 from habitat import logger
+from enlighten.utils.path import *
 
 EXIT = threading.Event()
 EXIT.clear()
@@ -57,7 +58,7 @@ def resume_state_filename(config) -> str:
     if is_slurm_job() and config.get("preemption_append_slurm_job_id"):
         fname += "-{}".format(SLURM_JOBID)
 
-    return osp.join(config.get("checkpoint_folder"), fname + ".pth")
+    return osp.join(root_path, config.get("checkpoint_folder"), fname + ".pth")
 
 
 @overload

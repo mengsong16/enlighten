@@ -34,6 +34,16 @@ from enlighten.utils.config_utils import parse_config
 from enlighten.utils.path import *
 from enlighten.envs import NavEnv
 
+from enlighten.utils.obs_transformers import (
+    apply_obs_transforms_batch,
+    apply_obs_transforms_obs_space,
+    get_active_obs_transforms,
+)
+
+import copy
+
+from enlighten.utils.video_utils import generate_video, images_to_video
+
 class Agent:
     r"""Abstract class for defining agents which act inside :ref:`core.env.Env`.
 
@@ -57,8 +67,9 @@ class Agent:
         raise NotImplementedError
 
 class PPOAgent(Agent):
-    def __init__(self,  env, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml"), load_model_path=None) -> None:
-        self.hidden_size = 512
+    def __init__(self,  env, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml"),
+    random_agent=False) -> None:
+        
         self.env = env
         self.config = parse_config(config_file)
         self.device = (
@@ -68,35 +79,57 @@ class PPOAgent(Agent):
         )
         #self.device = torch.device("cpu")
 
+        # load checkpoint
+        checkpoint_path = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("eval_checkpoint_file"))
+        print("Loaded checkpoint at: "+str(checkpoint_path))
+        
+        if not random_agent:
+            ckpt = torch.load(checkpoint_path, map_location="cpu")
+            # use checkpoint config
+            if self.config.get("eval_use_ckpt_config"):
+                self.config = copy.deepcopy(ckpt["config"])
+
+        # set random seed
         set_seed(seed=int(self.config.get("seed")), env=self.env)
         
+        # initialize model
         if self.config.get("goal_format") == "pointgoal" and self.config.get("goal_coord_system") == "polar":
             polar_point_goal = True
         else:
-            polar_point_goal = False    
+            polar_point_goal = False 
+   
+        observation_space = env.observation_space
+        # if transform exists, apply it to observation space
+        obs_transforms = get_active_obs_transforms(self.config)
+        if len(obs_transforms) > 0:
+            observation_space = apply_obs_transforms_obs_space(
+                observation_space, obs_transforms
+            )
+               
 
         if self.config.get("visual_encoder") == "CNN":
-            self.actor_critic = CNNPolicy(observation_space=env.observation_space, 
+            self.actor_critic = CNNPolicy(observation_space=observation_space, 
                 goal_observation_space=env.get_goal_observation_space(), 
                 polar_point_goal=polar_point_goal,
                 action_space=env.action_space,
-                hidden_size=self.hidden_size)
+                rnn_type=self.config.get("rnn_type"),
+                hidden_size=int(self.config.get("hidden_size")))
         else:
             # normalize with running mean and var if rgb images exist
             # assume that 
-            self.actor_critic = ResNetPolicy(observation_space=env.observation_space, 
+            self.actor_critic = ResNetPolicy(observation_space=observation_space, 
                 goal_observation_space=env.get_goal_observation_space(), 
                 polar_point_goal=polar_point_goal,
                 action_space=env.action_space,
-                hidden_size=self.hidden_size,
+                rnn_type=self.config.get("rnn_type"),
+                hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in env.observation_space) 
 
         self.actor_critic.to(self.device)
 
         # load model
-        if load_model_path:
-            ckpt = torch.load(load_model_path, map_location=self.device)
-            #  Filter only actor_critic weights
+        if not random_agent:
+            #  Filter out only actor_critic weights
             self.actor_critic.load_state_dict(
                 {
                     k[len("actor_critic.") :]: v
@@ -104,10 +137,14 @@ class PPOAgent(Agent):
                     if "actor_critic" in k
                 }
             )
+            logger.info("Checkpoint loaded")
         else:
             logger.error(
                 "Model checkpoint wasn't loaded, evaluating " "a random model."
             )
+        
+        # set to eval mode
+        self.actor_critic.eval()
 
         # create data structures
         self.recurrent_hidden_states: Optional[torch.Tensor] = None
@@ -117,9 +154,9 @@ class PPOAgent(Agent):
     def reset(self) -> None:
         # initialize data structures
         self.recurrent_hidden_states = torch.zeros(
-            1,
+            1, # num of envs
             self.actor_critic.net.num_recurrent_layers,
-            self.hidden_size,
+            self.config.get("hidden_size"),
             device=self.device,
         )
         self.not_done_masks = torch.zeros(
@@ -150,7 +187,7 @@ class PPOAgent(Agent):
             self.prev_actions.copy_(actions) 
 
         #return {"action": actions[0][0].item()}
-        # actions: tensor([[index]])
+        # actions: ([[index]])
         return actions[0][0].item()
 
 

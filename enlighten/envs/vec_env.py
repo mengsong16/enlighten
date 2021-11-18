@@ -222,7 +222,6 @@ class VectorEnv:
             read_fn() for read_fn in self._connection_read_fns
         ]        
 
-        ##### don't need 
         # for write_fn in self._connection_write_fns:
         #     write_fn((CALL_COMMAND, (NUMBER_OF_EPISODE_NAME, None)))
         # self.number_of_episodes = [
@@ -448,8 +447,10 @@ class VectorEnv:
     ) -> None:
         # Backward compatibility
         if isinstance(action, (int, np.integer, str)):
+            #print("inside")
             action = {"action": {"action": action}}
 
+        #print("outside")
         self._warn_cuda_tensors(action)
         self._connection_write_fns[index_env]((STEP_COMMAND, action))
 
@@ -465,9 +466,9 @@ class VectorEnv:
         :return: list containing the output of step method of indexed env.
         """
         self.async_step_at(index_env, action)
-        print('-------after async step at--------')
+        #print('-------after async step at--------')
         r = self.wait_step_at(index_env)
-        print('-------after wait step at--------')
+        #print('-------after wait step at--------')
         return r
 
     def async_step(self, data: List[Union[int, str, Dict[str, Any]]]) -> None:

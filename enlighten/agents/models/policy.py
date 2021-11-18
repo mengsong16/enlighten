@@ -138,6 +138,7 @@ class CNNPolicy(Policy):
         goal_observation_space,
         polar_point_goal,
         action_space,
+        rnn_type,
         hidden_size: int = 512,
         **kwargs
     ):
@@ -160,6 +161,7 @@ class CNNPolicy(Policy):
                 goal_visual_encoder=goal_visual_encoder,
                 hidden_size=hidden_size,
                 polar_point_goal=polar_point_goal,
+                rnn_type=rnn_type,
                 **kwargs,
             ),
             dim_actions = action_space.n,
@@ -172,6 +174,7 @@ class ResNetPolicy(Policy):
         goal_observation_space,
         polar_point_goal,
         action_space,
+        rnn_type,
         baseplanes: int = 32,
         backbone: str = "resnet18",
         normalize_visual_inputs: bool = False,
@@ -204,6 +207,7 @@ class ResNetPolicy(Policy):
                 goal_visual_encoder=goal_visual_encoder,
                 hidden_size=hidden_size,
                 polar_point_goal=polar_point_goal,
+                rnn_type=rnn_type,
                 **kwargs,
             ),
             dim_actions = action_space.n,

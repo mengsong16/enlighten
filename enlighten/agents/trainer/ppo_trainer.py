@@ -60,7 +60,13 @@ from enlighten.agents.common.seed import set_seed, set_seed_except_env_seed
 
 import copy
 
-from enlighten.utils.path import config_path
+#from enlighten.utils.path import config_path
+from enlighten.utils.path import *
+
+from enlighten.agents.algorithms.ppo_agent import PPOAgent
+from enlighten.envs.nav_env import NavEnv
+from enlighten.utils.video_utils import generate_video, images_to_video, create_video, remove_jpg
+from enlighten.tasks.measures import Measurements
 
 class PPOTrainer(BaseRLTrainer):
     r"""Trainer class for PPO algorithm
@@ -126,7 +132,7 @@ class PPOTrainer(BaseRLTrainer):
     def _setup_actor_critic_agent(self) -> None:
         r"""Sets up actor critic and agent for PPO.
         """
-        logger.add_filehandler(self.config.get("log_file"))
+        logger.add_filehandler(os.path.join(root_path, self.config.get("log_file")))
 
         if self.config.get("goal_format") == "pointgoal" and self.config.get("goal_coord_system") == "polar":
             polar_point_goal = True
@@ -154,7 +160,9 @@ class PPOTrainer(BaseRLTrainer):
                 goal_observation_space=self._goal_obs_space, 
                 polar_point_goal=polar_point_goal,
                 action_space=self.envs.action_spaces[0],
-                hidden_size=int(self.config.get("hidden_size")))
+                rnn_type=self.config.get("rnn_type"),
+                hidden_size=int(self.config.get("hidden_size"))
+                )
         else:
             # normalize with running mean and var if rgb images exist
             # assume that 
@@ -162,12 +170,14 @@ class PPOTrainer(BaseRLTrainer):
                 goal_observation_space=self._goal_obs_space, 
                 polar_point_goal=polar_point_goal,
                 action_space=self.envs.action_spaces[0],
+                rnn_type=self.config.get("rnn_type"),
                 hidden_size=int(self.config.get("hidden_size")),
-                normalize_visual_inputs="color_sensor" in observation_space) 
+                normalize_visual_inputs="color_sensor" in observation_space
+                ) 
 
         self.actor_critic.to(self.device)
 
-        # load pretrained model
+        # load whole pretrained model
         if self.config.get("pretrained_visual_encoder") or self.config.get("pretrained_whole_model"):
             pretrained_state = torch.load(
                 self.config.get("pretrained_model_path"), map_location="cpu"
@@ -181,7 +191,7 @@ class PPOTrainer(BaseRLTrainer):
                     for k, v in pretrained_state["state_dict"].items()
                 }
             )
-        # load pretrained visual encoder    
+        # load pretrained visual encoder in actor_critic    
         elif self.config.get("pretrained_visual_encoder"):
             prefix = "actor_critic.net.visual_encoder."
             self.actor_critic.net.visual_encoder.load_state_dict(
@@ -301,8 +311,8 @@ class PPOTrainer(BaseRLTrainer):
             self.device = torch.device("cpu")
 
         # make checkpoint dir
-        if rank0_only() and not os.path.isdir(self.config.get("checkpoint_folder")):
-            os.makedirs(self.config.get("checkpoint_folder"))
+        if rank0_only() and not os.path.isdir(os.path.join(root_path, self.config.get("checkpoint_folder"))):
+            os.makedirs(os.path.join(root_path, self.config.get("checkpoint_folder")))
 
         # setput actor critic of agent
         self._setup_actor_critic_agent()
@@ -400,7 +410,7 @@ class PPOTrainer(BaseRLTrainer):
             checkpoint["extra_state"] = extra_state
 
         torch.save(
-            checkpoint, os.path.join(self.config.get("checkpoint_folder"), file_name)
+            checkpoint, os.path.join(root_path, self.config.get("checkpoint_folder"), file_name)
         )
 
     # load checkpoint
@@ -462,7 +472,7 @@ class PPOTrainer(BaseRLTrainer):
 
     # execute a policy and step the env, push the data to rollout buffer
     def _compute_actions_and_step_envs(self, buffer_index: int = 0):
-        print("--------compute--------")
+        #print("--------compute--------")
 
         num_envs = self.envs.num_envs
         env_slice = slice(
@@ -499,9 +509,9 @@ class PPOTrainer(BaseRLTrainer):
         # For backwards compatibility, we also call .item() to convert to
         # an int
         actions = actions.to(device="cpu")
-        print("========== actions =======")
-        print(actions)
-        print("==========================")
+        #print("========== actions =======")
+        #print(actions)
+        #print("==========================")
         self.pth_time += time.time() - t_sample_action
 
         profiling_utils.range_pop()  # compute actions
@@ -512,7 +522,12 @@ class PPOTrainer(BaseRLTrainer):
         for index_env, act in zip(
             range(env_slice.start, env_slice.stop), actions.unbind(0)
         ):
-            self.envs.async_step_at(index_env, act.item())
+            #print("------ actual action --------")
+            #print(act.item())
+            #print("------ actual action --------")
+            #print(type(act.item()))
+            self.envs.async_step_at(index_env, {"action": act.item()})
+            #self.envs.async_step_at(index_env, act.item())
 
         self.env_time += time.time() - t_step_env
 
@@ -527,7 +542,7 @@ class PPOTrainer(BaseRLTrainer):
 
     #  step the env and collect obs
     def _collect_environment_result(self, buffer_index: int = 0):
-        print("--------collect---------")
+        #print("--------collect---------")
         num_envs = self.envs.num_envs
         env_slice = slice(
             int(buffer_index * num_envs / self._nbuffers),
@@ -540,14 +555,14 @@ class PPOTrainer(BaseRLTrainer):
         # print(env_slice.stop)
         # print("-------------------------------")
 
-        print("--------------pt 1-----------------")
+        #print("--------------pt 1-----------------")
         outputs = [
             # step env
             self.envs.wait_step_at(index_env)
             for index_env in range(env_slice.start, env_slice.stop)
         ]
         
-        print("--------------pt 2-----------------")
+        #print("--------------pt 2-----------------")
 
         # unwrap the results
         observations, rewards_l, dones, infos = [
@@ -695,6 +710,7 @@ class PPOTrainer(BaseRLTrainer):
         return losses
 
     # update training log
+    # log on tensorboard
     @rank0_only
     def _training_log(
         self, writer, losses: Dict[str, float], prev_time: int = 0
@@ -709,25 +725,27 @@ class PPOTrainer(BaseRLTrainer):
         }
         deltas["count"] = max(deltas["count"], 1.0)
 
-        writer.add_scalar(
-            "reward",
-            deltas["reward"] / deltas["count"],
-            self.num_steps_done,
-        )
+        # add loss to tensorboard
+        for k,v in losses.items():
+            writer.add_scalar("Loss/"+str(k), v, self.num_steps_done)
 
         # Check to see if there are any metrics
         # that haven't been logged yet
+        # add metrics to tensorboard
         metrics = {
             k: v / deltas["count"]
             for k, v in deltas.items()
             if k not in {"reward", "count"}
         }
         if len(metrics) > 0:
-            writer.add_scalars("metrics", metrics, self.num_steps_done)
+            for k,v in metrics.items():
+                writer.add_scalar("Metrics/"+str(k), v, self.num_steps_done)    
 
-        writer.add_scalars(
-            "losses",
-            losses,
+        # add reward to tensorboard
+        writer.add_scalar(
+            "Reward/reward",
+            #{"reward": deltas["reward"] / deltas["count"]},
+            deltas["reward"] / deltas["count"],
             self.num_steps_done,
         )
 
@@ -817,9 +835,13 @@ class PPOTrainer(BaseRLTrainer):
             )
 
         # create tensorboard
+        tensorboard_folder = os.path.join(root_path, self.config.get("tensorboard_dir"))
+        if not os.path.exists(tensorboard_folder):
+            os.makedirs(tensorboard_folder)
+        
         with (
             TensorboardWriter(
-                self.config.get("tensorboard_dir"), flush_secs=self.flush_secs
+                tensorboard_folder, flush_secs=self.flush_secs
             )
             if rank0_only()
             else contextlib.suppress()
@@ -917,11 +939,13 @@ class PPOTrainer(BaseRLTrainer):
                     lr_scheduler.step()  # type: ignore
 
                 self.num_updates_done += 1
+
+                # show value_loass and action_loss in tensorboard
                 losses = self._coalesce_post_step(
                     dict(value_loss=value_loss, action_loss=action_loss),
                     count_steps_delta,
                 )
-
+                # update tensor board
                 self._training_log(writer, losses, prev_time)
 
                 # checkpoint model
@@ -939,9 +963,117 @@ class PPOTrainer(BaseRLTrainer):
 
             self.envs.close()
 
+    def _eval_checkpoint(
+        self,
+        checkpoint_path: str,
+        writer: TensorboardWriter,
+        checkpoint_index: int = 0):
+        if self.config.get("single_scene") == True:
+            self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, rendering=True)
+        else:
+            self._eval_checkpoint_dataset(checkpoint_path, writer, checkpoint_index)    
+
+    def update_avg_measurements(self, step_measurements):
+        for k,v in self.avg_measurements.measures.items():
+            if k not in step_measurements.measures:
+                print("Error: evaluation metrics must appear as step metrics")
+            else:
+                print(step_measurements.measures[k].get_metric())
+                new_value = v.get_metric() + step_measurements.measures[k].get_metric()
+                v.set_metric(new_value)
+
+    def average_avg_measurements(self, n_episodes):
+        for measure in self.avg_measurements.measures.values():
+            avg_value = measure.get_metric() / float(n_episodes)
+            measure.set_metric(avg_value) 
+
+    def _eval_checkpoint_single_scene(
+        self,
+        checkpoint_idx: int = 0,
+        rendering=True,
+        remove_images=True,
+        save_text_results=True
+    ):
+        print("Eval single scene")
+        random_agent = False
+        env =  NavEnv(config_file=self.config, dataset=None)
+        agent = PPOAgent(env=env, config_file=self.config, random_agent=random_agent)
+        
+        n_episodes = int(self.config.get("test_episode_count"))
+
+        eval_metrics = list(self.config.get("eval_metrics"))
+        self.avg_measurements = Measurements(measure_ids=eval_metrics, env=env, config=self.config)
+        self.avg_measurements.init_all_to_zero()
+        self.avg_measurements.print_measures()
+        
+        for episode_index in range(n_episodes):
+            
+            obs = env.reset()
+            agent.reset()
+            done = False
+            env.set_current_episode(episode_index)
+
+            print('-----------------------------')
+            print('Episode: %d'%(env.get_current_episode()))
+            print('Reset')
+            print('-----------------------------')
+
+            step = 0
+            while True: 
+                #action = env.action_space.sample()
+                action = agent.act(obs)
+                obs, reward, done, info = env.step(action)
+
+                print("Step: %d, Action: %d, Reward: %f"%(step, action, reward))
+
+                if rendering:
+                    render_obs = env.render(mode="color_sensor")
+
+                if done:
+                    env.measurements.print_measures()
+                    self.update_avg_measurements(env.measurements)
+                    break   
+
+                step += 1 
+        # average metrics over all episodes
+        self.average_avg_measurements(n_episodes)
+
+        print("-------------- Evaluation results --------------")
+        string_n_episode = "Number of episodes: %d"%(n_episodes)
+        print(string_n_episode)
+        ms = self.avg_measurements.print_measures()
+        print("------------------------------------------------")
+
+        # save evaluation results to txt
+        if save_text_results:
+            video_path = os.path.join(root_path, self.config.get("video_dir"))
+            txt_name =  f"ckpt-{checkpoint_idx}-eval-results.txt"
+            with open(os.path.join(video_path, txt_name), 'w') as outfile:
+                outfile.write(string_n_episode+"\n")
+                outfile.write(ms)
+            print("Saved evaluation file.")    
+        # save testing episodes to video
+        if not random_agent:
+            video_name = f"ckpt-{checkpoint_idx}"
+        else:
+            video_name = "random"
+
+        if "disk" in list(self.config.get("eval_video_option")):
+            video_path = os.path.join(root_path, self.config.get("video_dir"))
+            if not os.path.exists(video_path):
+                os.makedirs(video_path)
+
+            create_video(video_path=video_path, video_name=video_name)
+
+            if remove_images:
+                remove_jpg(video_path)
+                print("Images removed")
+        
+        print('Done.')
+
     # evaluate checkpoint
     # TO DO
-    def _eval_checkpoint(
+    def _eval_checkpoint_dataset(
         self,
         checkpoint_path: str,
         writer: TensorboardWriter,
@@ -963,7 +1095,7 @@ class PPOTrainer(BaseRLTrainer):
         # Map location CPU is almost always better than mapping to a CUDA device.
         ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
 
-        # use checkpoitn config or current config
+        # use checkpoint config or current config
         if self.config.get("eval_use_ckpt_config"):
             config = self._setup_eval_config(ckpt_dict["config"])
         else:
@@ -1029,7 +1161,7 @@ class PPOTrainer(BaseRLTrainer):
             [] for _ in range(int(self.config.get("num_environments")))
         ]  # type: List[List[np.ndarray]]
         if len(self.config.get("eval_video_option")) > 0:
-            os.makedirs(self.config.get("video_dir"), exist_ok=True)
+            os.makedirs(os.path.join(root_path, self.config.get("video_dir")), exist_ok=True)
 
         number_of_eval_episodes = self.config.get("test_episode_count")
         # evaluate on all episodes in the dataset
@@ -1128,7 +1260,7 @@ class PPOTrainer(BaseRLTrainer):
                     if len(self.config.get("eval_video_option")) > 0:
                         generate_video(
                             video_option=self.config.get("eval_video_option"),
-                            video_dir=self.config.get("video_dir"),
+                            video_dir=os.path.join(root_path, self.config.get("video_dir")),
                             images=rgb_frames[i],
                             episode_id=current_episodes[i].episode_id,
                             checkpoint_idx=checkpoint_index,
@@ -1195,4 +1327,5 @@ class PPOTrainer(BaseRLTrainer):
 
 if __name__ == "__main__":
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"))
-   trainer.train()
+   #trainer.train()
+   trainer.eval()

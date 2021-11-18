@@ -403,7 +403,7 @@ class GRUStateEncoder(RNNStateEncoder):
 def build_rnn_state_encoder(
     input_size: int,
     hidden_size: int,
-    rnn_type: str = "GRU",
+    rnn_type: str = "gru",
     num_layers: int = 1,
 ):
     r"""Factory for :ref:`RNNStateEncoder`.  Returns one with either a GRU or LSTM based on

@@ -4,4 +4,6 @@ enlighten.egg-info
 .vscode
 output
 video
+tensorboard
+checkpoints
 enlighten/agents/data

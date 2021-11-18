@@ -69,6 +69,11 @@ def generate_video(
             f"episode{episode_id}", checkpoint_idx, images, fps=fps
         )
 
+def remove_jpg(video_path):
+    for file in os.listdir(video_path):
+        if file.endswith(".jpg"):
+            os.remove(os.path.join(video_path, file))
+
 def images_to_video(
     images: List[np.ndarray],
     output_dir: str,
@@ -106,19 +111,20 @@ def images_to_video(
         writer.append_data(im)
     writer.close()  
 
-def create_video():
+# my create video
+def create_video(video_path, video_name="video"):
     images = []
     for file in os.listdir(video_path):
         if file.endswith(".jpg"):
-            #print(os.path.join(video_path, file))
+            #print(os.path.join(output_path, file))
             img = cv2.imread(os.path.join(video_path, file))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             images.append(img)
 
     if len(images) > 0:
-        images_to_video(images, output_dir=video_path, video_name="video")
+        images_to_video(images, output_dir=video_path, video_name=video_name)
     else:
         print("Error: no images exist!")    
 
 if __name__ == "__main__":
-    create_video()
+    create_video(video_path="~/enlighten/video")

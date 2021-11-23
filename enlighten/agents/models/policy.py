@@ -145,8 +145,8 @@ class CNNPolicy(Policy):
         visual_encoder = CNNEncoder(observation_space=observation_space, 
             output_size=hidden_size)
 
-        # point goal
-        if len(goal_observation_space.shape) < 3:
+        # point goal or no goal
+        if goal_observation_space is None or len(goal_observation_space.shape) < 3:
             goal_visual_encoder = None   
         # image goal      
         else:
@@ -188,8 +188,8 @@ class ResNetPolicy(Policy):
             make_backbone=getattr(resnet, backbone),
             normalize_visual_inputs=normalize_visual_inputs)
 
-        # point goal
-        if len(goal_observation_space.shape) < 3:
+        # point goal or no goal
+        if goal_observation_space is None or len(goal_observation_space.shape) < 3:
             goal_visual_encoder = None
         # image goal    
         else:    

@@ -1016,6 +1016,8 @@ class PPOTrainer(BaseRLTrainer):
             print('-----------------------------')
             print('Episode: %d'%(env.get_current_episode()))
             print('Reset')
+            env.print_agent_state()
+            print("Goal position: %s"%(env.goal_position))
             print('-----------------------------')
 
             step = 0
@@ -1327,5 +1329,5 @@ class PPOTrainer(BaseRLTrainer):
 
 if __name__ == "__main__":
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"))
-   #trainer.train()
-   trainer.eval()
+   trainer.train()
+   #trainer.eval()

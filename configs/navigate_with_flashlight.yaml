@@ -20,7 +20,7 @@ rotate_resolution: 10
 
 # observation space
 color_sensor: true
-depth_sensor: true
+depth_sensor: false
 semantic_sensor: false
 image_width: 224 # 256
 image_height: 224 # 256
@@ -42,7 +42,7 @@ goal_coord_system: polar  #  cartesian
 goal_dimension: 2
 goal_position: [4, 0, -1]
 random_goal: true
-random_start: false
+random_start: true
 
 # reward
 success_distance: 0.2 # l2 distance in meter
@@ -121,7 +121,7 @@ eval_use_ckpt_config: false
 video_dir: "video"
 tensorboard_dir: "tensorboard"
 # Evaluate on all episodes
-test_episode_count: 10 #-1: test on all episodes in dataset
+test_episode_count: 50 #-1: test on all episodes in dataset
 eval_metrics: ['success', 'spl', 'softspl', 'return']
 
 

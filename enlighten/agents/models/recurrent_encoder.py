@@ -57,19 +57,22 @@ class RecurrentVisualEncoder(Net):
         self._n_prev_action = 32
         rnn_input_size = self._n_prev_action
 
-        # goal embedding   
-        # pointgoal
-        if len(goal_observation_space.shape) < 3:
-            if self.polar_point_goal:
-                n_input_goal = goal_observation_space.shape[0] + 1
-            else:    
-                n_input_goal = goal_observation_space.shape[0]
-            self.goal_encoder = nn.Linear(n_input_goal, 32)
-            rnn_input_size += 32
-        # imagegoal  
+        # goal embedding 
+        if goal_observation_space is not None: 
+            # pointgoal
+            if len(goal_observation_space.shape) < 3:
+                if self.polar_point_goal:
+                    n_input_goal = goal_observation_space.shape[0] + 1
+                else:    
+                    n_input_goal = goal_observation_space.shape[0]
+                self.goal_encoder = nn.Linear(n_input_goal, 32)
+                rnn_input_size += 32
+            # imagegoal  
+            else:
+                self.goal_encoder = goal_visual_encoder
+                rnn_input_size += hidden_size
         else:
-            self.goal_encoder = goal_visual_encoder
-            rnn_input_size += hidden_size
+            self.goal_encoder = None        
 
 
         # visual observation embedding
@@ -141,17 +144,18 @@ class RecurrentVisualEncoder(Net):
             x.append(perception_embedding)
 
         # goal embedding
-        if "pointgoal" in observations:
-            goal_observations = observations["pointgoal"]
-            if self.polar_point_goal:
-                goal_observations = self.augment_goal_observation(goal_observations)
-            goal_embedding = self.goal_encoder(goal_observations)
-        elif "imagegoal" in observations:
-            image_goal = observations["imagegoal"]
-            # input should be a dictionary when using a visual encoder
-            goal_embedding = self.goal_encoder({"color_sensor": image_goal})
+        if self.goal_encoder is not None:
+            if "pointgoal" in observations:
+                goal_observations = observations["pointgoal"]
+                if self.polar_point_goal:
+                    goal_observations = self.augment_goal_observation(goal_observations)
+                goal_embedding = self.goal_encoder(goal_observations)
+            elif "imagegoal" in observations:
+                image_goal = observations["imagegoal"]
+                # input should be a dictionary when using a visual encoder
+                goal_embedding = self.goal_encoder({"color_sensor": image_goal})
 
-        x.append(goal_embedding)
+            x.append(goal_embedding)
             
         # action embedding
         prev_actions = prev_actions.squeeze(-1)

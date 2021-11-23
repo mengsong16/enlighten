@@ -885,7 +885,7 @@ def test_env():
     #else:
     #    env = create_garage_env()
 
-    for episode in range(10):
+    for episode in range(5):
         print("***********************************")
         print('Episode: {}'.format(episode))
         #step = 0
@@ -895,7 +895,8 @@ def test_env():
         env.print_agent_state()
         #env.print_collide_info()
         print("Goal position: %s"%(env.goal_position))
-        print("Goal observation: "+str(env.get_goal_observation().shape))
+        if env.config.get("goal_conditioned"):
+            print("Goal observation: "+str(env.get_goal_observation().shape))
         #print("Goal observation: %s"%(env.get_goal_observation()))
         
         print('-----------------------------')

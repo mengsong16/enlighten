@@ -98,6 +98,9 @@ class HabitatSimRGBSensor(HabitatSensor):
     def __init__(self, config) -> None:
         super().__init__(uuid="color_sensor", config=config)
 
+        if "replica" in config.get("dataset_path"):
+            self.RGB2BGR = True
+
     def _get_observation_space(self, *args: Any, **kwargs: Any) -> gym.spaces.Box:
         return gym.spaces.Box(
             low=0,
@@ -118,6 +121,11 @@ class HabitatSimRGBSensor(HabitatSensor):
         
         # remove alpha channel
         obs = obs[:, :, : self.RGBSENSOR_DIMENSION]  # type: ignore[index]
+
+        # RGB to BGR
+        if self.RGB2BGR:
+            obs = obs[:,:,[2,1,0]]
+            
         return obs
 
 

@@ -5,6 +5,7 @@ from habitat.utils.visualizations import maps
 import math
 import magnum as mn
 import habitat_sim
+from PIL import Image
 
 # Ref: gibson2/render/viewer.py
 class MyViewer:
@@ -20,6 +21,7 @@ class MyViewer:
 
     def imshow(self, image, map):
         cv2.imshow('RobotView', image)
+        #image.show()
         self.isopen = True
 
         # To get keyboard response, must after imshow in the first window, and click robotview window to make it active

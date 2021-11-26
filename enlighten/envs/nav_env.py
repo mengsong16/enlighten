@@ -194,27 +194,42 @@ class NavEnv(gym.Env):
         self.sim_config, sensors = self.create_sim_config()
         # create simulator
         self.sim = habitat_sim.Simulator(self.sim_config) 
+
+        
         # register dynamic lighting in simulator for dark mode
         if self.dark_mode:
-            self.sim.set_light_setup([], "current_scene_lighting")
+            # flashlight: point light x m in front of the robot 
             self.flashlight_z = float(self.config.get('flashlight_z'))
+            #self.sim.set_light_setup([], "current_scene_lighting")
+            self.sim.set_light_setup([
+            LightInfo(vector=[0.0, 0.0, -self.flashlight_z, 1.0], model=LightPositionModel.Camera)
+            ], "current_scene_lighting")
+       
+           
         # create gym observation space
         self.observation_space = self.create_gym_observation_space(sensors)
         # create goal sensors (must be created after the main observation space is created)
         self.create_goal_sensor()
+
+        
         # create agent and set agent's initial state to a navigable random position and z rotation
         self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id)
+       
         # create gym action space
         self.action_space = self.create_gym_action_space()
         # initialize viewer
         self.viewer = None
+         
         # set start and goal positions
         self.set_start_goal()
+
+        
         # set measurements
         measure_ids = list(self.config.get("measurements"))
         self.measurements = Measurements(measure_ids=measure_ids, env=self, config=self.config)
         # set current episode
         self.current_episode = 0
+        
 
     def create_sim_config(self):
         # simulator configuration
@@ -223,16 +238,27 @@ class NavEnv(gym.Env):
         # set scene path
         sim_config.scene_id = self.config.get('scene_id')
 
+        # set dataset path
+        # if not set, the value is "default"
+        sim_config.scene_dataset_config_file = self.config.get('dataset_path')
+
         # enable physics
         sim_config.enable_physics = True
-
-        # enable scene lighting change
-        sim_config.override_scene_light_defaults = True
 
         # create a new lighting for dark mode
         self.dark_mode = self.config.get('dark_mode')
         if self.dark_mode:
+            # enable scene lighting change
+            sim_config.override_scene_light_defaults = True
+            # change global lighting
             sim_config.scene_light_setup = "current_scene_lighting"
+        else:
+            sim_config.override_scene_light_defaults = False
+            # no lights
+            print("Daylight mode is on: global scene light setup is: %s"%(sim_config.scene_light_setup))
+            #print(sim_config.scene_light_setup)
+            #print("****************************")
+            
 
         # sensors and sensor specifications
         sensor_specs, sensors = self.create_sensors_and_sensor_specs()
@@ -274,6 +300,9 @@ class NavEnv(gym.Env):
 
     def get_gym_action_space(self):
         return self.action_space  
+
+    def get_sim_config(self):
+        return self.sim_config.sim_cfg    
 
     # ref: class ImageExtractor
     def create_sensors_and_sensor_specs(self):
@@ -440,56 +469,79 @@ class NavEnv(gym.Env):
         return index   
 
     def set_start_goal(self):
-        trajectory_not_exist = True
-        while trajectory_not_exist:
-            self.set_start_goal_once()
-            found_path, _, _ = self.shortest_path(self.get_agent_position(), self.goal_position)
-            if found_path:
-                trajectory_not_exist = False
-            else:
-                if (not self.random_goal) and (not self.random_start):
-                    print("There is no optimal trajectory exists between the provided start and goal position")
-                    exit()    
+        if self.sim.pathfinder.is_loaded:
+            trajectory_not_exist = True
+            while trajectory_not_exist:
+                self.set_start_goal_once()
+                found_path, _, _ = self.shortest_path(self.get_agent_position(), self.goal_position)
+                if found_path:
+                    trajectory_not_exist = False
+                else:
+                    if (not self.random_goal) and (not self.random_start):
+                        print("There is no optimal trajectory exists between the provided start and goal position")
+                        exit()    
 
-        print("Optimal trajectory exists between start position %s and goal position %s"%(self.get_agent_position(), self.goal_position))        
+            print("Optimal trajectory exists between start position %s and goal position %s"%(self.get_agent_position(), self.goal_position))        
+        else:
+           self.goal_position = np.array(self.config.get('goal_position'), dtype="float32")
+           start_point = np.array(self.config.get('agent_initial_position'), dtype="float32")
+           self.set_agent_state(new_position=start_point, 
+                        new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
 
     # may need to fix y coordinate of start and goal position
     def set_start_goal_once(self):
         self.random_goal = self.config.get('random_goal') 
 
+        # fixed goal
         if not self.random_goal: 
             end_point = np.array(self.config.get('goal_position'), dtype="float32")
             
-            if self.sim.pathfinder.is_navigable(end_point):
-                self.goal_position = end_point
+            if self.sim.pathfinder.is_loaded:
+                # check navigability of goal position
+                if self.sim.pathfinder.is_navigable(end_point):
+                    self.goal_position = end_point
+                else:
+                    print("Error: provided goal position is not navigable!")
+                    exit()
             else:
-                print("Error: provided goal position is not navigable!")
-                exit()
+                self.goal_position = end_point        
             
-            #self.goal_position = end_point        
+            #self.goal_position = end_point  
+        # random goal       
         else:
-            self.goal_position = self.sim.pathfinder.get_random_navigable_point()
+            if self.sim.pathfinder.is_loaded:
+                self.goal_position = self.sim.pathfinder.get_random_navigable_point()
+            else:
+                print("Error: navmesh is not available so is not able to set random goal point")      
 
         self.random_start = self.config.get('random_start')
 
+        # fixed start
         if not self.random_start:
             start_point = np.array(self.config.get('agent_initial_position'), dtype="float32")
             
-            if self.sim.pathfinder.is_navigable(start_point):
-                self.set_agent_state(new_position=start_point, 
-                    new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
+            if self.sim.pathfinder.is_loaded:
+                if self.sim.pathfinder.is_navigable(start_point):
+                    self.set_agent_state(new_position=start_point, 
+                        new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
+                else:
+                    print("Error: provided start position is not navigable!")
+                    exit() 
             else:
-                print("Error: provided start position is not navigable!")
-                exit() 
-            
+                self.set_agent_state(new_position=start_point, 
+                        new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
             #print(start_point)
             #self.set_agent_state(new_position=start_point, \
             #    new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)             
+        # random start
         else:
-            start_point = self.sim.pathfinder.get_random_navigable_point()
-            start_rotation = quat_from_angle_axis(self.sim.random.uniform_float(0, 2.0 * np.pi), np.array([0, 1, 0]))
-            self.set_agent_state(new_position=start_point, \
-                new_rotation=start_rotation, is_initial=True, quaternion=True)         
+            if self.sim.pathfinder.is_loaded:
+                start_point = self.sim.pathfinder.get_random_navigable_point()
+                start_rotation = quat_from_angle_axis(self.sim.random.uniform_float(0, 2.0 * np.pi), np.array([0, 1, 0]))
+                self.set_agent_state(new_position=start_point, \
+                    new_rotation=start_rotation, is_initial=True, quaternion=True) 
+            else:
+                print("Error: navmesh is not available so is not able to set random start point")                
 
     def step(self, action):
         action_name = self.action_mapping[action]
@@ -506,11 +558,8 @@ class NavEnv(gym.Env):
 
         #self.step_count_per_episode += 1
 
-        # update flashlight: point light x m in front of the robot 
-        if self.dark_mode:
-            self.sim.set_light_setup([
-            LightInfo(vector=[0.0, 0.0, -self.flashlight_z, 1.0], model=LightPositionModel.Camera)
-        ], "current_scene_lighting")
+        
+
 
         # update all measurements
         self.measurements.update_measures(
@@ -601,11 +650,17 @@ class NavEnv(gym.Env):
         else:
             topdown_map = None    
 
+        #print(obs.shape)
+        #print('------------------')
         # show image and map in viewer
         # color
         if obs.shape[2] == 3:
+            
             img = np.asarray(obs).astype(np.uint8)
+            #img = img[:,:,[2,1,0]]
+            #img = Image.fromarray(np.uint8(obs))
             self.viewer.imshow(img, topdown_map)
+            
         elif obs.shape[2] == 1:
             # depth
             if mode == "depth_sensor":
@@ -656,6 +711,7 @@ class NavEnv(gym.Env):
             print("Current scene light setup: No Light")
         else:    
             print("Current scene light setup: vector=%s"%self.sim.get_current_light_setup()[0].vector)
+            print("Current scene light setup: model=%s"%self.sim.get_current_light_setup()[0].model)
         print("******************************************************************")
 
     def get_specific_scene_light_vector(self, key):
@@ -664,6 +720,7 @@ class NavEnv(gym.Env):
             print("Scene light setup: No Light, key=%s"%(key))
         else:    
             print("Scene light setup: key=%s, vector=%s"%(key, self.sim.get_light_setup(key)[0].vector))
+            print("Scene light setup: key=%s, model=%s"%(key, self.sim.get_light_setup(key)[0].model))
         print("******************************************************************")                
     
     def shortest_path(self, start_point, end_point):
@@ -785,13 +842,16 @@ class NavEnv(gym.Env):
 
     
     def get_current_distance(self):
-        found_path, geodesic_distance = self.get_geodesic_distance_single_goal()
-        if found_path:
-            current_measure = geodesic_distance
-        else:    
-            current_measure = self.get_euclidean_distance()
+        if self.sim.pathfinder.is_loaded:
+            found_path, geodesic_distance = self.get_geodesic_distance_single_goal()
+            if found_path:
+                current_measure = geodesic_distance
+            else:    
+                current_measure = self.get_euclidean_distance()
 
-        return current_measure
+            return current_measure
+        else:
+            return self.get_euclidean_distance()    
 
     def get_reward(self):
         return self.measurements.measures["point_goal_reward"].get_metric()    
@@ -884,7 +944,7 @@ def test_env():
     env =  NavEnv()
     #else:
     #    env = create_garage_env()
-
+    
     for episode in range(5):
         print("***********************************")
         print('Episode: {}'.format(episode))
@@ -902,7 +962,7 @@ def test_env():
         print('-----------------------------')
 
        
-        for i in range(50):  # max steps per episode
+        for i in range(300):  # max steps per episode
             action = env.action_space.sample()
             #if gym_env:
             obs, reward, done, info = env.step(action)
@@ -934,6 +994,8 @@ def test_env():
             print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
 
             env.print_agent_state()
+
+            env.get_current_scene_light_vector()
             print('-------------------------------')
 
             #step += 1
@@ -959,8 +1021,12 @@ def test_env():
     #if not gym_env:
     #print("Env spec: " + str(env.spec))
     print('-----------------------------') 
+
+    print(env.get_sim_config().scene_dataset_config_file)
+    print(env.get_sim_config().scene_id)
     
     env.close() 
+    
 
 def test_shortest_path(start_point=None, end_point=None):
     env =  NavEnv()
@@ -1017,6 +1083,8 @@ def test_stop_action():
                
         print('Episode finished after {} timesteps.'.format(step))
         print('Collision count: %d'%(env.get_current_collision_counts()))
+
+        
 
 if __name__ == "__main__":    
     test_env()

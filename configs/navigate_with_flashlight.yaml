@@ -85,7 +85,7 @@ total_num_steps: 100000   # 75e6
 # only one of them can be used
 num_checkpoints: 10 #100
 checkpoint_interval: -1
-checkpoint_folder: "checkpoints"
+checkpoint_folder: "checkpoints/replica2"
 # observation transformations
 enabled_transforms: []
 
@@ -116,7 +116,7 @@ use_normalized_advantage: false
 # evaluation
 # save images and video to disk under video_path
 eval_video_option: ["disk", "tensorboard"]
-eval_checkpoint_folder: "checkpoints/1"
+eval_checkpoint_folder: "checkpoints/replica"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
 eval_checkpoint_file: "ckpt.9.pth"

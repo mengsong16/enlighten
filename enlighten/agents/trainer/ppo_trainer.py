@@ -259,7 +259,7 @@ class PPOTrainer(BaseRLTrainer):
         # set gpu and seed in distributed mode
         if self._is_distributed:
             local_rank, tcp_store = init_distrib_slurm(
-                self.config.get("distrib_backend")
+                self.config.get("distrib_backend"), int(self.config.get("default_port"))
             )
             if rank0_only():
                 logger.info(

@@ -22,7 +22,7 @@ SAVE_STATE.clear()
 
 
 # Default port to initialized the TCP store on
-DEFAULT_PORT = 8738
+#DEFAULT_PORT = 8738
 DEFAULT_PORT_RANGE = 127
 # Default address of world rank 0
 DEFAULT_MASTER_ADDR = "127.0.0.1"
@@ -232,7 +232,7 @@ def get_distrib_size() -> Tuple[int, int, int]:
 
 
 def init_distrib_slurm(
-    backend: str = "nccl",
+    backend: str = "nccl", default_port=8738
 ) -> Tuple[int, torch.distributed.TCPStore]:  # type: ignore
     r"""Initializes torch.distributed by parsing environment variables set
         by SLURM when ``srun`` is used or by parsing environment variables set

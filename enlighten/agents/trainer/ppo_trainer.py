@@ -80,16 +80,18 @@ class PPOTrainer(BaseRLTrainer):
     agent: PPO
     actor_critic: Policy
 
-    def __init__(self, config_filename=None):
+    def __init__(self, config_filename=None, resume_training=False):
         # initialize parent class
         super().__init__(config_filename)
 
-        # resume from checkpoint if "checkpoint_folder" indicate an existing file
-        resume_state = load_resume_state(self.config)
+        if resume_training:
+            # resume training from checkpoint if "checkpoint_folder" indicate an existing file
+            resume_state = load_resume_state(self.config)
 
-        # recover config from saved checkpoint
-        if resume_state is not None:
-            self.config = resume_state["config"]
+            # recover config from saved checkpoint
+            if resume_state is not None:
+                self.config = resume_state["config"]
+
 
         self.actor_critic = None
         self.agent = None

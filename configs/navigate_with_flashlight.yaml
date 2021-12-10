@@ -1,7 +1,7 @@
 # scene
 single_scene: true # train on single scene or a scene dataset
-scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
-#scene_id: /home/meng/habitat-sim/data/replica/configs/scenes/apt_0.scene_instance.json
+#scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
+scene_id: /home/meng/habitat-sim/data/replica/configs/scenes/apt_0.scene_instance.json
 #scene_id: /home/meng/habitat-sim/data/replica/stages/frl_apartment_stage.glb
 #scene_id: /home/meng/habitat-sim/data/replica/stages/Stage_v3_sc0_staging.glb
 #scene_id: /dataset/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb
@@ -33,7 +33,7 @@ max_depth: 1 #5.0
 dictionary_observation_space: true
 
 # task
-dark_mode: true #true #false
+dark_mode: false #true #false
 flashlight_z: 0.2 #0.8 #0.2
 measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'spl', 'softspl', 'point_goal_reward', 'return']
 

@@ -239,15 +239,25 @@ class RolloutStorage:
                 )
             )
 
-        # randomly shuffle the environment, then assign them equaly to each mini batch    
+        # randomly shuffle the environment, then assign them equaly to each mini batch  
         for inds in torch.randperm(num_environments).chunk(num_mini_batch):
             batch = self.buffers[0 : self.current_rollout_step_idx, inds]
             batch["advantages"] = advantages[
                 0 : self.current_rollout_step_idx, inds
             ]
-            # Only keep the hidden states of step 0 in minibatches
-            batch["recurrent_hidden_states"] = batch[
-                "recurrent_hidden_states"
-            ][0:1]
-
+            #print("-------********-------")
+            # [128, 3, 1, 512] 
+            # number of rolling steps
+            # number of environments per minibatch: e.g. 6/2
+            # 1
+            # size of hidden states
+            #print(batch["recurrent_hidden_states"].size())
+            #print("-------********-------")
+            # Only keep the hidden states of step 0 in minibatches [1,3,1,512]
+            # batch["recurrent_hidden_states"] = batch[
+            #    "recurrent_hidden_states"
+            # ][0:1]
+            # [128, 3, 1, 512] --> [384, 1, 512]
             yield batch.map(lambda v: v.flatten(0, 1))
+        # return a iterator over [2, 384,1,512] when num_mini_batch=2  
+

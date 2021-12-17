@@ -81,7 +81,22 @@ class PPO(nn.Module):
                 advantages, self.num_mini_batch
             )
 
+            #print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            #print(data_generator)
+            #print("Start iterating batches")
+            #print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            #i = 0
             for batch in data_generator:
+                
+                #print(batch["observations"].size())
+                #print("**********************")
+                #print(i)
+                # print(batch["recurrent_hidden_states"].size())
+                # print(batch["prev_actions"].size())
+                # print(batch["actions"].size())
+                # print("**********************")
+                #exit()
+
                 (
                     values,
                     action_log_probs,
@@ -94,6 +109,8 @@ class PPO(nn.Module):
                     batch["masks"],
                     batch["actions"],
                 )
+
+                
 
                 ratio = torch.exp(action_log_probs - batch["action_log_probs"])
                 surr1 = ratio * batch["advantages"]
@@ -140,6 +157,10 @@ class PPO(nn.Module):
                 value_loss_epoch += value_loss.item()
                 action_loss_epoch += action_loss.item()
                 dist_entropy_epoch += dist_entropy.item()
+
+                #i += 1
+
+            #exit()
 
             profiling_utils.range_pop()  # PPO.update epoch
 

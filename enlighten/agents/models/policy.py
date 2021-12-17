@@ -17,6 +17,11 @@ from enlighten.envs import NavEnv
 from enlighten.agents.models import resnet
 
 from gym.spaces import Dict as SpaceDict
+import matplotlib.pyplot as plt
+import skimage
+import matplotlib.cm as cm
+import torchvision
+#from torchsummary import summary
 
 # one fc layer
 class CriticHead(nn.Module):
@@ -70,10 +75,12 @@ class CategoricalNet(nn.Module):
 # features --> categoricalNet --> current action distribution
 # features --> critic --> V(s)
 class Policy(nn.Module, metaclass=abc.ABCMeta):
-    def __init__(self, net, dim_actions):
+    def __init__(self, net, dim_actions, attention=False):
         super().__init__()
+        # visual recurrent encoder
         self.net = net
         self.dim_actions = dim_actions
+        self.attention = attention
 
         self.action_distribution = CategoricalNet(
             self.net.output_size, self.dim_actions
@@ -93,6 +100,7 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
         masks,
         deterministic=False,
     ):
+           
         rnn_hidden_states, distribution, value = self.get_net_output(observations, rnn_hidden_states, prev_actions, masks)
 
         if deterministic:
@@ -105,16 +113,49 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
         return value, action, action_log_probs, rnn_hidden_states
 
     def get_value(self, observations, rnn_hidden_states, prev_actions, masks):
-        features, _ = self.net(
+        # visual rnn encoder
+        features, _, _ = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
         return self.critic(features)
 
-    def get_net_output(self, observations, rnn_hidden_states, prev_actions, masks):
-        features, rnn_hidden_states = self.net(
+    def get_attention_map(self, observations, rnn_hidden_states, prev_actions, masks):
+        assert self.attention==True, "Error: attention should be set to True"
+        # visual rnn encoder
+        _, _, attention_map = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
+        return attention_map
+
+    def get_resized_attention_map(self, observations, rnn_hidden_states, prev_actions, masks):
+        attention_map =  self.get_attention_map(observations, rnn_hidden_states, prev_actions, masks)
+        shape_size = 7
+        attention_map = attention_map.reshape(shape_size, shape_size)
+        
+        attention_map = torch.unsqueeze(attention_map, dim=0)
+
+        size = (observations["color_sensor"].size()[1], observations["color_sensor"].size()[2])
+        resize_operator = torchvision.transforms.Resize(size=size)
+        attention_map = resize_operator(attention_map)
+        # # [C,H,W] --> [H,W,C]
+        attention_map = attention_map.permute(1,2,0)
+        #alpha_img = skimage.transform.pyramid_expand(, upscale=224/14, sigma=20)
+        #plt.imshow(alpha_img, alpha=0.8)
+        #plt.set_cmap(cm.Greys_r)
+        #plt.axis('off')
+
+        
+        return attention_map
+
+    # get actor-critic output 
+    def get_net_output(self, observations, rnn_hidden_states, prev_actions, masks):
+        # visual rnn encoder
+        features, rnn_hidden_states, _ = self.net(
+            observations, rnn_hidden_states, prev_actions, masks
+        )
+        # actor
         distribution = self.action_distribution(features)
+        # critic
         value = self.critic(features)
 
         return rnn_hidden_states, distribution, value
@@ -122,7 +163,19 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
     def evaluate_actions(
         self, observations, rnn_hidden_states, prev_actions, masks, action
     ):
-        
+        #print("==================================")
+        #print(observations.size())
+        # hidden_states size: [3,1,512]: no attention --> RNN --> [3,1,512]
+        # no attention: the hidden state is independent of input and output of RNN unit, thus its batch size could be different
+        # prev_actions size: [384, 1]
+        # masks size: [384, 1]
+        # observations size: [384, 1]
+        #print(rnn_hidden_states.size())
+        #print(prev_actions.size())  
+        #print(masks.size())
+        #print("==================================")
+        #exit()
+        #assert rnn_hidden_states.size()[0] == prev_actions.size()[0], "Error: size does not match"
         rnn_hidden_states, distribution, value = self.get_net_output(observations, rnn_hidden_states, prev_actions, masks)
         # get action distribution's entropy
         action_log_probs = distribution.log_probs(action)
@@ -140,6 +193,7 @@ class CNNPolicy(Policy):
         action_space,
         rnn_type,
         hidden_size: int = 512,
+        attention: bool=False,
         **kwargs
     ):
         visual_encoder = CNNEncoder(observation_space=observation_space, 
@@ -165,6 +219,7 @@ class CNNPolicy(Policy):
                 **kwargs,
             ),
             dim_actions = action_space.n,
+            attention = attention
         )  
 
 class ResNetPolicy(Policy):
@@ -179,6 +234,7 @@ class ResNetPolicy(Policy):
         backbone: str = "resnet18",
         normalize_visual_inputs: bool = False,
         hidden_size: int = 512,
+        attention: bool=False,
         **kwargs
     ):
         
@@ -186,8 +242,10 @@ class ResNetPolicy(Policy):
             output_size=hidden_size,
             baseplanes=baseplanes,
             make_backbone=getattr(resnet, backbone),
-            normalize_visual_inputs=normalize_visual_inputs)
+            normalize_visual_inputs=normalize_visual_inputs,
+            attention=attention)
 
+        
         # point goal or no goal
         if goal_observation_space is None or len(goal_observation_space.shape) < 3:
             goal_visual_encoder = None
@@ -208,9 +266,11 @@ class ResNetPolicy(Policy):
                 hidden_size=hidden_size,
                 polar_point_goal=polar_point_goal,
                 rnn_type=rnn_type,
+                attention=attention,
                 **kwargs,
             ),
             dim_actions = action_space.n,
+            attention = attention
         ) 
 
 if __name__ == "__main__": 

@@ -8,8 +8,11 @@ from torch import nn as nn
 
 from enlighten.envs import ImageGoal, PointGoal, goal
 from enlighten.agents.models import build_rnn_state_encoder
+from enlighten.agents.models import Attention
 
 import abc
+
+from torchinfo import summary
 
 class Net(nn.Module, metaclass=abc.ABCMeta):
     @abc.abstractmethod
@@ -45,7 +48,8 @@ class RecurrentVisualEncoder(Net):
         num_recurrent_layers: int = 1,
         rnn_type: str="gru",
         polar_point_goal=False,
-        goal_visual_encoder=None
+        goal_visual_encoder=None,
+        attention=False
     ):
         super().__init__()
 
@@ -78,10 +82,23 @@ class RecurrentVisualEncoder(Net):
         # visual observation embedding
         self.visual_encoder = visual_encoder
 
+        # attention
+        self.attention = attention
+        if self.attention:
+            self.attention_model = Attention(encoder_dim=self.visual_encoder.dim, hidden_dim=hidden_size)
+
         # RNN state embedding
         self._hidden_size = hidden_size
+
+        if self.is_blind:
+            visual_embedding_size = 0
+        else:    
+            if self.attention:
+                visual_embedding_size = self.visual_encoder.dim
+            else:
+                visual_embedding_size =  self._hidden_size   
         self.state_encoder = build_rnn_state_encoder(
-            (0 if self.is_blind else self._hidden_size) + rnn_input_size,
+            visual_embedding_size + rnn_input_size,
             self._hidden_size,
             rnn_type=rnn_type,
             num_layers=num_recurrent_layers
@@ -140,9 +157,24 @@ class RecurrentVisualEncoder(Net):
 
         # visual observation embedding
         if not self.is_blind:
+            
             perception_embedding = self.visual_encoder(observations)
-            x.append(perception_embedding)
+            #print("=============================================")
+            #print(perception_embedding.size()) #[6,196,128]
+            #print(rnn_hidden_states.size()) #[6,1,512]
+            if self.attention:
+                selected_visual_features, patch_weights = self.attention_model(img_features=perception_embedding, hidden_state=rnn_hidden_states)
+                #print(selected_visual_features.size()) #[6,128]
+                #print(patch_weights.size()) #[6,196]
+                x.append(selected_visual_features)
+            else:
+                patch_weights = None
+                x.append(perception_embedding)
 
+            #print("=============================================") 
+            #exit()  
+        #print("=========================================") 
+        #print(x[0].size())
         # goal embedding
         if self.goal_encoder is not None:
             if "pointgoal" in observations:
@@ -156,7 +188,7 @@ class RecurrentVisualEncoder(Net):
                 goal_embedding = self.goal_encoder({"color_sensor": image_goal})
 
             x.append(goal_embedding)
-            
+        #print(x[1].size())
         # action embedding
         prev_actions = prev_actions.squeeze(-1)
         
@@ -174,11 +206,26 @@ class RecurrentVisualEncoder(Net):
         )
 
         x.append(prev_action_embedding)
-
+        #print(x[2].size())
+        
         # RNN state embedding
         out = torch.cat(x, dim=1)
+
+        
+        # print("=========================================")
+        # print("inside actor critic")
+        # print(prev_actions.size())
+        # print(rnn_hidden_states.size())
+        
+
         out, rnn_hidden_states = self.state_encoder(
             out, rnn_hidden_states, masks
         )
 
-        return out, rnn_hidden_states
+        #print(out.size())
+        #print(rnn_hidden_states.size())
+        #print("=========================================")
+        #exit()
+
+        return out, rnn_hidden_states, patch_weights
+

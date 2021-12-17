@@ -123,13 +123,15 @@ class PPOAgent(Agent):
                 action_space=env.action_space,
                 rnn_type=self.config.get("rnn_type"),
                 hidden_size=int(self.config.get("hidden_size")),
-                normalize_visual_inputs="color_sensor" in env.observation_space) 
+                normalize_visual_inputs="color_sensor" in env.observation_space,
+                attention=self.config.get("attention")) 
 
         self.actor_critic.to(self.device)
 
         # load model
         if not random_agent:
             #  Filter out only actor_critic weights
+            #  i.e. Policy: including attention, critic, net (recurrent encoder)
             self.actor_critic.load_state_dict(
                 {
                     k[len("actor_critic.") :]: v
@@ -138,6 +140,8 @@ class PPOAgent(Agent):
                 }
             )
             logger.info("Checkpoint loaded")
+            #print(ckpt["state_dict"].keys())
+            #exit()
         else:
             logger.error(
                 "Model checkpoint wasn't loaded, evaluating " "a random model."
@@ -186,9 +190,17 @@ class PPOAgent(Agent):
             self.not_done_masks.fill_(True)
             self.prev_actions.copy_(actions) 
 
+        if self.config.get("attention"):
+            attention_image = self.actor_critic.get_resized_attention_map(
+                batch, self.recurrent_hidden_states, self.prev_actions, self.not_done_masks)    
+        #[1,224,224]
+        #print(attention_image.shape)
         #return {"action": actions[0][0].item()}
         # actions: ([[index]])
-        return actions[0][0].item()
+        if self.config.get("attention"):
+            return actions[0][0].item(), attention_image.cpu().detach().numpy()
+        else:
+            return actions[0][0].item()
 
 
 def test():

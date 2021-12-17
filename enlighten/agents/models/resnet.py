@@ -228,6 +228,7 @@ class ResNet(nn.Module):
         if block.resneXt:
             base_planes *= 2
 
+        # four layers of basic blocks
         self.layer1 = self._make_layer(block, ngroups, base_planes, layers[0])
         self.layer2 = self._make_layer(
             block, ngroups, base_planes * 2, layers[1], stride=2
@@ -289,7 +290,7 @@ class ResNet(nn.Module):
 # Different ResNet with different basic blocks and # of layers
 def resnet18(in_channels, base_planes, ngroups):
     model = ResNet(in_channels, base_planes, ngroups, BasicBlock, [2, 2, 2, 2])
-
+    #model = ResNet(in_channels, base_planes, ngroups, BasicBlock, [2, 2, 2])
     return model
 
 

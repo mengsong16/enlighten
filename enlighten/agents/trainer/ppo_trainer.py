@@ -174,7 +174,8 @@ class PPOTrainer(BaseRLTrainer):
                 action_space=self.envs.action_spaces[0],
                 rnn_type=self.config.get("rnn_type"),
                 hidden_size=int(self.config.get("hidden_size")),
-                normalize_visual_inputs="color_sensor" in observation_space
+                normalize_visual_inputs="color_sensor" in observation_space,
+                attention = self.config.get("attention")
                 ) 
 
         self.actor_critic.to(self.device)
@@ -1025,13 +1026,21 @@ class PPOTrainer(BaseRLTrainer):
             step = 0
             while True: 
                 #action = env.action_space.sample()
-                action = agent.act(obs)
+                if self.config.get("attention"):
+                    action, attention_image = agent.act(obs)
+                    #print(attention_map.size())
+                else:
+                    action = agent.act(obs)
+                
                 obs, reward, done, info = env.step(action)
 
                 print("Step: %d, Action: %d, Reward: %f"%(step, action, reward))
 
                 if rendering:
-                    render_obs = env.render(mode="color_sensor")
+                    if self.config.get("attention"):
+                        env.render(mode="color_sensor", attention_image=attention_image)
+                    else:    
+                        env.render(mode="color_sensor")
 
                 if done:
                     env.measurements.print_measures()
@@ -1331,5 +1340,6 @@ class PPOTrainer(BaseRLTrainer):
 
 if __name__ == "__main__":
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"))
-   trainer.train()
-   #trainer.eval()
+   #trainer._init_train()
+   #trainer.train()
+   trainer.eval()

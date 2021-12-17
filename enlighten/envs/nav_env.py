@@ -619,7 +619,7 @@ class NavEnv(gym.Env):
     def is_collision(self):
         return self.measurements.measures["collisions"].get_metric()["is_collision"]         
 
-    def render(self, mode: str = "color_sensor") -> Any:
+    def render(self, mode: str = "color_sensor", attention_image=None) -> Any:
         r"""
         Args:
             mode: sensor whose observation is used for returning the frame,
@@ -633,7 +633,7 @@ class NavEnv(gym.Env):
         # create viewer
         if self.viewer is None:
             #self.viewer = SimpleImageViewer()
-            self.viewer = MyViewer(sim=self.sim)
+            self.viewer = MyViewer(sim=self.sim, show_attention=self.config.get("attention"))
 
         sim_obs = self.sim.get_sensor_observations(agent_ids=self.sim._default_agent_id)
         obs = self.sensor_suite.get_specific_observation(uuid=mode, sim_obs=sim_obs)
@@ -659,7 +659,7 @@ class NavEnv(gym.Env):
             img = np.asarray(obs).astype(np.uint8)
             #img = img[:,:,[2,1,0]]
             #img = Image.fromarray(np.uint8(obs))
-            self.viewer.imshow(img, topdown_map)
+            self.viewer.imshow(img, topdown_map, attention_image)
             
         elif obs.shape[2] == 1:
             # depth
@@ -667,7 +667,7 @@ class NavEnv(gym.Env):
                 img = np.asarray(obs * 255).astype(np.uint8)
                 # not the same with dstack the single channel
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-                self.viewer.imshow(img, topdown_map)
+                self.viewer.imshow(img, topdown_map, attention_image)
             # label image    
             else:
                 img = np.asarray(np.squeeze(obs, axis=2)).astype(np.uint8)
@@ -676,11 +676,11 @@ class NavEnv(gym.Env):
                 img = np.asarray(img).astype(np.uint8)
                 #print("*****************")
                 #print(np.ptp(img))
-                self.viewer.imshow(img, topdown_map)
+                self.viewer.imshow(img, topdown_map, attention_image)
         else:
             print("Error: image channel is neither 1 nor 3!")
 
-        # save observation 
+        # save observation images in video dir
         if "disk" in list(self.config.get("eval_video_option")):
             filename = str(self.get_current_episode())+"_"+str(self.get_current_step()) + ".jpg"
             video_path = os.path.join(root_path, self.config.get("video_dir"))

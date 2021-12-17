@@ -11,7 +11,8 @@ from torch.nn.modules.conv import Conv2d
 
 from enlighten.agents.models import RunningMeanAndVar
 
-from torchsummary import summary
+#from torchsummary import summary
+from torchinfo import summary
 
 # Allow rgb and depth
 class VisualEncoder(nn.Module):
@@ -138,7 +139,9 @@ class CNNEncoder(VisualEncoder):
             nn.ReLU(True),
         )
 
-        #summary(self.visual_encoder, (4,224,224), device="cpu")
+        #summary(self.visual_encoder, (3,224,224), device="cpu")
+        #summary(self.visual_encoder, input_size=(1,3,224,224))
+        #exit()
     
     def _conv_output_dim(
         self, dimension, padding, dilation, kernel_size, stride):
@@ -175,7 +178,9 @@ class CNNEncoder(VisualEncoder):
         vision_inputs = self.get_vision_inputs(observations)
         vision_inputs = torch.cat(vision_inputs, dim=1)
 
-        return self.visual_encoder(vision_inputs)    
+        
+        return self.visual_encoder(vision_inputs)
+           
 
 class ResNetEncoder(VisualEncoder):
     def __init__(self, 
@@ -185,7 +190,8 @@ class ResNetEncoder(VisualEncoder):
         ngroups: int = 32,
         spatial_size: int = 128,
         make_backbone=None,
-        normalize_visual_inputs: bool = False):
+        normalize_visual_inputs: bool = False,
+        attention: bool=False):
 
         super().__init__(observation_space)
 
@@ -203,12 +209,14 @@ class ResNetEncoder(VisualEncoder):
             self.running_mean_and_var = nn.Sequential()
 
         self.output_size = output_size
+        self.attention = attention
 
         if not self.is_blind:
             self.create_model(baseplanes, 
                 ngroups,
                 spatial_size,
-                make_backbone)
+                make_backbone,
+                attention)
 
             self.layer_init()    
 
@@ -244,79 +252,103 @@ class ResNetEncoder(VisualEncoder):
         baseplanes,
         ngroups,
         spatial_size,
-        make_backbone):
+        make_backbone,
+        attention):
 
         input_channels = self._n_input_depth + self._n_input_rgb
 
         self.backbone = make_backbone(input_channels, baseplanes, ngroups)
 
-        # expected spatial size after compression 
-        final_spatial = int(
-            spatial_size * self.backbone.final_spatial_compress
-        )
+        if attention == False:
 
-        after_compression_flat_size = 2048
-        num_compression_channels = int(
-            round(after_compression_flat_size / (final_spatial ** 2))
-        )
-
-        self.compression = nn.Sequential(
-            nn.Conv2d(
-                self.backbone.final_channels,
-                num_compression_channels,
-                kernel_size=3,
-                padding=1,
-                bias=False,
-            ),
-            nn.GroupNorm(1, num_compression_channels),
-            nn.ReLU(True),
-        )
-
-        # after_compression_dims = np.array(
-        #         (before_dims, before_dims), dtype=np.float32
-        #     )
-        # final_dims = self._conv_output_dim(
-        #         dimension=after_compression_dims,
-        #         padding=np.array([1, 1], dtype=np.float32),
-        #         dilation=np.array([1, 1], dtype=np.float32),
-        #         kernel_size=np.array([3, 3], dtype=np.float32),
-        #         stride=np.array([1, 1], dtype=np.float32),
-        #     )
-        #after_compression_spatial = 7
-        # print(final_spatial)
-        # print(final_dims)
-        
-        output_shape = (
-                num_compression_channels,
-                final_spatial,
-                final_spatial,
+            # expected spatial size after compression 
+            final_spatial = int(
+                spatial_size * self.backbone.final_spatial_compress
             )
 
-        #print(self.output_shape)    
+            after_compression_flat_size = 2048
+            num_compression_channels = int(
+                round(after_compression_flat_size / (final_spatial ** 2))
+            )
 
-        # 2048 print(after_compression_flat_size)
-        # 228 print(num_compression_channels)
-        # 512 print(self.output_size)
-        # 3 print(final_spatial)
-        # 0.03125 print(self.backbone.final_spatial_compress)
-        # 112 print(spatial_size)
-
-        self.fc = nn.Sequential(
-                nn.Flatten(),
-                nn.Linear(
-                    np.prod(output_shape), self.output_size
+            self.compression = nn.Sequential(
+                nn.Conv2d(
+                    self.backbone.final_channels,
+                    num_compression_channels,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
                 ),
+                nn.GroupNorm(1, num_compression_channels),
                 nn.ReLU(True),
-        )
+            )
 
-        self.visual_encoder = nn.Sequential(
-            self.running_mean_and_var,
-            self.backbone,
-            self.compression,
-            self.fc
-        )
+            # after_compression_dims = np.array(
+            #         (before_dims, before_dims), dtype=np.float32
+            #     )
+            # final_dims = self._conv_output_dim(
+            #         dimension=after_compression_dims,
+            #         padding=np.array([1, 1], dtype=np.float32),
+            #         dilation=np.array([1, 1], dtype=np.float32),
+            #         kernel_size=np.array([3, 3], dtype=np.float32),
+            #         stride=np.array([1, 1], dtype=np.float32),
+            #     )
+            #after_compression_spatial = 7
+            # print(final_spatial)
+            # print(final_dims)
+            
+            output_shape = (
+                    num_compression_channels,
+                    final_spatial,
+                    final_spatial,
+                )
 
-        #summary(self.visual_encoder, (4,224,224), device="cpu")
+            #print(self.output_shape)    
+
+            # 2048 print(after_compression_flat_size)
+            # 228 print(num_compression_channels)
+            # 512 print(self.output_size)
+            # 3 print(final_spatial)
+            # 0.03125 print(self.backbone.final_spatial_compress)
+            # 112 print(spatial_size)
+
+            self.fc = nn.Sequential(
+                    nn.Flatten(),
+                    nn.Linear(
+                        np.prod(output_shape), self.output_size
+                    ),
+                    nn.ReLU(True),
+            )
+
+            self.visual_encoder = nn.Sequential(
+                self.running_mean_and_var,
+                self.backbone,
+                self.compression,
+                self.fc
+            )
+        # add attension  
+        # remove the last block 
+        # for res18, output shape is (128, 14, 14)
+        else:
+            self.visual_encoder = nn.Sequential(
+                self.running_mean_and_var,
+                #*list(self.backbone.modules())#[:-1]
+                *list(self.backbone.children())
+                #*list(self.backbone.children())[:-1],
+                #self.backbone
+            ) 
+            # visual feature dimension
+            #self.dim = 128 # 14*14
+            self.dim = 256  # 7*7     
+
+        #print(self.visual_encoder.children().children())
+        #print(type(self.visual_encoder))
+        #summary(self.visual_encoder, (3,224,224), device="cpu")
+        #print(attention)
+        #print(*list(self.backbone.modules())[:-1])
+        #summary(self.visual_encoder, (3,224,224), device="cpu")
+        #summary(self.visual_encoder, input_size=(1,3,224,224))
+        #exit()
     
     def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:
         if self.is_blind:
@@ -326,4 +358,15 @@ class ResNetEncoder(VisualEncoder):
         vision_inputs = torch.cat(vision_inputs, dim=1)
         #vision_inputs = F.avg_pool2d(vision_inputs, 2)
 
-        return self.visual_encoder(vision_inputs)
+        if self.attention == False:
+            return self.visual_encoder(vision_inputs)
+        else:
+            x = self.visual_encoder(vision_inputs)
+            # （1，128，14，14） --> (1,14, 14, 128)
+            x = x.permute(0, 2, 3, 1)
+            # (1, 14, 14, 128) --> (1, 196, 128)
+            x = x.view(x.size(0), -1, x.size(-1)) 
+            return x    
+
+if __name__ == "__main__":
+      print('Done')      

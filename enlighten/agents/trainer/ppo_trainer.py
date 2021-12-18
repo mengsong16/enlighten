@@ -84,6 +84,7 @@ class PPOTrainer(BaseRLTrainer):
         # initialize parent class
         super().__init__(config_filename)
 
+        self.resume_training = resume_training
         if resume_training:
             # resume training from checkpoint if "checkpoint_folder" indicate an existing file
             resume_state = load_resume_state(self.config)
@@ -815,27 +816,28 @@ class PPOTrainer(BaseRLTrainer):
         )
 
         # load state
-        resume_state = load_resume_state(self.config)
-        if resume_state is not None:
-            self.agent.load_state_dict(resume_state["state_dict"])
-            self.agent.optimizer.load_state_dict(resume_state["optim_state"])
-            lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
+        if self.resume_training:
+            resume_state = load_resume_state(self.config)
+            if resume_state is not None:
+                self.agent.load_state_dict(resume_state["state_dict"])
+                self.agent.optimizer.load_state_dict(resume_state["optim_state"])
+                lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
 
-            requeue_stats = resume_state["requeue_stats"]
-            self.env_time = requeue_stats["env_time"]
-            self.pth_time = requeue_stats["pth_time"]
-            self.num_steps_done = requeue_stats["num_steps_done"]
-            self.num_updates_done = requeue_stats["num_updates_done"]
-            self._last_checkpoint_percent = requeue_stats[
-                "_last_checkpoint_percent"
-            ]
-            count_checkpoints = requeue_stats["count_checkpoints"]
-            prev_time = requeue_stats["prev_time"]
+                requeue_stats = resume_state["requeue_stats"]
+                self.env_time = requeue_stats["env_time"]
+                self.pth_time = requeue_stats["pth_time"]
+                self.num_steps_done = requeue_stats["num_steps_done"]
+                self.num_updates_done = requeue_stats["num_updates_done"]
+                self._last_checkpoint_percent = requeue_stats[
+                    "_last_checkpoint_percent"
+                ]
+                count_checkpoints = requeue_stats["count_checkpoints"]
+                prev_time = requeue_stats["prev_time"]
 
-            self.running_episode_stats = requeue_stats["running_episode_stats"]
-            self.window_episode_stats.update(
-                requeue_stats["window_episode_stats"]
-            )
+                self.running_episode_stats = requeue_stats["running_episode_stats"]
+                self.window_episode_stats.update(
+                    requeue_stats["window_episode_stats"]
+                )
 
         # create tensorboard
         tensorboard_folder = os.path.join(root_path, self.config.get("tensorboard_dir"))
@@ -895,7 +897,7 @@ class PPOTrainer(BaseRLTrainer):
                 count_steps_delta = 0
                 profiling_utils.range_push("rollouts loop")
 
-                # act one step
+                # act one step for all envs
                 profiling_utils.range_push("_collect_rollout_step")
                 for buffer_index in range(self._nbuffers):
                     self._compute_actions_and_step_envs(buffer_index)
@@ -944,6 +946,8 @@ class PPOTrainer(BaseRLTrainer):
                 self.num_updates_done += 1
 
                 # show value_loass and action_loss in tensorboard
+                # count_steps_delta: how many envs in this buffer, e.g. 6
+                # steps: count_steps_delta * 1
                 losses = self._coalesce_post_step(
                     dict(value_loss=value_loss, action_loss=action_loss),
                     count_steps_delta,

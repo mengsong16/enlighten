@@ -80,7 +80,9 @@ torch_gpu_id: 0
 simulator_gpu_id: 0
 seed: 1
 # train for how long: one of them must be -1
+# num_updates = ppo_epoch * num_mini_batch
 num_updates: -1 #1000
+# total_num_steps: steps collected in all environments (num_environments)  
 total_num_steps: 100000   # 75e6
 # checkpoint
 # only one of them can be used
@@ -99,7 +101,13 @@ tensorboard_dir: "tensorboard/vangogh_attention"
 
 # PPO
 clip_param: 0.2
+# num_updates = ppo_epoch * num_mini_batch
+# ppo_epoch: # epoches per each agent update
 ppo_epoch: 4
+# batches per each epoch
+# each batch include steps from num_environments / num_mini_batch rollouts
+# each rollout include num_steps steps
+# use one batch for each parameter update 
 num_mini_batch: 2  
 value_loss_coef: 0.5
 entropy_coef: 0.01

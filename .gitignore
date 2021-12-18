@@ -7,3 +7,5 @@ video
 tensorboard
 checkpoints
 enlighten/agents/data
+configs
+

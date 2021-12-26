@@ -573,7 +573,8 @@ class NavEnv(gym.Env):
 
         done = self.is_done()
 
-        info = {}
+        # add metrics (e.g, success) to info for tensorboard stats
+        info = {"success": int(self.is_success()), "spl": self.get_spl()}
         return obs, reward, done, info              
 
     def reset(self):
@@ -860,7 +861,10 @@ class NavEnv(gym.Env):
         return self.measurements.measures["done"].get_metric()  
 
     def is_success(self):
-        return bool(self.measurements.measures["success"].get_metric())  
+        return bool(self.measurements.measures["success"].get_metric()) 
+
+    def get_spl(self):
+        return self.measurements.measures["spl"].get_metric()    
 
     #def number_of_episodes(self):
 

@@ -15,6 +15,8 @@ from habitat_sim.utils import profiling_utils
 from enlighten.agents.common.rollout_storage import RolloutStorage
 from enlighten.agents.models import Policy
 
+import torch.nn.functional as F
+
 
 class PPO(nn.Module):
     def __init__(
@@ -25,6 +27,7 @@ class PPO(nn.Module):
         num_mini_batch: int,
         value_loss_coef: float,
         entropy_coef: float,
+        kl_coef: float,
         lr: Optional[float] = None,
         eps: Optional[float] = None,
         max_grad_norm: Optional[float] = None,
@@ -42,6 +45,7 @@ class PPO(nn.Module):
 
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
+        self.kl_coef = kl_coef
 
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
@@ -68,12 +72,18 @@ class PPO(nn.Module):
         EPS_PPO = 1e-5
         return (advantages - advantages.mean()) / (advantages.std() + EPS_PPO)
 
+    def kl(self, log_P, log_Q):
+        P = torch.exp(log_P)
+        return F.kl_div(log_Q, P, None, None, 'sum')
+
+        
     def update(self, rollouts: RolloutStorage) -> Tuple[float, float, float]:
         advantages = self.get_advantages(rollouts)
 
         value_loss_epoch = 0.0
         action_loss_epoch = 0.0
         dist_entropy_epoch = 0.0
+        kl_divergence_epoch = 0.0
 
         for _e in range(self.ppo_epoch):
             profiling_utils.range_push("PPO.update epoch")
@@ -111,7 +121,8 @@ class PPO(nn.Module):
                 )
 
                 
-
+                # action_log_probs: log prob of current pi
+                # batch["action_log_probs"]: log prob of old pi
                 ratio = torch.exp(action_log_probs - batch["action_log_probs"])
                 surr1 = ratio * batch["advantages"]
                 surr2 = (
@@ -121,6 +132,11 @@ class PPO(nn.Module):
                     * batch["advantages"]
                 )
                 action_loss = -(torch.min(surr1, surr2).mean())
+
+                # kl(P=old, Q=new)
+                action_kl = self.kl(batch["action_log_probs"], action_log_probs)
+
+                #print("kL: %f"%action_kl)
 
                 if self.use_clipped_value_loss:
                     value_pred_clipped = batch["value_preds"] + (
@@ -144,6 +160,7 @@ class PPO(nn.Module):
                     value_loss * self.value_loss_coef
                     + action_loss
                     - dist_entropy * self.entropy_coef
+                    + action_kl * self.kl_coef 
                 )
 
                 self.before_backward(total_loss)
@@ -157,6 +174,7 @@ class PPO(nn.Module):
                 value_loss_epoch += value_loss.item()
                 action_loss_epoch += action_loss.item()
                 dist_entropy_epoch += dist_entropy.item()
+                kl_divergence_epoch += action_kl.item()
 
                 #i += 1
 
@@ -169,8 +187,9 @@ class PPO(nn.Module):
         value_loss_epoch /= num_updates
         action_loss_epoch /= num_updates
         dist_entropy_epoch /= num_updates
+        kl_divergence_epoch /= num_updates
 
-        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch
+        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, kl_divergence_epoch
 
     def _evaluate_actions(
         self, observations, rnn_hidden_states, prev_actions, masks, action

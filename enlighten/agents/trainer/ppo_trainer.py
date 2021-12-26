@@ -225,6 +225,7 @@ class PPOTrainer(BaseRLTrainer):
             num_mini_batch=int(self.config.get("num_mini_batch")),
             value_loss_coef=float(self.config.get("value_loss_coef")),
             entropy_coef=float(self.config.get("entropy_coef")),
+            kl_coef=float(self.config.get("kl_coef")),
             lr=float(self.config.get("lr")),
             eps=float(self.config.get("eps")),
             max_grad_norm=float(self.config.get("max_grad_norm")),
@@ -318,7 +319,7 @@ class PPOTrainer(BaseRLTrainer):
         if rank0_only() and not os.path.isdir(os.path.join(root_path, self.config.get("checkpoint_folder"))):
             os.makedirs(os.path.join(root_path, self.config.get("checkpoint_folder")))
 
-        # setput actor critic of agent
+        # setup actor critic of agent
         self._setup_actor_critic_agent()
         if self._is_distributed:
             self.agent.init_distributed(find_unused_params=True)
@@ -377,12 +378,17 @@ class PPOTrainer(BaseRLTrainer):
         # add observation to rollout buffer
         self.rollouts.buffers["observations"][0] = batch
 
-        # initialize episode reward, stats
+        # initialize current episode reward, running_episode_stats to 0
+        # Note that running_episode_stats accumulate along all history episodes (never reset to 0)
         self.current_episode_reward = torch.zeros(self.envs.num_envs, 1)
+        # stats in info will be added later
         self.running_episode_stats = dict(
             count=torch.zeros(self.envs.num_envs, 1),
             reward=torch.zeros(self.envs.num_envs, 1),
         )
+        # stats is calculated every n episodes
+        # n <= self.window_episode_stats
+        # this is a double ended queue, exceed the length will be popped
         self.window_episode_stats = defaultdict(
             lambda: deque(maxlen=self.config.get("reward_window_size"))
         )
@@ -474,7 +480,7 @@ class PPOTrainer(BaseRLTrainer):
 
         return results
 
-    # execute a policy and step the env, push the data to rollout buffer
+    # execute a policy, push the actions to rollout buffer
     def _compute_actions_and_step_envs(self, buffer_index: int = 0):
         #print("--------compute--------")
 
@@ -561,7 +567,7 @@ class PPOTrainer(BaseRLTrainer):
 
         #print("--------------pt 1-----------------")
         outputs = [
-            # step env
+            # step all envs for one step
             self.envs.wait_step_at(index_env)
             for index_env in range(env_slice.start, env_slice.stop)
         ]
@@ -581,6 +587,7 @@ class PPOTrainer(BaseRLTrainer):
         )
         batch = apply_obs_transforms_batch(batch, self.obs_transforms)
 
+        # get rewards
         rewards = torch.tensor(
             rewards_l,
             dtype=torch.float,
@@ -588,6 +595,7 @@ class PPOTrainer(BaseRLTrainer):
         )
         rewards = rewards.unsqueeze(1)
 
+        # get done (whether episode ends)
         not_done_masks = torch.tensor(
             [[not done] for done in dones],
             dtype=torch.bool,
@@ -595,25 +603,39 @@ class PPOTrainer(BaseRLTrainer):
         )
         done_masks = torch.logical_not(not_done_masks)
 
+        #print(type(infos))
+        #print(infos)
+        #print(type(rewards))
+        #print(rewards)
+
+        # accumulate rewards for current episode
         self.current_episode_reward[env_slice] += rewards
         current_ep_reward = self.current_episode_reward[env_slice]
+        # add tensorboard stats here
+        # add episode reward if episode ends, otherwise add 0
         self.running_episode_stats["reward"][env_slice] += current_ep_reward.where(done_masks, current_ep_reward.new_zeros(()))  # type: ignore
+        # count: number of episodes in the window
         self.running_episode_stats["count"][env_slice] += done_masks.float()  # type: ignore
         
-        # extract scalars from infos
+        # extract scalars from infos and add to running_episode_stats
+        # under tensorboard "Metrics"
         for k, v_k in self._extract_scalars_from_infos(infos).items():
             v = torch.tensor(
                 v_k,
                 dtype=torch.float,
                 device=self.current_episode_reward.device,
             ).unsqueeze(1)
+            # create item and initialize to 0 if not exist
             if k not in self.running_episode_stats:
                 self.running_episode_stats[k] = torch.zeros_like(
                     self.running_episode_stats["count"]
                 )
 
+            # add spl or success if episode ends, otherwise add 0 (spl and success is returned every step)
+            # when episode ends, if episode fail, both spl and success is 0, otherwise they are positive
             self.running_episode_stats[k][env_slice] += v.where(done_masks, v.new_zeros(()))  # type: ignore
 
+        # reset current episode cummulative reward to 0 if current episode is already done
         self.current_episode_reward[env_slice].masked_fill_(done_masks, 0.0)
 
         # get static visual features
@@ -662,9 +684,11 @@ class PPOTrainer(BaseRLTrainer):
             next_value, self.config.get("use_gae"), self.config.get("gamma"), self.config.get("tau")
         )
 
+        # switch agent model to training mode
         self.agent.train()
 
-        value_loss, action_loss, dist_entropy = self.agent.update(
+        # update agent parameters for ppo_epoch epoches
+        value_loss, action_loss, dist_entropy, kl_divergence = self.agent.update(
             self.rollouts
         )
 
@@ -675,6 +699,7 @@ class PPOTrainer(BaseRLTrainer):
             value_loss,
             action_loss,
             dist_entropy,
+            kl_divergence
         )
 
     # update stats after step the env
@@ -686,8 +711,12 @@ class PPOTrainer(BaseRLTrainer):
             [self.running_episode_stats[k] for k in stats_ordering], 0
         )
 
+        # move to correct device
         stats = self._all_reduce(stats)
 
+        # append accumlated stats at current timestep to window_episode_stats
+        # stats: accumlated from step 0 to current step t
+        # window means a moving window along the history steps
         for i, k in enumerate(stats_ordering):
             self.window_episode_stats[k].append(stats[i])
 
@@ -700,6 +729,7 @@ class PPOTrainer(BaseRLTrainer):
             )
             stats = self._all_reduce(stats)
             count_steps_delta = int(stats[-1].item())
+            # get_world_size(): Returns the number of processes in the current process group
             stats /= torch.distributed.get_world_size()
 
             losses = {
@@ -719,6 +749,7 @@ class PPOTrainer(BaseRLTrainer):
     def _training_log(
         self, writer, losses: Dict[str, float], prev_time: int = 0
     ):
+        # compute delta between the first step and the last step inside the window
         deltas = {
             k: (
                 (v[-1] - v[0]).sum().item()
@@ -735,7 +766,8 @@ class PPOTrainer(BaseRLTrainer):
 
         # Check to see if there are any metrics
         # that haven't been logged yet
-        # add metrics to tensorboard
+        # add metrics to tensorboard and averaged over "count" episodes
+        # deltas["count"] is the actual # of episodes inside the window, the maximum window size is reward_window_size
         metrics = {
             k: v / deltas["count"]
             for k, v in deltas.items()
@@ -745,7 +777,7 @@ class PPOTrainer(BaseRLTrainer):
             for k,v in metrics.items():
                 writer.add_scalar("Metrics/"+str(k), v, self.num_steps_done)    
 
-        # add reward to tensorboard
+        # add reward to tensorboard and averaged over "count" episodes
         writer.add_scalar(
             "Reward/reward",
             #{"reward": deltas["reward"] / deltas["count"]},
@@ -754,6 +786,7 @@ class PPOTrainer(BaseRLTrainer):
         )
 
         # log stats
+        # log_interval: log every # updates
         if self.num_updates_done % self.config.get("log_interval") == 0:
             logger.info(
                 "update: {}\tfps: {:.3f}\t".format(
@@ -851,6 +884,8 @@ class PPOTrainer(BaseRLTrainer):
             if rank0_only()
             else contextlib.suppress()
         ) as writer:
+            # training loop
+            # loop one time: self.num_updates_done + 1
             while not self.is_done():
                 profiling_utils.on_start_step()
                 profiling_utils.range_push("train update")
@@ -892,17 +927,17 @@ class PPOTrainer(BaseRLTrainer):
                     requeue_job()
 
                     return
-
+                # switch agent (actor-critic model) to evaluation mode
                 self.agent.eval()
                 count_steps_delta = 0
                 profiling_utils.range_push("rollouts loop")
 
-                # act one step for all envs
+                # act one step (for all envs)
                 profiling_utils.range_push("_collect_rollout_step")
                 for buffer_index in range(self._nbuffers):
                     self._compute_actions_and_step_envs(buffer_index)
 
-                # execuate a rollout
+                # all envs execuate a rollout (of length num_steps)
                 for step in range(int(self.config.get("num_steps"))):
                     is_last_step = (
                         self.should_end_early(step + 1)
@@ -910,7 +945,7 @@ class PPOTrainer(BaseRLTrainer):
                     )
 
                     for buffer_index in range(self._nbuffers):
-                        # step env
+                        # step env for one step
                         count_steps_delta += self._collect_environment_result(
                             buffer_index
                         )
@@ -923,7 +958,7 @@ class PPOTrainer(BaseRLTrainer):
                                 profiling_utils.range_push(
                                     "_collect_rollout_step"
                                 )
-                            # act
+                            # act one step
                             self._compute_actions_and_step_envs(buffer_index)
 
                     if is_last_step:
@@ -934,10 +969,12 @@ class PPOTrainer(BaseRLTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", 1)
 
+                # train agent for one time
                 (
                     value_loss,
                     action_loss,
                     dist_entropy,
+                    kl_divergence
                 ) = self._update_agent()
 
                 if self.config.get("use_linear_lr_decay"):
@@ -949,7 +986,7 @@ class PPOTrainer(BaseRLTrainer):
                 # count_steps_delta: how many envs in this buffer, e.g. 6
                 # steps: count_steps_delta * 1
                 losses = self._coalesce_post_step(
-                    dict(value_loss=value_loss, action_loss=action_loss),
+                    dict(value_loss=value_loss, action_loss=action_loss, kl_divergence=kl_divergence, dist_entropy=dist_entropy),
                     count_steps_delta,
                 )
                 # update tensor board
@@ -1345,5 +1382,5 @@ class PPOTrainer(BaseRLTrainer):
 if __name__ == "__main__":
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"))
    #trainer._init_train()
-   #trainer.train()
-   trainer.eval()
+   trainer.train()
+   #trainer.eval()

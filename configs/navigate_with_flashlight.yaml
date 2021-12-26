@@ -66,7 +66,7 @@ pretrained_model_path: data/ddppo-models/gibson-2plus-resnet50.pth
 # Whether or not the visual encoder backbone will be trained
 train_encoder: true
 rnn_type: gru  # lstm
-attention: true #false # true
+attention: false #false # true
 
 # sampling
 use_double_buffered_sampler: false
@@ -80,7 +80,8 @@ torch_gpu_id: 0
 simulator_gpu_id: 0
 seed: 1
 # train for how long: one of them must be -1
-# num_updates = ppo_epoch * num_mini_batch
+# num_updates: how many times agent.update is called, i.e. how many times the training process loops
+# num of backprop inside each agent update = ppo_epoch * num_mini_batch
 num_updates: -1 #1000
 # total_num_steps: steps collected in all environments (num_environments)  
 total_num_steps: 100000   # 75e6
@@ -88,21 +89,22 @@ total_num_steps: 100000   # 75e6
 # only one of them can be used
 num_checkpoints: 10 #100
 checkpoint_interval: -1
-checkpoint_folder: "checkpoints/vangogh_attention"
+checkpoint_folder: "checkpoints/vangogh_test"
 # observation transformations
 enabled_transforms: []
 
 # training stats and log
-log_file: "checkpoints/vangogh_attention/train.log"
+log_file: "checkpoints/vangogh_test/train.log"
 verbose: true # false
 log_interval: 25  # log stats every n training updates
 reward_window_size: 50 # compute stats every n episodes
-tensorboard_dir: "tensorboard/vangogh_attention"
+tensorboard_dir: "tensorboard/vangogh_test"
 
 # PPO
 clip_param: 0.2
-# num_updates = ppo_epoch * num_mini_batch
-# ppo_epoch: # epoches per each agent update
+kl_coef: 0
+# ppo_epoch: # of training epoches inside each time agent update 
+# num of backprop inside each agent update = ppo_epoch * num_mini_batch
 ppo_epoch: 4
 # batches per each epoch
 # each batch include steps from num_environments / num_mini_batch rollouts
@@ -126,13 +128,13 @@ use_normalized_advantage: false
 # evaluation
 # save images and video to disk under video_path
 eval_video_option: ["disk", "tensorboard"]
-eval_checkpoint_folder: "checkpoints/vangogh_attention"
+eval_checkpoint_folder: "checkpoints/vangogh_test"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
 eval_checkpoint_file: "ckpt.9.pth"
 # use checkpoint config file
 eval_use_ckpt_config: false
-video_dir: "video/vangogh_attention"
+video_dir: "video/vangogh_test"
 
 # Evaluate on all episodes
 test_episode_count: 50 #-1: test on all episodes in dataset

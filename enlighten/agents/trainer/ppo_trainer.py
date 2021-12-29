@@ -500,6 +500,7 @@ class PPOTrainer(BaseRLTrainer):
             ]
 
             # get action
+            # act only one step
             profiling_utils.range_push("compute actions")
             (
                 values,
@@ -541,7 +542,7 @@ class PPOTrainer(BaseRLTrainer):
 
         self.env_time += time.time() - t_step_env
 
-        # add actions to rollout buffer
+        # add actions, values, hidden states to rollout buffer
         self.rollouts.insert(
             next_recurrent_hidden_states=recurrent_hidden_states,
             actions=actions,
@@ -582,6 +583,8 @@ class PPOTrainer(BaseRLTrainer):
         self.env_time += time.time() - t_step_env
 
         t_update_stats = time.time()
+
+        # batch are only observations (do not include hidden states, etc)
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
         )
@@ -644,6 +647,7 @@ class PPOTrainer(BaseRLTrainer):
                 batch["visual_features"] = self._encoder(batch)
 
         # insert obs to rollout buffer
+        # hidden states are zero (by default)
         self.rollouts.insert(
             next_observations=batch,
             rewards=rewards,

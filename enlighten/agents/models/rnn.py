@@ -150,7 +150,8 @@ def _build_pack_info_from_dones(
         last_episode_in_batch_mask,
     )
 
-
+# rnn states (h0): [1,N,hidden_size] --> [1,N+1,hidden_size] 
+# x: [T*N, input_size] --> packed_sequence: [T*N, input_size]
 def build_rnn_inputs(
     x: torch.Tensor, not_dones: torch.Tensor, rnn_states: torch.Tensor
 ) -> Tuple[
@@ -208,6 +209,7 @@ def build_rnn_inputs(
     # to zero in the correct locations
     rnn_states = rnn_states.index_select(1, rnn_state_batch_inds)
     # Now zero things out in the correct locations
+    # N++ if one rollout breaks into two episodes, a new h0 would be added
     rnn_states = torch.where(
         not_dones.view(1, -1, 1).index_select(1, episode_starts),
         rnn_states,
@@ -222,7 +224,8 @@ def build_rnn_inputs(
         last_episode_in_batch_mask,
     )
 
-
+# rnn states: [1,N+1,hidden_size] --> [1,N,hidden_size] 
+# packed_sequence: [T*N, input_size] --> x: [T*N, input_size]
 def build_rnn_out_from_seq(
     x_seq: PackedSequence,
     hidden_states,
@@ -273,12 +276,19 @@ class RNNStateEncoder(nn.Module):
             elif "bias" in name:
                 nn.init.constant_(param, 0)
 
+    # dummy
     def pack_hidden(self, hidden_states: torch.Tensor) -> torch.Tensor:
         return hidden_states
 
+    # dummy
     def unpack_hidden(self, hidden_states: torch.Tensor) -> torch.Tensor:
         return hidden_states
 
+    # input is a single element
+    # N: batch size
+    # input x: [1*N,input_size]
+    # hidden_states (h_{t-1}): [1, N, hidden_size]
+    # output x: [1*N,hidden_size]
     def single_forward(
         self, x, hidden_states, masks
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -287,15 +297,32 @@ class RNNStateEncoder(nn.Module):
         hidden_states = torch.where(
             masks.view(1, -1, 1), hidden_states, hidden_states.new_zeros(())
         )
+        #print("-------forward start-------")
+        #print(self.unpack_hidden(hidden_states).size()) # [1,6,512]
+        #print(x.unsqueeze(0).size()) #[1, 6, 576]
 
         x, hidden_states = self.rnn(
             x.unsqueeze(0), self.unpack_hidden(hidden_states)
         )
+
+        
+        #print(hidden_states.size()) # [1,6,512]
+        #print(x.size()) # [1,6,512]
+        #print("-------forward end-------")
+
         hidden_states = self.pack_hidden(hidden_states)
 
+        # remove the first dim
+        # [L,N,hidden_size] --> [L*N, hidden_size]
         x = x.squeeze(0)
         return x, hidden_states
 
+    # input is a sequence of elements
+    # T: sequence length
+    # N: batch size
+    # input x: [T*N,input_size]
+    # hidden_states(h_0): [1, N, hidden_size]
+    # output x: [T*N,hidden_size]
     def seq_forward(
         self, x, hidden_states, masks
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -309,6 +336,9 @@ class RNNStateEncoder(nn.Module):
         """
         N = hidden_states.size(1)
 
+        #print("-------before build rnn inputs-------")
+        #print(hidden_states.size())
+
         (
             x_seq,
             hidden_states,
@@ -317,9 +347,23 @@ class RNNStateEncoder(nn.Module):
             last_episode_in_batch_mask,
         ) = build_rnn_inputs(x, masks, hidden_states)
 
+        #print("-------after build rnn inputs-------")
+        #print(hidden_states.size())
+        
+
+        #print("-------forward start-------")
+        #print(self.unpack_hidden(hidden_states).size()) # [1,4,512]
+        #print(x_seq.data.size()) #[384, 576]
+
         x_seq, hidden_states = self.rnn(
             x_seq, self.unpack_hidden(hidden_states)
         )
+
+        #print(hidden_states.size()) # [1,4,512]
+        #print(x_seq.data.size()) # [384, 576]
+        #print("-------forward end-------")
+
+        # h_n
         hidden_states = self.pack_hidden(hidden_states)
 
         x, hidden_states = build_rnn_out_from_seq(
@@ -333,16 +377,41 @@ class RNNStateEncoder(nn.Module):
 
         return x, hidden_states
 
+    # x: [T*N,input_size]
+    # hidden(h_n): [N, 1, hidden_size]
+    # T: seq length
+    # N: number of sequences
     def forward(
         self, x, hidden_states, masks
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        # hidden: changed to [1, N, hidden_size]
         hidden_states = hidden_states.permute(1, 0, 2)
+
+        #print('*'*20)
+        #print('Before rnn')
+        #print(hidden_states.size()) # [1,6,512]
+        #print(x.size()) #[6,576]
+
+        # single forward: only forward one step, used when collecting data or evaluation
+        # T*N = N --> T=1
         if x.size(0) == hidden_states.size(1):
             x, hidden_states = self.single_forward(x, hidden_states, masks)
+            print("single forward")
+        # sequence forward: forward for a sequence, only used during training
         else:
             x, hidden_states = self.seq_forward(x, hidden_states, masks)
+            print("sequence forward")
 
+        # hidden: changed to [N, 1, hidden_size]
         hidden_states = hidden_states.permute(1, 0, 2)
+
+        #print('After rnn')
+        #print(hidden_states.size()) # [6,1,512]
+        #print(x.size()) # [6,512]
+        #print('*'*20)
+
+        #exit()
 
         return x, hidden_states
 
@@ -366,14 +435,17 @@ class LSTMStateEncoder(RNNStateEncoder):
 
         self.layer_init()
 
+    # (h,c) --> h
     def pack_hidden(
         self, hidden_states: Tuple[torch.Tensor, torch.Tensor]
     ) -> torch.Tensor:
         return torch.cat(hidden_states, 0)
 
+    # [h,c] --> (h,c)
     def unpack_hidden(
         self, hidden_states
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # split a tensor into the specified number of chunks
         lstm_states = torch.chunk(hidden_states, 2, 0)
         return (lstm_states[0], lstm_states[1])
 

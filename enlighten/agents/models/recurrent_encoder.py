@@ -152,13 +152,26 @@ class RecurrentVisualEncoder(Net):
         return goal_observations    
 
     # masks: not done masks: True (1): not done, False (0): done
+    # single forward: rnn_hidden_states=h_{t-1}
+    # sequence forward: rnn_hidden_states=h0
+    # perception_embedding: [T*N,input_size] or [N, 1, hidden_size]
+    # rnn_hidden_states: [N, 1, hidden_size] 
+    # prev_actions: [T*N,input_size] or [N, 1, hidden_size]
+    # note that prev_actions are not cut off to a_0 as rnn_hidden_states as rnn_hidden_states when doing sequence forward
     def forward(self, observations, rnn_hidden_states, prev_actions, masks):
         x = []
 
+        
         # visual observation embedding
         if not self.is_blind:
             
             perception_embedding = self.visual_encoder(observations)
+
+            print("***********inside recurrent visual encoder***********")
+            print(perception_embedding.size())
+            print(rnn_hidden_states.size())
+            print(prev_actions.size())
+            print("*****************************************************")
             #print("=============================================")
             #print(perception_embedding.size()) #[6,196,128]
             #print(rnn_hidden_states.size()) #[6,1,512]
@@ -217,7 +230,7 @@ class RecurrentVisualEncoder(Net):
         # print(prev_actions.size())
         # print(rnn_hidden_states.size())
         
-
+        # forward RNNStateEncoder
         out, rnn_hidden_states = self.state_encoder(
             out, rnn_hidden_states, masks
         )

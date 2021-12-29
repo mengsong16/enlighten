@@ -119,6 +119,7 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
         )
         return self.critic(features)
 
+    
     def get_attention_map(self, observations, rnn_hidden_states, prev_actions, masks):
         assert self.attention==True, "Error: attention should be set to True"
         # visual rnn encoder
@@ -149,7 +150,7 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
 
     # get actor-critic output 
     def get_net_output(self, observations, rnn_hidden_states, prev_actions, masks):
-        # visual rnn encoder
+        # get RecurrentVisualEncoder (visual rnn encoder) output
         features, rnn_hidden_states, _ = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
@@ -160,6 +161,7 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
 
         return rnn_hidden_states, distribution, value
 
+    # rnn_hidden_states: h0 when evaluate a sequence, h_t when evaluate one step
     def evaluate_actions(
         self, observations, rnn_hidden_states, prev_actions, masks, action
     ):

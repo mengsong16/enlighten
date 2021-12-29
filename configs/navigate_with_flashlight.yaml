@@ -115,8 +115,9 @@ value_loss_coef: 0.5
 entropy_coef: 0.01
 lr: 2.5e-4
 eps: 1.0e-5 #1e-5
-max_grad_norm: 0.5           
-hidden_size: 512
+max_grad_norm: 0.5
+# visual encoder output size = rnn hidden size           
+hidden_size: 512  
 use_gae: true
 gamma: 0.99
 tau: 0.95

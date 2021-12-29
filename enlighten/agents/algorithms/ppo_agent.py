@@ -157,6 +157,8 @@ class PPOAgent(Agent):
 
     def reset(self) -> None:
         # initialize data structures
+        # T=N=1
+        # h0 = 0
         self.recurrent_hidden_states = torch.zeros(
             1, # num of envs
             self.actor_critic.net.num_recurrent_layers,
@@ -173,15 +175,16 @@ class PPOAgent(Agent):
     # o --> a
     def act(self, observations) -> Dict[str, int]:
         batch = batch_obs([observations], device=self.device)
+        # get h1,h2,h3,...
         with torch.no_grad():
             (
                 _,
                 actions,
                 _,
-                self.recurrent_hidden_states,
+                self.recurrent_hidden_states, # h_{t-1}
             ) = self.actor_critic.act(
                 batch,
-                self.recurrent_hidden_states,
+                self.recurrent_hidden_states, # h_{t}
                 self.prev_actions,
                 self.not_done_masks,
                 deterministic=False,

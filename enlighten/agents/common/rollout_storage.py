@@ -17,6 +17,7 @@ from enlighten.agents.common.tensor_dict import TensorDict
 # buffer length: numsteps
 # support one or two buffer
 # very specific to recurrent policy 
+# RolloutStorage (single buffer) could store num_envs sequences which has length numsteps
 class RolloutStorage:
     r"""Class for storing rollout information for RL trainers."""
 
@@ -34,6 +35,7 @@ class RolloutStorage:
         self.buffers["observations"] = TensorDict()
 
         for sensor in observation_space.spaces:
+            # (L+1)*N*obs_size
             self.buffers["observations"][sensor] = torch.from_numpy(
                 np.zeros(
                     (
@@ -45,6 +47,9 @@ class RolloutStorage:
                 )
             )
 
+        # initialize "recurrent_hidden_states" to 0
+        # will keep 0 if not set by insert or other operations
+        # (L+1)*N*num_layers*hidden_size
         self.buffers["recurrent_hidden_states"] = torch.zeros(
             numsteps + 1,
             num_envs,
@@ -118,7 +123,7 @@ class RolloutStorage:
     def to(self, device):
         self.buffers.map_in_place(lambda v: v.to(device))
 
-    # insert one step data (a_t, r_t, v_t, s_{t+1}) to the specific buffer
+    # insert one step data (a_t, r_t, v_t, s_{t+1}, d_{t+1}, h_{t+1}) to the specific buffer
     def insert(
         self,
         next_observations=None,
@@ -147,7 +152,8 @@ class RolloutStorage:
             rewards=rewards,
         )
 
-        # filter out None values from the dictionaries
+        # filter out None values from the dictionaries (e.g. hidden states)
+        # None will be replaced by the default value in the buffer cell
         next_step = {k: v for k, v in next_step.items() if v is not None}
         current_step = {k: v for k, v in current_step.items() if v is not None}
 
@@ -156,7 +162,7 @@ class RolloutStorage:
             int((buffer_index + 1) * self._num_envs / self._nbuffers),
         )
 
-        # insert data to current step and the next step loction of the buffer
+        # insert data to current step and the next step location of the buffer
         if len(next_step) > 0:
             self.buffers.set(
                 (self.current_rollout_step_idxs[buffer_index] + 1, env_slice),
@@ -217,10 +223,12 @@ class RolloutStorage:
                     * self.buffers["masks"][step + 1]
                     + self.buffers["rewards"][step]
                 )
-    # Assign buffer to minibatches
+    # Split a buffer in rollout storage (N sequences) into minibatches
+    # N = number of envs, only used for training 
     # Then assign input advantages to minibatches 
     # Only keep the hidden states of step 0 in minibatches
     # generator: can only be iterated once, yield=return
+    # Only used in training, not evaluation or data collection
     def recurrent_generator(self, advantages, num_mini_batch) -> TensorDict:
         num_environments = advantages.size(1)
         assert num_environments >= num_mini_batch, (
@@ -253,11 +261,23 @@ class RolloutStorage:
             # size of hidden states
             #print(batch["recurrent_hidden_states"].size())
             #print("-------********-------")
-            # Only keep the hidden states of step 0 in minibatches [1,3,1,512]
-            # batch["recurrent_hidden_states"] = batch[
-            #    "recurrent_hidden_states"
-            # ][0:1]
-            # [128, 3, 1, 512] --> [384, 1, 512]
+            # Only keep the hidden states of step 0 in minibatches [128,3,1,512] --> [1,3,1,512]
+            # because we will calculate later hidden states using a new policy
+            # recurrent_hidden_states for the whole rollout storage: (L, N, 1, hidden_size) 
+            # hidden_states for each location: (1, N, 1, hidden_size)
+            #print('------------- hidden state -----------------')
+            #print(batch["recurrent_hidden_states"].size())
+            
+            
+            batch["recurrent_hidden_states"] = batch["recurrent_hidden_states"][0:1]
+            #print(batch["recurrent_hidden_states"].size())
+            #print('------------- hidden state -----------------')
+
+            #exit()
+            # observation: (L, N, 1, input_size) --> (L*N, 1, input_size) ([128, 3, 1, 512] --> [384, 1, 512])
+            # recurrent_hidden_states (already cutoff to h0):  (1, N, 1, hidden_size) --> (N, 1, hidden_size)
+            # all keys in batches are flattened
             yield batch.map(lambda v: v.flatten(0, 1))
+        
         # return a iterator over [2, 384,1,512] when num_mini_batch=2  
 

@@ -9,6 +9,7 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 def _invert_permutation(permutation: torch.Tensor) -> torch.Tensor:
@@ -20,7 +21,7 @@ def _invert_permutation(permutation: torch.Tensor) -> torch.Tensor:
     )
     return output
 
-
+#dones: [T*N, 1]
 def _build_pack_info_from_dones(
     dones: torch.Tensor,
     T: int,
@@ -43,6 +44,11 @@ def _build_pack_info_from_dones(
     construct the data for a PackedSequence from a (T*N, ...) tensor
     via x.index_select(0, select_inds)
     """
+
+    #print(dones.size()) #[T*N, 1]
+    #print(T) # 128
+    #exit()
+
     dones = dones.view(T, -1)
     N = dones.size(1)
 
@@ -150,8 +156,10 @@ def _build_pack_info_from_dones(
         last_episode_in_batch_mask,
     )
 
-# rnn states (h0): [1,N,hidden_size] --> [1,N+1,hidden_size] 
+# rnn states (h0): [1,N,hidden_size] --> [1,N+M,hidden_size] 
+# M: # of dones=True, N+M are the real number of episodes
 # x: [T*N, input_size] --> packed_sequence: [T*N, input_size]
+# len(batch_sizes)=L: real max episode length, L<=T
 def build_rnn_inputs(
     x: torch.Tensor, not_dones: torch.Tensor, rnn_states: torch.Tensor
 ) -> Tuple[
@@ -493,3 +501,171 @@ def build_rnn_state_encoder(
         return LSTMStateEncoder(input_size, hidden_size, num_layers)
     else:
         raise RuntimeError(f"Did not recognize rnn type '{rnn_type}'")
+
+# verified equivalance between looping over the sequence step by step and by the whole sequence
+def test_rnn_loop_eq():
+    input_size = 3
+    hidden_size = 2
+    T = 5
+    N = 2
+    gru = nn.GRU(input_size=input_size, hidden_size=hidden_size)
+
+    x = torch.rand(T, N, input_size)
+    
+    h = torch.rand(1, N, hidden_size)
+
+    h_seq_1, h_final = gru(x, h)
+
+    print("h_seq_1: %s"%(str(h_seq_1)))  # x_seq,data = x, nothing changed
+    print("h_seq_1 size: %s"%(str(h_seq_1.size())))
+    print("h_final_1: %s"%(h_final))
+    print("h_final_1 size: %s"%(str(h_final.size())))
+
+    h0 = h
+    for i in range(T):
+       x_in = x[i, :, :].unsqueeze(0)
+       #print(x_in.size())
+       h_seq_2, h0 = gru(x_in, h0)
+
+    print("h_seq_2: %s"%(str(h_seq_2)))  # x_seq,data = x, nothing changed
+    print("h_seq_2 size: %s"%(str(h_seq_2.size())))
+    print("h_final_2: %s"%(h0))
+    print("h_final_2 size: %s"%(str(h0.size())))   
+
+def test_rnn():
+    input_size = 3
+    hidden_size = 2
+    T = 5
+    N = 2
+    gru = nn.GRU(input_size=input_size, hidden_size=hidden_size)
+    
+
+    # x: [T,N,input_size]
+    # h: [1,N,hidden_size]
+    x = torch.rand(T, N, input_size)
+    x = x.flatten(0,1)
+    h = torch.rand(1, N, hidden_size)
+
+    print("x: %s"%(x))
+    print("x size: %s"%(str(x.size())))
+    print("h: %s"%(h))
+    print("h size: %s"%(str(h.size())))
+
+    # dones: [N,T]
+    dones = torch.torch.Tensor([[0,1,0,1,0], [0,0,0,1,0]]).bool()
+    print("dones: %s"%(dones))
+    # dones: [T,N]
+    dones = dones.permute(1,0)
+    # dones: [T*N,1]
+    dones = dones.flatten(0,1).unsqueeze(1)
+    print("dones: %s"%(dones))
+    
+    not_dones = torch.logical_not(dones)
+
+    (
+        select_inds,
+        batch_sizes,
+        episode_starts,
+        rnn_state_batch_inds,
+        last_episode_in_batch_mask,
+    ) = _build_pack_info_from_dones(dones, T)
+
+    print("select_inds: %s"%(str(select_inds)))
+    print("batch_sizes: %s"%(str(batch_sizes)))
+    #print(episode_starts)
+
+    (
+        x_seq,
+        h,
+        select_inds,
+        rnn_state_batch_inds,
+        last_episode_in_batch_mask,
+    )=build_rnn_inputs(x, not_dones, h) 
+
+    print("rnn_state_batch_inds: %s"%(str(rnn_state_batch_inds)))
+
+    # scatter_inds = (
+    #     torch.masked_select(rnn_state_batch_inds, last_episode_in_batch_mask)
+    #     .view(1, N, 1)
+    #     .expand_as(h)
+    # )
+
+    # print("scatter_inds: %s"%(str(scatter_inds)))
+    
+
+    print("*****  after packing:  *****")
+    #print("x_seq: %s"%(str(x_seq.data)))  # x_seq,data = x, nothing changed
+    print("x_seq size: %s"%(str(x_seq.data.size())))
+    print("h: %s"%(h))
+    print("h size: %s"%(str(h.size())))
+
+    pad_x_seq, pad_batch_sizes = pad_packed_sequence(x_seq)
+    print("pad_batch_sizes: %s"%(str(pad_batch_sizes)))
+    #print("pad_x_seq: %s"%(str(pad_x_seq))) 
+    print("pad_x_seq size: %s"%(str(pad_x_seq.size())))  # T,N,input_size
+
+    print("*****  after seq rnn:  *****")
+    #print(h)
+    h_seq_1, h_final = gru(pad_x_seq, h)
+    #h_seq_1, h_final = gru(x_seq, h)
+    #print("h_seq_1: %s"%(str(h_seq_1.data)))  # x_seq,data = x, nothing changed
+    #print("h_seq_1 size: %s"%(str(h_seq_1.data.size())))
+    print("h_final_1: %s"%(h_final))
+    print("h_final_1 size: %s"%(str(h_final.size())))
+
+    x_rebuilt, h_final_rebuilt = build_rnn_out_from_seq(
+            x_seq,
+            h_final,
+            select_inds,
+            rnn_state_batch_inds,
+            last_episode_in_batch_mask,
+            N,
+        )
+
+    print("h_final_1_rebuilt: %s"%(h_final_rebuilt))
+    print("h_final_1_rebuilt size: %s"%(str(h_final_rebuilt.size())))    
+
+    print("*****  after loop rnn:  *****")
+    h0 = h
+    #print(h0)
+
+    # The following code try to reverse engineering pytorch implmentation of rnn on sequences of variable lengths
+    # method 1: padding with 0
+    for i in range(len(batch_sizes)):
+       x_in = pad_x_seq[i, :, :].unsqueeze(0)
+       #print(x_in.size())
+       h_seq_2, h0 = gru(x_in, h0)
+
+    # method 2: only forward the relevant part
+    # start_index = 0
+    # for batch_size in batch_sizes:
+    #    x_in = x.index_select(0, select_inds[start_index:start_index+batch_size]).unsqueeze(0) 
+    #    #print(x_in.size())
+    #    #print(batch_size)
+    #    h_seq_2, h0[:,:batch_size,:] = gru(x_in, h0[:,:batch_size,:]) 
+       
+
+    #    start_index += batch_size  
+
+    
+    #print("h_seq_2: %s"%(str(h_seq_2)))  # x_seq,data = x, nothing changed
+    #print("h_seq_2 size: %s"%(str(h_seq_2.size())))
+    print("h_final_2: %s"%(h0))
+    print("h_final_2 size: %s"%(str(h0.size())))
+
+    x_rebuilt, h0_rebuilt = build_rnn_out_from_seq(
+            x_seq,
+            h0,
+            select_inds,
+            rnn_state_batch_inds,
+            last_episode_in_batch_mask,
+            N,
+        )
+
+    print("h_final_2_rebuilt: %s"%(h0_rebuilt))
+    print("h_final_2_rebuilt size: %s"%(str(h0_rebuilt.size())))    
+    
+
+if __name__ == "__main__":
+    test_rnn()
+    #test_rnn_loop_eq()

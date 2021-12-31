@@ -405,11 +405,11 @@ class RNNStateEncoder(nn.Module):
         # T*N = N --> T=1
         if x.size(0) == hidden_states.size(1):
             x, hidden_states = self.single_forward(x, hidden_states, masks)
-            print("single forward")
+            #print("single forward")
         # sequence forward: forward for a sequence, only used during training
         else:
             x, hidden_states = self.seq_forward(x, hidden_states, masks)
-            print("sequence forward")
+            #print("sequence forward")
 
         # hidden: changed to [N, 1, hidden_size]
         hidden_states = hidden_states.permute(1, 0, 2)

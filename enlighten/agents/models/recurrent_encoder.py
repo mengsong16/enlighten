@@ -167,11 +167,11 @@ class RecurrentVisualEncoder(Net):
             
             perception_embedding = self.visual_encoder(observations)
 
-            print("***********inside recurrent visual encoder***********")
-            print(perception_embedding.size())
-            print(rnn_hidden_states.size())
-            print(prev_actions.size())
-            print("*****************************************************")
+            # print("***********inside recurrent visual encoder***********")
+            # print(perception_embedding.size())
+            # print(rnn_hidden_states.size())
+            # print(prev_actions.size())
+            # print("*****************************************************")
             #print("=============================================")
             #print(perception_embedding.size()) #[6,196,128]
             #print(rnn_hidden_states.size()) #[6,1,512]

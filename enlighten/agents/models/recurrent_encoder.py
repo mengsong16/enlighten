@@ -162,6 +162,8 @@ class RecurrentVisualEncoder(Net):
         # visual observation embedding
         if not self.is_blind:
             visual_input = self.visual_encoder(observations)
+        else:
+            visual_input = None    
 
         other_input = []
         # goal embedding

@@ -170,6 +170,7 @@ class PPO(nn.Module):
                 )
 
                 self.before_backward(total_loss)
+                #with torch.autograd.set_detect_anomaly(True):
                 total_loss.backward()
                 self.after_backward(total_loss)
 

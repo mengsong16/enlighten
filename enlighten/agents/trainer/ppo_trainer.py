@@ -135,7 +135,12 @@ class PPOTrainer(BaseRLTrainer):
     def _setup_actor_critic_agent(self) -> None:
         r"""Sets up actor critic and agent for PPO.
         """
-        logger.add_filehandler(os.path.join(root_path, self.config.get("log_file")))
+        log_path = os.path.join(root_path, self.config.get("log_file"))
+        log_folder = os.path.dirname(log_path)
+        if not os.path.exists(log_folder):
+            os.makedirs(log_folder)
+
+        logger.add_filehandler(log_path)
 
         if self.config.get("goal_format") == "pointgoal" and self.config.get("goal_coord_system") == "polar":
             polar_point_goal = True

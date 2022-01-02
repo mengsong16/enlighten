@@ -65,7 +65,7 @@ pretrained_whole_model: false
 pretrained_model_path: data/ddppo-models/gibson-2plus-resnet50.pth
 # Whether or not the visual encoder backbone will be trained
 train_encoder: true
-rnn_type: gru  # lstm
+rnn_type: gru #gru  # lstm
 attention: false #false # true
 
 # sampling
@@ -159,7 +159,7 @@ distrib_backend: GLOO
 # for DDPPO
 sync_frac: 0.6
 # default port
-default_port: 8738
+default_port: 8865 #8738 # 8865
 
 
 

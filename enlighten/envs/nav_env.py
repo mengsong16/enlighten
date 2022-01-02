@@ -7,7 +7,7 @@ import random
 from matplotlib import pyplot as plt
 import gym
 from gym import spaces
-from gym.envs.classic_control.rendering import SimpleImageViewer
+#from gym.envs.classic_control.rendering import SimpleImageViewer
 
 import habitat_sim
 from habitat_sim.gfx import LightInfo, LightPositionModel, DEFAULT_LIGHTING_KEY, NO_LIGHT_KEY

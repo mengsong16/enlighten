@@ -7,8 +7,7 @@ import torch
 from torch import nn as nn
 
 from enlighten.envs import ImageGoal, PointGoal, goal
-from enlighten.agents.models import build_rnn_state_encoder
-from enlighten.agents.models import Attention
+from enlighten.agents.models import build_attention_rnn_state_encoder
 
 import abc
 
@@ -59,7 +58,7 @@ class RecurrentVisualEncoder(Net):
         # make the index start from 1 instead of 0, preserve 0 as unknown
         self.prev_action_encoder = nn.Embedding(num_embeddings=action_space.n+1, embedding_dim=32)
         self._n_prev_action = 32
-        rnn_input_size = self._n_prev_action
+        other_input_size = self._n_prev_action
 
         # goal embedding 
         if goal_observation_space is not None: 
@@ -70,11 +69,11 @@ class RecurrentVisualEncoder(Net):
                 else:    
                     n_input_goal = goal_observation_space.shape[0]
                 self.goal_encoder = nn.Linear(n_input_goal, 32)
-                rnn_input_size += 32
+                other_input_size += 32
             # imagegoal  
             else:
                 self.goal_encoder = goal_visual_encoder
-                rnn_input_size += hidden_size
+                other_input_size += hidden_size
         else:
             self.goal_encoder = None        
 
@@ -82,23 +81,23 @@ class RecurrentVisualEncoder(Net):
         # visual observation embedding
         self.visual_encoder = visual_encoder
 
-        # attention
-        self.attention = attention
-        if self.attention:
-            self.attention_model = Attention(encoder_dim=self.visual_encoder.dim, hidden_dim=hidden_size)
-
         # RNN state embedding
         self._hidden_size = hidden_size
 
         if self.is_blind:
             visual_embedding_size = 0
         else:    
-            if self.attention:
+            if attention:
+                # visual encoder output a feature map where each pixel has channel self.visual_encoder.dim
                 visual_embedding_size = self.visual_encoder.dim
             else:
+                # visual encoder output a vector which equals to the hidden size of RNN
                 visual_embedding_size =  self._hidden_size   
-        self.state_encoder = build_rnn_state_encoder(
-            visual_embedding_size + rnn_input_size,
+        
+        self.state_encoder = build_attention_rnn_state_encoder(
+            attention,
+            visual_embedding_size,
+            other_input_size,
             self._hidden_size,
             rnn_type=rnn_type,
             num_layers=num_recurrent_layers
@@ -154,40 +153,17 @@ class RecurrentVisualEncoder(Net):
     # masks: not done masks: True (1): not done, False (0): done
     # single forward: rnn_hidden_states=h_{t-1}
     # sequence forward: rnn_hidden_states=h0
-    # perception_embedding: [T*N,input_size] or [N, 1, hidden_size]
+    # visual_input: [T*N,input_size] or [N, 1, hidden_size]
     # rnn_hidden_states: [N, 1, hidden_size] 
     # prev_actions: [T*N,input_size] or [N, 1, hidden_size]
     # note that prev_actions are not cut off to a_0 as rnn_hidden_states as rnn_hidden_states when doing sequence forward
     def forward(self, observations, rnn_hidden_states, prev_actions, masks):
-        x = []
-
         
         # visual observation embedding
         if not self.is_blind:
-            
-            perception_embedding = self.visual_encoder(observations)
+            visual_input = self.visual_encoder(observations)
 
-            # print("***********inside recurrent visual encoder***********")
-            # print(perception_embedding.size())
-            # print(rnn_hidden_states.size())
-            # print(prev_actions.size())
-            # print("*****************************************************")
-            #print("=============================================")
-            #print(perception_embedding.size()) #[6,196,128]
-            #print(rnn_hidden_states.size()) #[6,1,512]
-            if self.attention:
-                selected_visual_features, patch_weights = self.attention_model(img_features=perception_embedding, hidden_state=rnn_hidden_states)
-                #print(selected_visual_features.size()) #[6,128]
-                #print(patch_weights.size()) #[6,196]
-                x.append(selected_visual_features)
-            else:
-                patch_weights = None
-                x.append(perception_embedding)
-
-            #print("=============================================") 
-            #exit()  
-        #print("=========================================") 
-        #print(x[0].size())
+        other_input = []
         # goal embedding
         if self.goal_encoder is not None:
             if "pointgoal" in observations:
@@ -200,45 +176,28 @@ class RecurrentVisualEncoder(Net):
                 # input should be a dictionary when using a visual encoder
                 goal_embedding = self.goal_encoder({"color_sensor": image_goal})
 
-            x.append(goal_embedding)
-        #print(x[1].size())
+            other_input.append(goal_embedding)
+        
         # action embedding
         prev_actions = prev_actions.squeeze(-1)
-        
         start_token = torch.zeros_like(prev_actions)
         # not done: action index, done: 0
-        # print('------------------')
-        # print(prev_actions+1)
-        # print('------------------')
-        # print(torch.where(masks.view(-1), prev_actions+1, start_token))
-        # print('------------------')
-
+        
         # input of nn.embedding should be long
         prev_action_embedding = self.prev_action_encoder(
             (torch.where(masks.view(-1), prev_actions+1, start_token)).long()
         )
 
-        x.append(prev_action_embedding)
-        #print(x[2].size())
+        other_input.append(prev_action_embedding)
         
-        # RNN state embedding
-        out = torch.cat(x, dim=1)
+        other_input = torch.cat(other_input, dim=1)
 
-        
-        # print("=========================================")
-        # print("inside actor critic")
-        # print(prev_actions.size())
-        # print(rnn_hidden_states.size())
         
         # forward RNNStateEncoder
-        out, rnn_hidden_states = self.state_encoder(
-            out, rnn_hidden_states, masks
+        # out will be used to reduce V(s) and policy
+        out, rnn_hidden_states, patch_weights = self.state_encoder(
+            visual_input, other_input, rnn_hidden_states, masks
         )
-
-        #print(out.size())
-        #print(rnn_hidden_states.size())
-        #print("=========================================")
-        #exit()
 
         return out, rnn_hidden_states, patch_weights
 

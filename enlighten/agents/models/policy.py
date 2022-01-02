@@ -151,13 +151,22 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
     # get actor-critic output 
     def get_net_output(self, observations, rnn_hidden_states, prev_actions, masks):
         # get RecurrentVisualEncoder (visual rnn encoder) output
+        # note that features is h sequence (T*N) during training and is h_t (N) during evaluation
+        # therefore, value and distribution is also a sequence (T*N) during training
         features, rnn_hidden_states, _ = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
+
+        #exit()
         # actor
         distribution = self.action_distribution(features)
         # critic
         value = self.critic(features)
+
+        # print(features.size())
+        # print(value.size())
+        # print(rnn_hidden_states.size())
+        # print("**************************")
 
         return rnn_hidden_states, distribution, value
 
@@ -198,6 +207,7 @@ class CNNPolicy(Policy):
         attention: bool=False,
         **kwargs
     ):
+        # CNN output dimension = RNN hidden size
         visual_encoder = CNNEncoder(observation_space=observation_space, 
             output_size=hidden_size)
 
@@ -239,7 +249,7 @@ class ResNetPolicy(Policy):
         attention: bool=False,
         **kwargs
     ):
-        
+        # ResNet output dimension = RNN hidden size
         visual_encoder = ResNetEncoder(observation_space=observation_space, 
             output_size=hidden_size,
             baseplanes=baseplanes,

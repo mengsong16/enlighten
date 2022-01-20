@@ -135,7 +135,7 @@ class PPOTrainer(BaseRLTrainer):
     def _setup_actor_critic_agent(self) -> None:
         r"""Sets up actor critic and agent for PPO.
         """
-        log_path = os.path.join(root_path, self.config.get("log_file"))
+        log_path = os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"), "train.log")
         log_folder = os.path.dirname(log_path)
         if not os.path.exists(log_folder):
             os.makedirs(log_folder)
@@ -321,8 +321,8 @@ class PPOTrainer(BaseRLTrainer):
             self.device = torch.device("cpu")
 
         # make checkpoint dir
-        if rank0_only() and not os.path.isdir(os.path.join(root_path, self.config.get("checkpoint_folder"))):
-            os.makedirs(os.path.join(root_path, self.config.get("checkpoint_folder")))
+        if rank0_only() and not os.path.isdir(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"))):
+            os.makedirs(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name")))
 
         # setup actor critic of agent
         self._setup_actor_critic_agent()
@@ -425,7 +425,7 @@ class PPOTrainer(BaseRLTrainer):
             checkpoint["extra_state"] = extra_state
 
         torch.save(
-            checkpoint, os.path.join(root_path, self.config.get("checkpoint_folder"), file_name)
+            checkpoint, os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"), file_name)
         )
 
     # load checkpoint
@@ -882,7 +882,7 @@ class PPOTrainer(BaseRLTrainer):
                 )
 
         # create tensorboard
-        tensorboard_folder = os.path.join(root_path, self.config.get("tensorboard_dir"))
+        tensorboard_folder = os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name"))
         if not os.path.exists(tensorboard_folder):
             os.makedirs(tensorboard_folder)
         
@@ -1109,7 +1109,7 @@ class PPOTrainer(BaseRLTrainer):
 
         # save evaluation results to txt
         if save_text_results:
-            video_path = os.path.join(root_path, self.config.get("video_dir"))
+            video_path = os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))
             txt_name =  f"ckpt-{checkpoint_idx}-eval-results.txt"
             with open(os.path.join(video_path, txt_name), 'w') as outfile:
                 outfile.write(string_n_episode+"\n")
@@ -1122,7 +1122,7 @@ class PPOTrainer(BaseRLTrainer):
             video_name = "random"
 
         if "disk" in list(self.config.get("eval_video_option")):
-            video_path = os.path.join(root_path, self.config.get("video_dir"))
+            video_path = os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))
             if not os.path.exists(video_path):
                 os.makedirs(video_path)
 
@@ -1224,7 +1224,7 @@ class PPOTrainer(BaseRLTrainer):
             [] for _ in range(int(self.config.get("num_environments")))
         ]  # type: List[List[np.ndarray]]
         if len(self.config.get("eval_video_option")) > 0:
-            os.makedirs(os.path.join(root_path, self.config.get("video_dir")), exist_ok=True)
+            os.makedirs(os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name")), exist_ok=True)
 
         number_of_eval_episodes = self.config.get("test_episode_count")
         # evaluate on all episodes in the dataset
@@ -1323,7 +1323,7 @@ class PPOTrainer(BaseRLTrainer):
                     if len(self.config.get("eval_video_option")) > 0:
                         generate_video(
                             video_option=self.config.get("eval_video_option"),
-                            video_dir=os.path.join(root_path, self.config.get("video_dir")),
+                            video_dir=os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name")),
                             images=rgb_frames[i],
                             episode_id=current_episodes[i].episode_id,
                             checkpoint_idx=checkpoint_index,

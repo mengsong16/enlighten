@@ -80,7 +80,7 @@ class PPOAgent(Agent):
         #self.device = torch.device("cpu")
 
         # load checkpoint
-        checkpoint_path = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("eval_checkpoint_file"))
+        checkpoint_path = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name"), self.config.get("eval_checkpoint_file"))
         print("Loaded checkpoint at: "+str(checkpoint_path))
         
         if not random_agent:

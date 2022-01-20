@@ -58,7 +58,7 @@ def resume_state_filename(config) -> str:
     if is_slurm_job() and config.get("preemption_append_slurm_job_id"):
         fname += "-{}".format(SLURM_JOBID)
 
-    return osp.join(root_path, config.get("checkpoint_folder"), fname + ".pth")
+    return osp.join(root_path, config.get("checkpoint_folder"), config.get("experiment_name"), fname + ".pth")
 
 
 @overload

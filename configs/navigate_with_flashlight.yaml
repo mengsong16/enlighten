@@ -15,6 +15,9 @@ dataset_path: /home/meng/habitat-sim/data/replica/replicaCAD.scene_dataset_confi
 content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
+# experiments
+experiment_name: "vangogh_daylight_random_start_random_goal_no_attention"
+
 # robot
 agent_initial_position: [3, 0, 1] # [0, 0, 0]
 agent_initial_rotation: [0, 70, 0] #[0, 90, 0]
@@ -39,7 +42,7 @@ measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'sp
 
 
 # goal
-goal_conditioned: true
+goal_conditioned: false
 goal_format: pointgoal # imagegoal #pointgoal
 goal_coord_system: polar  #  cartesian
 goal_dimension: 2
@@ -89,16 +92,15 @@ total_num_steps: 100000   # 75e6
 # only one of them can be used
 num_checkpoints: 10 #100
 checkpoint_interval: -1
-checkpoint_folder: "checkpoints/vangogh_test"
+checkpoint_folder: "checkpoints"  
 # observation transformations
 enabled_transforms: []
 
 # training stats and log
-log_file: "checkpoints/vangogh_test/train.log"
 verbose: true # false
 log_interval: 25  # log stats every n training updates
 reward_window_size: 50 # compute stats every n episodes
-tensorboard_dir: "tensorboard/vangogh_test"
+tensorboard_dir: "tensorboard"
 
 # PPO
 clip_param: 0.2
@@ -129,13 +131,13 @@ use_normalized_advantage: false
 # evaluation
 # save images and video to disk under video_path
 eval_video_option: ["disk", "tensorboard"]
-eval_checkpoint_folder: "checkpoints/vangogh_test"
+eval_checkpoint_folder: "checkpoints"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
 eval_checkpoint_file: "ckpt.9.pth"
 # use checkpoint config file
 eval_use_ckpt_config: false
-video_dir: "video/vangogh_test"
+video_dir: "video"
 
 # Evaluate on all episodes
 test_episode_count: 50 #-1: test on all episodes in dataset

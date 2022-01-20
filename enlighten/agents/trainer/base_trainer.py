@@ -105,15 +105,15 @@ class BaseTrainer:
             assert (
                 len(self.config.get("tensorboard_dir")) > 0
             ), "Must specify a tensorboard directory for video display"
-            os.makedirs(os.path.join(root_path, self.config.get("tensorboard_dir")), exist_ok=True)
+            os.makedirs(os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), exist_ok=True)
         if "disk" in self.config.get("eval_video_option"):
-            if not os.path.exists(os.path.join(root_path, self.config.get("video_dir"))):
-                os.makedirs(os.path.join(root_path, self.config.get("video_dir")), exist_ok=True) # exist_ok=True, won't raise any error if folder exists
+            if not os.path.exists(os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))):
+                os.makedirs(os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name")), exist_ok=True) # exist_ok=True, won't raise any error if folder exists
 
         with TensorboardWriter(
-            os.path.join(root_path, self.config.get("tensorboard_dir")), flush_secs=self.flush_secs
+            os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), flush_secs=self.flush_secs
         ) as writer:
-            single_checkpoint = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("eval_checkpoint_file"))
+            single_checkpoint = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name"), self.config.get("eval_checkpoint_file"))
             if os.path.isfile(single_checkpoint):
                 # evaluate a singe checkpoint
                 proposed_index = get_checkpoint_id(single_checkpoint)
@@ -133,7 +133,7 @@ class BaseTrainer:
                     current_ckpt = None
                     while current_ckpt is None:
                         current_ckpt = poll_checkpoint_folder(
-                            os.path.join(root_path, self.config.get("eval_checkpoint_folder")), prev_ckpt_ind
+                            os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name")), prev_ckpt_ind
                         )
                         time.sleep(2)  # sleep for 2 secs before polling again
                     logger.info(f"=======current_ckpt: {current_ckpt}=======")

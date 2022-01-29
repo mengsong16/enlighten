@@ -1389,7 +1389,7 @@ class PPOTrainer(BaseRLTrainer):
         self.envs.close()
 
 if __name__ == "__main__":
-   trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"))
+   trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"), resume_training=False)
    #trainer._init_train()
    trainer.train()
    #trainer.eval()

@@ -55,6 +55,9 @@ class PPO(nn.Module):
             lr=lr,
             eps=eps,
         )
+        # momentum = 0
+        #self.optimizer = torch.optim.SGD(list(filter(lambda p: p.requires_grad, actor_critic.parameters())), lr=lr)
+
         self.device = next(actor_critic.parameters()).device
         self.use_normalized_advantage = use_normalized_advantage
 

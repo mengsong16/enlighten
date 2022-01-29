@@ -23,6 +23,9 @@ import matplotlib.cm as cm
 import torchvision
 #from torchsummary import summary
 
+import numpy as np
+import gym
+
 # one fc layer
 class CriticHead(nn.Module):
     def __init__(self, input_size):

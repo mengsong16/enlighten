@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import numpy as np
 
 from enlighten.agents.models import Attention
 
@@ -146,9 +147,14 @@ def _build_pack_info_from_dones(
     # that this episode is the last contiguous block of experience,
     # This is needed for getting the correct hidden states after
     # the RNN forward pass
+    episode_index = torch.div(episode_starts + (lengths - 1) * N, N, rounding_mode='trunc')
     last_episode_in_batch_mask = (
-        (episode_starts + (lengths - 1) * N) // N
+        episode_index
     ) == (T - 1)
+
+    # last_episode_in_batch_mask = (
+    #     (episode_starts + (lengths - 1) * N) // N
+    # ) == (T - 1)
 
     return (
         select_inds,
@@ -267,6 +273,8 @@ def build_rnn_out_from_seq(
     #print(select_inds.get_device())
     select_inds = select_inds.to(device=x_seq.data.device)
 
+    #print(select_inds)
+    #print(_invert_permutation(select_inds))
     x = x_seq.data.index_select(0, _invert_permutation(select_inds))
 
     output_hidden_states = build_unpacked_h_n(hidden_states, rnn_state_batch_inds,
@@ -449,19 +457,20 @@ class RNNStateEncoder(nn.Module):
         return x, hidden_states
 
 class AttentionRNNStateEncoder(RNNStateEncoder):
-    def __init__(self, attention, visual_input_size, hidden_size):
+    def __init__(self, attention, visual_map_size, hidden_size):
         # need to do initialization here because RNNStateEncoder derives from a NN module
         super().__init__()
 
         self.attention = attention
         if self.attention:
-            self.attention_model = Attention(encoder_dim=visual_input_size, hidden_dim=hidden_size)
-
+            # Attention visual encoder output dimension = RNN hidden size
+            self.attention_model = Attention(encoder_dim=visual_map_size, hidden_dim=hidden_size, output_dim=hidden_size)
+   
     # masks: not_dones
     # hidden_states: [N, 1, hidden_size]
     # visual_input: [T*N, 49, visual_input_size]
     # other_input: [T*N,other_input_size]
-    def attention_seq_forward(self, visual_input, other_input, hidden_states, masks):
+    def attention_seq_forward_by_column(self, visual_input, other_input, hidden_states, masks):
         
         
         # hidden states: [N, 1, hidden_size] --> [1, N, hidden_size]
@@ -520,14 +529,15 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
             # print(hidden_states[:,:batch_size,:].size())
             # exit()
             
-            
             # one step rnn, update relevent part of hidden states
             hidden_states_clone = hidden_states.clone()
             # unpack_hidden: [h,c] --> (h,c)
-            h_final, hn_out = self.rnn(cur_step_input, self.unpack_hidden(hidden_states[:,:batch_size,:]))
+            #h_final, hn_out = self.rnn(cur_step_input, self.unpack_hidden(hidden_states[:,:batch_size,:]))
+            h_final, hn_out = self.rnn(cur_step_input, self.unpack_hidden(hidden_states_clone[:,:batch_size,:]))
             # pack_hidden: hn_out (h,c) --> [h,c]
-            hidden_states_clone[:,:batch_size,:] = self.pack_hidden(hn_out)
-            hidden_states = hidden_states_clone
+            #hidden_states_clone[:,:batch_size,:] = self.pack_hidden(hn_out)
+            hidden_states[:,:batch_size,:] = self.pack_hidden(hn_out)
+            #hidden_states = hidden_states_clone
 
             #h_final, _ = self.rnn(cur_step_input, hidden_states[:,:batch_size,:])
 
@@ -563,6 +573,217 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
 
         return h_seq_rebuilt, hidden_states_rebuilt, patch_weights_list
 
+    # masks: not_dones
+    # hidden_states: [N, 1, hidden_size]
+    # visual_input: [T*N, visual_input_size]
+    # forward a sequence column by column
+    # no attention
+    def loop_seq_forward_by_column(self, visual_input, hidden_states, masks):
+        
+        # hidden states: [N, 1, hidden_size] --> [1, N, hidden_size]
+        hidden_states = hidden_states.permute(1, 0, 2) 
+        N = hidden_states.size(1)
+
+        #print(hidden_states.size())
+        #print(visual_input.size())
+
+        (
+            visual_input_seq,
+            hidden_states,
+            select_inds,
+            rnn_state_batch_inds,
+            last_episode_in_batch_mask,
+            batch_sizes,
+        ) = build_rnn_inputs(visual_input, masks, hidden_states) 
+
+        # loop forward each step
+        start_index = 0
+        select_inds = select_inds.to(device=visual_input.device)
+        max_batch_size = torch.max(batch_sizes)
+        h_seq = []
+
+        for batch_size in batch_sizes:
+            # select input of step i
+            cur_step_input = visual_input.index_select(0, select_inds[start_index:start_index+batch_size]).unsqueeze(0)
+            # one step rnn, update relevent part of hidden states
+            hidden_states_clone = hidden_states.clone()
+            # unpack_hidden: [h,c] --> (h,c)
+            #h_final, hn_out = self.rnn(cur_step_input, self.unpack_hidden(hidden_states[:,:batch_size,:]))
+            #h_final, hn_out = self.rnn(cur_step_input, self.unpack_hidden(hidden_states_clone[:,:batch_size,:]))
+            h_final, hn_out = self.rnn(cur_step_input, self.unpack_hidden(hidden_states_clone[:,:batch_size,:]))
+            # pack_hidden: hn_out (h,c) --> [h,c]
+            #hidden_states_clone[:,:batch_size,:] = self.pack_hidden(hn_out)
+            hidden_states[:,:batch_size,:] = self.pack_hidden(hn_out)
+
+            #print(h_final.size())
+            #exit()
+            #hidden_states = hidden_states_clone
+
+            # pad h history
+            # h_final: [L=1, N, hidden_size] --> [N, hidden_size]
+            h_final = h_final.squeeze(0)
+            size0, size1 = h_final.size()
+            pad = torch.zeros(max_batch_size - size0, size1, device=h_final.device)
+            h_final_pad = torch.cat((h_final, pad), dim=0)
+            h_seq.append(h_final_pad)
+
+            start_index += batch_size 
+
+        #print(len(h_seq))
+        # concatentate h history
+        # h_seq: [L, N, hidden_size] --> [L*N, hidden_size]
+        # hidden_states: [1,N,hidden_size]
+        h_seq = torch.cat(h_seq, dim=0)
+
+        #print(h_seq.size())
+        #print(hidden_states.size())
+        #exit()
+        #print(visual_input.size())
+        
+        # h_seq_rebuilt: [T*N, hidden_size]
+        h_seq_rebuilt, hidden_states_rebuilt = build_rnn_out_from_seq(
+            h_seq,
+            hidden_states,
+            select_inds,
+            rnn_state_batch_inds,
+            last_episode_in_batch_mask,
+            N,
+        )    
+
+        #print(h_seq_rebuilt.size())
+        
+
+        return h_seq_rebuilt, hidden_states_rebuilt
+
+    # input: masks: not_dones
+    # input: hidden_states: [N, 1, hidden_size]
+    # input: visual_input: [T*N, visual_input_size]
+    # forward a sequence row by row
+    # no attention
+    # output: h_final: [1, N, hidden_size]
+    # output: h_sequence: [T*N, hidden_size]
+    def loop_seq_forward_by_row(self, visual_input, hidden_states, masks):
+        
+        # hidden states: [N, 1, hidden_size] --> [1, N, hidden_size]
+        hidden_states = hidden_states.permute(1, 0, 2) 
+        N = hidden_states.size(1)
+        hidden_size = hidden_states.size(2)
+
+        #print(hidden_states.size())
+        #print(visual_input.size())
+
+        (
+            visual_input_seq,
+            hidden_states,
+            select_inds,
+            rnn_state_batch_inds,
+            last_episode_in_batch_mask,
+            batch_sizes,
+        ) = build_rnn_inputs(visual_input, masks, hidden_states) 
+
+        #print(select_inds)
+        #print(batch_sizes)
+
+        #print(hidden_states.size())
+
+        
+        # create index array for each row
+        #select_inds = select_inds.to(device=visual_input.device)
+        index_by_column = []
+        start_index = 0
+        
+        for batch_size in batch_sizes:
+            index_by_column.append(select_inds[start_index:start_index+batch_size])
+            start_index += batch_size
+
+        #print(index_by_column)
+
+        max_steps = len(index_by_column)
+        number_episodes = torch.max(batch_sizes)
+
+        index_by_row = []
+        for row_index in list(range(number_episodes)):
+            row = []
+            for column in index_by_column:
+                if row_index < torch.numel(column):
+                    row.append(column[row_index].item())
+            index_by_row.append(row)  
+
+        #index_by_row = torch.as_tensor(np.asarray(index_by_row))
+
+        #print(index_by_row)    
+
+        # initialize output hideen states
+        final_hidden_state = torch.zeros(([1, number_episodes, hidden_size]), device=hidden_states.device)
+        hidden_state_sequence = torch.zeros(([max_steps, number_episodes, hidden_size]), device=hidden_states.device)
+        #hidden_state_sequence = torch.zeros(([number_episodes, max_steps, hidden_size]), device=hidden_states.device)
+        #hidden_state_sequence = []
+
+        # print(batch_sizes)
+        # print(select_inds)
+        # print(index_by_column)
+        #print(index_by_row)
+        #print(N)
+        #print(T)
+        #print(final_hidden_state.size())
+        #print(hidden_state_sequence.size())
+
+        for i in list(range(number_episodes)):
+            one_row = index_by_row[i]
+            one_row = torch.tensor(one_row, dtype=torch.int, device=visual_input.device)
+            
+            # L*N*input_size
+            cur_step_input = visual_input.index_select(dim=0, index=one_row).unsqueeze(1)
+            # 1*N*hidden_size
+            cur_step_hidden = hidden_states[:,i,:].unsqueeze(0)
+            #print(cur_step_input.size())
+            #print(cur_step_hidden.size())
+            
+            # h_final: [1, 1, hidden_size]
+            # h_sequence: [L, 1, hidden_size]
+            h_sequence, h_final = self.rnn(cur_step_input, self.unpack_hidden(cur_step_hidden))
+            #print(h_final.size())
+            #print(h_sequence.size())
+            #print(final_hidden_state[:,i,:].size())
+            
+            final_hidden_state[:,i,:] = h_final.squeeze(0)
+            
+            cur_step_n = h_sequence.size()[0]
+            #print(hidden_state_sequence[:cur_step_n,i,:].size())
+            #cur_hidden_state_sequence = torch.zeros(([T, 1, hidden_size]), device=hidden_states.device)
+            hidden_state_sequence[:cur_step_n,i,:] = h_sequence.squeeze(1)
+            #hidden_state_sequence[i,:cur_step_n,:] = h_sequence.squeeze(1)
+            
+        #print(final_hidden_state.size())
+        #print(hidden_state_sequence.size())
+        #print(hidden_state_sequence)
+
+        #exit()
+
+        #hidden_state_sequence = hidden_state_sequence.permute(1,0,2)
+        
+        # hidden_state_sequence: [T, N, hidden_size] --> [N, T, hidden_size]--> [T*N, hidden_size]
+        #hidden_state_sequence = torch.cat(hidden_state_sequence, dim=0)
+        #hidden_state_sequence = torch.stack(hidden_state_sequence, dim=0)
+        hidden_state_sequence = torch.reshape(hidden_state_sequence, (max_steps*number_episodes, hidden_size))
+        #print(hidden_state_sequence.size())
+        #print(hidden_state_sequence)
+        #print(visual_input.size())
+        #print(hidden_states.size())
+        #print(N)
+        
+
+        h_seq_rebuilt, hidden_states_rebuilt = build_rnn_out_from_seq(
+            hidden_state_sequence,
+            final_hidden_state,
+            select_inds,
+            rnn_state_batch_inds,
+            last_episode_in_batch_mask,
+            N,
+        )    
+        #exit()
+        return h_seq_rebuilt, hidden_states_rebuilt 
+
     # visual_input: 
     # -no attention: [T*N,visual_input_size]
     # -attention: [T*N, 49, visual_input_size=256]
@@ -571,7 +792,7 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
     # T: seq length
     # N: number of sequences
     def forward(
-        self, visual_input, other_input, hidden_states, masks
+        self, visual_input, other_input, hidden_states, masks, loop_seq=True
         ) -> Tuple[torch.Tensor, torch.Tensor]:
 
         # print(visual_input.size())
@@ -610,15 +831,27 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
         # sequence forward: forward for a sequence, only used during training
         else:
             if self.attention:
-                x, hidden_states, patch_weights = self.attention_seq_forward(visual_input, 
+                x, hidden_states, patch_weights = self.attention_seq_forward_by_column(visual_input, 
                 other_input, hidden_states, masks)
             else:    
-                # hidden: [N, 1, hidden_size] --> [1, N, hidden_size]
-                hidden_states = hidden_states.permute(1, 0, 2)
+                
                 # x: concatenated input: [T*N,visual_input_size+other_input]
                 x = torch.cat((visual_input, other_input), dim=1) 
                 # seq forward
-                x, hidden_states = self.seq_forward(x, hidden_states, masks)
+                if loop_seq:
+                    # input: hidden: [N, 1, hidden_size]
+                    # output: hidden: [1, N, hidden_size]
+                    # output: x: [L, hidden_size]
+                    #x, hidden_states = self.loop_seq_forward_by_column(x, hidden_states, masks)
+                    x, hidden_states = self.loop_seq_forward_by_row(x, hidden_states, masks)
+                    #print(x.size())
+                    #print(hidden_states.size())
+                    #exit()
+                else:
+                    # hidden: [N, 1, hidden_size] --> [1, N, hidden_size]
+                    hidden_states = hidden_states.permute(1, 0, 2)
+                    x, hidden_states = self.seq_forward(x, hidden_states, masks)
+
                 patch_weights = None
             #print("sequence forward")
 
@@ -642,9 +875,10 @@ class LSTMStateEncoder(AttentionRNNStateEncoder):
         other_input_size: int,
         hidden_size: int,
         num_layers: int = 1,
+        visual_map_size: int = 256
     ):
         #super().__init__()
-        super().__init__(attention, visual_input_size, hidden_size)
+        super().__init__(attention, visual_map_size, hidden_size)
 
         # h+c
         self.num_recurrent_layers = num_layers * 2
@@ -693,9 +927,10 @@ class GRUStateEncoder(AttentionRNNStateEncoder):
         other_input_size: int,
         hidden_size: int,
         num_layers: int = 1,
+        visual_map_size: int = 256,
     ):
         #super().__init__()
-        super().__init__(attention, visual_input_size, hidden_size)
+        super().__init__(attention, visual_map_size, hidden_size)
 
         self.num_recurrent_layers = num_layers
 
@@ -742,15 +977,16 @@ def build_attention_rnn_state_encoder(
     visual_input_size: int,
     other_input_size: int,
     hidden_size: int,
+    visual_map_size: int,
     rnn_type: str = "gru",
     num_layers: int = 1,
 ):
     
     rnn_type = rnn_type.lower()
     if rnn_type == "gru":
-        return GRUStateEncoder(attention, visual_input_size, other_input_size, hidden_size, num_layers)
+        return GRUStateEncoder(attention, visual_input_size, other_input_size, hidden_size, num_layers, visual_map_size)
     elif rnn_type == "lstm":
-        return LSTMStateEncoder(attention, visual_input_size, other_input_size, hidden_size, num_layers)
+        return LSTMStateEncoder(attention, visual_input_size, other_input_size, hidden_size, num_layers, visual_map_size)
     else:
         raise RuntimeError(f"Did not recognize rnn type '{rnn_type}'")
 
@@ -957,8 +1193,98 @@ def test_rnn():
     print("h_seq_2 size: %s"%(str(h_seq_2.size())))  
     print("h_seq_2 rebuilt size: %s"%(str(h_seq_2_rebuilt.size())))
     print("h_seq_2 rebuilt: %s"%(str(h_seq_2_rebuilt)))
+
+# visual_input: -no attention: [T*N,visual_input_size]
+# other_input: [T*N,other_input_size]
+# hidden(h_n): [N, 1, hidden_size]
+# T: seq length
+# N: number of sequences    
+def test_gru():
+    torch.set_printoptions(precision=10)
+
+    visual_input_size = 2
+    other_input_size = 1
+    hidden_size = 2
+    T = 5
+    N = 2
+
+    # create model
+    gru = GRUStateEncoder(attention=False, visual_input_size=visual_input_size, other_input_size=other_input_size, 
+        hidden_size=hidden_size, num_layers=1, visual_map_size=0)
     
+    for i in range(50):
+        # generate data
+        visual_input = torch.rand(T*N, visual_input_size)
+        other_input = torch.rand(T*N, other_input_size) 
+        hidden_input = torch.rand(N, 1, hidden_size)
+
+        
+
+        # dones: [N,T]
+        #dones = torch.torch.Tensor([[0,1,0,1,0], [0,0,0,1,0]]).bool()
+        dones = torch.randint(0, 2, (2,5)).bool()
+        # dones: [T,N]
+        dones = dones.permute(1,0)
+        # dones: [T*N,1]
+        dones = dones.flatten(0,1).unsqueeze(1)
+        # masks = not_dones
+        masks = torch.logical_not(dones)
+
+        # ----------forward: loop ---------------------
+        x_output_loop, hidden_output_loop, _ = gru(visual_input, other_input, hidden_input, masks, loop_seq=True) # hidden: [N, 1, hidden_size]
+        #print("h_loop: %s"%(hidden_output_loop))
+        #print("h_loop size: %s"%(str(hidden_output_loop.size())))
+        #print("x_output_loop: %s"%(x_output_loop))
+        #print("x_output_loop size: %s"%(str(x_output_loop.size())))
+        #print(hidden_output_loop.dtype)
+        #exit()
+        # ----------backward: loop ---------------------
+        #hidden_output_loop.mean().backward()
+        #p_loop = gru.rnn.parameters()
+        # for p in p_loop:
+        #     print(p.grad)
+
+        
+        # ----------forward: seq ---------------------
+        #x_output_loop, hidden_output_loop, _ = loop_gru(visual_input, other_input, hidden_input, masks)
+        x_output_seq, hidden_output_seq, _ = gru(visual_input, other_input, hidden_input, masks, loop_seq=False) # hidden: [N, 1, hidden_size]
+        #print("h_seq: %s"%(hidden_output_seq))
+        #print("h_seq size: %s"%(str(hidden_output_seq.size())))
+        #print("x_output_seq: %s"%(x_output_seq))
+        #print("x_output_seq size: %s"%(str(x_output_seq.size())))
+        # ----------backward: seq ---------------------
+        hidden_output_seq.mean().backward()
+        p_seq = gru.rnn.parameters()
+        # for p in p_seq:
+        #     print(p.grad)
+
+        print("------------------ i = %d ---------------------------"%(i))
+        # ----------compare forward ---------------------
+        forward_h_result = (hidden_output_loop == hidden_output_seq).all().cpu().numpy()
+        forward_x_result = (x_output_loop == x_output_seq).all().cpu().numpy()
+        if forward_h_result == False:
+        #if forward_h_result == False or forward_x_result == False:
+            print("forward final hidden state equal: %s"%(forward_h_result))
+            #print("forward hidden state sequence equal: %s"%(forward_x_result))
+            #print(masks)
+            print(hidden_output_loop)
+            print(hidden_output_seq)
+            #print(x_output_loop)
+            #print(x_output_seq)
+        # ----------compare backward ---------------------  
+    
+        # for p1, p2 in zip(p_loop, p_seq):
+        #     print("backward equal: %s"%((p1.grad == p2.grad).all()))
+            #print('-------------------------------')
+            #print(p1.grad)
+            #print(p2.grad)
+        
+    
+    
+        
+   
 
 if __name__ == "__main__":
-    test_rnn()
+    #test_rnn()
     #test_rnn_loop_eq()
+    test_gru()

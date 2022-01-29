@@ -283,12 +283,12 @@ class NavEnv(gym.Env):
             "turn_right": habitat_sim.agent.ActionSpec(
                 "turn_right", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along y axis (rotate along local frame)
             ),
-            "look_up": habitat_sim.agent.ActionSpec(
-                "look_up", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate a degree along x axis (rotate along local frame)
-            ),
-            "look_down": habitat_sim.agent.ActionSpec(
-                "look_down", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along x axis (rotate along local frame)
-            )
+            # "look_up": habitat_sim.agent.ActionSpec(
+            #     "look_up", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate a degree along x axis (rotate along local frame)
+            # ),
+            # "look_down": habitat_sim.agent.ActionSpec(
+            #     "look_down", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along x axis (rotate along local frame)
+            # )
         }
         return action_space
 

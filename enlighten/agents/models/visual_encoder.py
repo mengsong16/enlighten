@@ -14,6 +14,11 @@ from enlighten.agents.models import RunningMeanAndVar
 #from torchsummary import summary
 from torchinfo import summary
 
+from gym.spaces import Dict as SpaceDict
+import gym
+
+from enlighten.agents.models import resnet
+
 # Allow rgb and depth
 class VisualEncoder(nn.Module):
     r"""A Simple 3-Conv CNN followed by a fully connected layer
@@ -253,7 +258,8 @@ class ResNetEncoder(VisualEncoder):
         ngroups,
         spatial_size,
         make_backbone,
-        attention):
+        attention,
+        compression=False):
 
         input_channels = self._n_input_depth + self._n_input_rgb
 
@@ -271,39 +277,45 @@ class ResNetEncoder(VisualEncoder):
                 round(after_compression_flat_size / (final_spatial ** 2))
             )
 
-            self.compression = nn.Sequential(
-                nn.Conv2d(
-                    self.backbone.final_channels,
-                    num_compression_channels,
-                    kernel_size=3,
-                    padding=1,
-                    bias=False,
-                ),
-                nn.GroupNorm(1, num_compression_channels),
-                nn.ReLU(True),
-            )
-
-            # after_compression_dims = np.array(
-            #         (before_dims, before_dims), dtype=np.float32
-            #     )
-            # final_dims = self._conv_output_dim(
-            #         dimension=after_compression_dims,
-            #         padding=np.array([1, 1], dtype=np.float32),
-            #         dilation=np.array([1, 1], dtype=np.float32),
-            #         kernel_size=np.array([3, 3], dtype=np.float32),
-            #         stride=np.array([1, 1], dtype=np.float32),
-            #     )
-            #after_compression_spatial = 7
-            # print(final_spatial)
-            # print(final_dims)
-            
-            output_shape = (
-                    num_compression_channels,
-                    final_spatial,
-                    final_spatial,
+            if compression:
+                self.compression = nn.Sequential(
+                    nn.Conv2d(
+                        self.backbone.final_channels,
+                        num_compression_channels,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                    ),
+                    nn.GroupNorm(1, num_compression_channels),
+                    nn.ReLU(True),
                 )
 
-            #print(self.output_shape)    
+                # after_compression_dims = np.array(
+                #         (before_dims, before_dims), dtype=np.float32
+                #     )
+                # final_dims = self._conv_output_dim(
+                #         dimension=after_compression_dims,
+                #         padding=np.array([1, 1], dtype=np.float32),
+                #         dilation=np.array([1, 1], dtype=np.float32),
+                #         kernel_size=np.array([3, 3], dtype=np.float32),
+                #         stride=np.array([1, 1], dtype=np.float32),
+                #     )
+                # after_compression_spatial = 7
+                # print(final_spatial)
+                # print(final_dims)
+                
+                output_shape = (
+                        num_compression_channels,
+                        final_spatial,
+                        final_spatial,
+                    )
+            else:
+                output_shape = (
+                        256,
+                        7,
+                        7,
+                    )
+                #print(self.output_shape)    
 
             # 2048 print(after_compression_flat_size)
             # 228 print(num_compression_channels)
@@ -320,15 +332,26 @@ class ResNetEncoder(VisualEncoder):
                     nn.ReLU(True),
             )
 
-            self.visual_encoder = nn.Sequential(
-                self.running_mean_and_var,
-                self.backbone,
-                self.compression,
-                self.fc
-            )
-        # add attension  
+            if compression:
+                self.visual_encoder = nn.Sequential(
+                    self.running_mean_and_var,
+                    self.backbone,
+                    self.compression,
+                    self.fc
+                )
+            else:    
+                self.visual_encoder = nn.Sequential(
+                    self.running_mean_and_var,
+                    self.backbone,
+                    self.fc
+                )
+            # dummy
+            self.visual_feature_map_dim = 0    
+        # add attention  
         # remove the last block 
         # for res18, output shape is (128, 14, 14)
+        # don't remove the last block
+        # for res18, output shape is (256, 7, 7)
         else:
             self.visual_encoder = nn.Sequential(
                 self.running_mean_and_var,
@@ -337,9 +360,9 @@ class ResNetEncoder(VisualEncoder):
                 #*list(self.backbone.children())[:-1],
                 #self.backbone
             ) 
-            # visual feature dimension
-            #self.dim = 128 # 14*14
-            self.dim = 256  # 7*7     
+            # visual feature map dimension (only for attention)
+            #self.visual_feature_map_dim = 128 # 14*14
+            self.visual_feature_map_dim = 256 #256  # 7*7     
 
         #print(self.visual_encoder.children().children())
         #print(type(self.visual_encoder))
@@ -347,7 +370,7 @@ class ResNetEncoder(VisualEncoder):
         #print(attention)
         #print(*list(self.backbone.modules())[:-1])
         #summary(self.visual_encoder, (3,224,224), device="cpu")
-        #summary(self.visual_encoder, input_size=(1,3,224,224))
+        #summary(self.visual_encoder, input_size=(4,3,224,224))
         #exit()
     
     def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -369,4 +392,17 @@ class ResNetEncoder(VisualEncoder):
             return x    
 
 if __name__ == "__main__":
-      print('Done')      
+    rgb_space = gym.spaces.Box(
+            low=0,
+            high=255,
+            shape=(
+                224, 
+                224,
+                3,
+            ),
+            dtype=np.uint8,
+        )
+    resnet_policy = ResNetEncoder(observation_space=SpaceDict({"color_sensor": rgb_space}),
+                                make_backbone=getattr(resnet, "resnet18"),
+                                output_size=512            )
+    print('Done')      

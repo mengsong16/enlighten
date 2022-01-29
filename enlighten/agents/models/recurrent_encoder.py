@@ -86,19 +86,22 @@ class RecurrentVisualEncoder(Net):
 
         if self.is_blind:
             visual_embedding_size = 0
-        else:    
-            if attention:
-                # visual encoder output a feature map where each pixel has channel self.visual_encoder.dim
-                visual_embedding_size = self.visual_encoder.dim
-            else:
-                # visual encoder output a vector which equals to the hidden size of RNN
-                visual_embedding_size =  self._hidden_size   
+        else: 
+            visual_embedding_size =  self.visual_encoder.output_size   
+            # if attention:
+            #     # visual encoder output a feature map where each pixel has channel self.visual_encoder.dim
+            #     visual_embedding_size = self.visual_encoder.dim
+                
+            # else:
+            #     # visual encoder output a vector which equals to the hidden size of RNN
+            #     visual_embedding_size =  self._hidden_size   
         
         self.state_encoder = build_attention_rnn_state_encoder(
             attention,
             visual_embedding_size,
             other_input_size,
             self._hidden_size,
+            visual_map_size=self.visual_encoder.visual_feature_map_dim,
             rnn_type=rnn_type,
             num_layers=num_recurrent_layers
         )

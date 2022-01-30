@@ -164,7 +164,10 @@ class PPO(nn.Module):
                 value_loss = value_loss.mean()
                 dist_entropy = dist_entropy.mean()
 
+                # clear grad on computing graph
                 self.optimizer.zero_grad()
+
+                # compute totatl loss
                 total_loss = (
                     value_loss * self.value_loss_coef
                     + action_loss
@@ -178,6 +181,7 @@ class PPO(nn.Module):
                 self.after_backward(total_loss)
 
                 self.before_step()
+                # update NN weights 
                 self.optimizer.step()
                 self.after_step()
 

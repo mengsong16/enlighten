@@ -31,39 +31,28 @@ class Attention(nn.Module):
                     nn.ReLU(True),
             )
 
-    # attention with fc
-    # def forward(self, img_features, hidden_states):
-    #     #print("====================")
-    #     # print(hidden_states.size())
-    #     # print(img_features.size())
-    #     # print(self.hidden_dim)
-    #     # print(self.encoder_dim)
-    #     #exit()
+    # caption
+    def forward(self, img_features, hidden_states):
+        U_h = self.U(hidden_states) 
+        W_s = self.W(img_features)
         
-    #     U_h = self.U(hidden_states) #.unsqueeze(1)
-    #     W_s = self.W(img_features)
-    #     # print(U_h.size())
-    #     # print(W_s.size())
-        
-        
-    #     att = self.tanh(W_s + U_h)
-    #     # print(att.size())
-    #     # print("====================")
-    #     #exit()
-    #     e = self.v(att).squeeze(2)
-    #     patch_weights = self.softmax(e)
-    #     #selected_visual_features = (img_features * patch_weights.unsqueeze(2)).sum(1)
-    #     selected_visual_features = img_features * patch_weights.unsqueeze(2)
-    #     selected_visual_features = self.fc(selected_visual_features)
-    #     return selected_visual_features, patch_weights
+        att = self.tanh(W_s + U_h)
+       
+        e = self.v(att).squeeze(2)
+        patch_weights = self.softmax(e)
+        selected_visual_features = (img_features * patch_weights.unsqueeze(2)).sum(1)
+        #selected_visual_features = img_features * patch_weights.unsqueeze(2)
+        #selected_visual_features = self.fc(selected_visual_features)
+        return selected_visual_features, patch_weights
 
     # only fc
-    def forward(self, img_features, hidden_states):  
-        batch_size, patch_number, _ = img_features.size() 
-        patch_weights = torch.zeros(batch_size, patch_number, device=img_features.device)  
-        selected_visual_features = self.fc(img_features)
+    # def forward(self, img_features, hidden_states):  
+    #     batch_size, patch_number, _ = img_features.size() 
+    #     patch_weights = torch.zeros(batch_size, patch_number, device=img_features.device)  
+    #     selected_visual_features = self.fc(img_features)
 
-        return selected_visual_features, patch_weights
+    #     return selected_visual_features, patch_weights
+    
     # average all patch features
     # def forward(self, img_features, hidden_states):
     #     batch_size, patch_number, _ = img_features.size()
@@ -107,4 +96,3 @@ if __name__ == "__main__":
     print("hidden_states: %s"%str(hidden_states.size()))
     print("selected_visual_features: %s"%str(selected_visual_features.size()))
     print("patch_weights: %s"%(str(patch_weights.size())))
-    #print(patch_weights)

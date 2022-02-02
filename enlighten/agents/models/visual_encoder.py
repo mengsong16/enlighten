@@ -216,6 +216,11 @@ class ResNetEncoder(VisualEncoder):
         self.output_size = output_size
         self.attention = attention
 
+        #/////////////////
+        if self.attention:
+            self.output_size = 256
+        #/////////////////    
+
         if not self.is_blind:
             self.create_model(baseplanes, 
                 ngroups,
@@ -259,7 +264,7 @@ class ResNetEncoder(VisualEncoder):
         spatial_size,
         make_backbone,
         attention,
-        compression=False):
+        compression=False):  # by default, no compression, to be consistent with attention mode
 
         input_channels = self._n_input_depth + self._n_input_rgb
 

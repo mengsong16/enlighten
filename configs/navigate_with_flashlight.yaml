@@ -16,7 +16,7 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "vangogh_daylight_fix_start_fix_goal_no_attention_loop_by_col_pad"
+experiment_name: "vangogh_daylight_fix_start_fix_goal_no_attention_loop_by_column_4"
 
 # robot
 agent_initial_position: [3, 0, 1] # [0, 0, 0]

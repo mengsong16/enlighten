@@ -77,6 +77,9 @@ class MyViewer:
             cv2.imshow('AttentionView', alpha_blend_image)  
             #cv2.imshow('AttentionView', np.asarray(alpha))   
             
+            return alpha_blend_image
+        else:
+            return None    
 
         
     def close(self):

@@ -217,8 +217,8 @@ class ResNetEncoder(VisualEncoder):
         self.attention = attention
 
         #/////////////////
-        if self.attention:
-            self.output_size = 256
+        # if self.attention:
+        #     self.output_size = 256
         #/////////////////    
 
         if not self.is_blind:

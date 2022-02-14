@@ -169,6 +169,7 @@ class PPOTrainer(BaseRLTrainer):
                 polar_point_goal=polar_point_goal,
                 action_space=self.envs.action_spaces[0],
                 rnn_type=self.config.get("rnn_type"),
+                attention_type=str(self.config.get("attention_type")),
                 hidden_size=int(self.config.get("hidden_size"))
                 )
         else:
@@ -179,6 +180,7 @@ class PPOTrainer(BaseRLTrainer):
                 polar_point_goal=polar_point_goal,
                 action_space=self.envs.action_spaces[0],
                 rnn_type=self.config.get("rnn_type"),
+                attention_type=str(self.config.get("attention_type")),
                 hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in observation_space,
                 attention = self.config.get("attention")
@@ -1391,5 +1393,5 @@ class PPOTrainer(BaseRLTrainer):
 if __name__ == "__main__":
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "navigate_with_flashlight.yaml"), resume_training=False)
    #trainer._init_train()
-   #trainer.train()
-   trainer.eval()
+   trainer.train()
+   #trainer.eval()

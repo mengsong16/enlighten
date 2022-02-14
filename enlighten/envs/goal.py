@@ -78,17 +78,24 @@ class PointGoal(HabitatSensor):
     # vector from current position to goal position
     def get_observation(
         self, 
+        start_position, # [x,y,z] in world coord system
+        start_rotation, # quarternion
         goal_position, # [x,y,z] in world coord system 
         *args: Any, 
         **kwargs: Any
     ):
-        agent_state = self.env.get_agent_state()
-        agent_position = agent_state.position
-        rotation_world_agent = agent_state.rotation
+        # agent_state = self.env.get_agent_state()
+        # agent_position = agent_state.position
+        # rotation_world_agent = agent_state.rotation # quarternion
         goal_world_position = np.array(goal_position, dtype=np.float32)
 
+
+        # return self._compute_pointgoal(
+        #    agent_position, rotation_world_agent, goal_world_position
+        # )
+
         return self._compute_pointgoal(
-            agent_position, rotation_world_agent, goal_world_position
+            start_position, start_rotation, goal_world_position
         )
 
 # image goal can only be RGB image

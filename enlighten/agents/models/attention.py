@@ -9,13 +9,22 @@ import numpy as np
 # selected_visual_features: [batch_n, visual_input_size]
 # patch_weights: [batch_n, 49]
 class Attention(nn.Module):
-    def __init__(self, encoder_dim, hidden_dim, output_dim):
+    def __init__(self, encoder_dim, hidden_dim, output_dim, attention_type):
         super(Attention, self).__init__()
 
         self.encoder_dim = encoder_dim
         self.hidden_dim = hidden_dim
-        self.output_dim = output_dim
+        self.fc_output_dim = output_dim
 
+        self.attention_type = attention_type
+        if self.attention_type == "fc":
+            self.output_size = self.fc_output_dim
+        elif self.attention_type == "caption":    
+            self.output_size = self.encoder_dim
+        else:
+            print("Error (attention.py): undefined attention type: %s"%(self.attention_type))  
+            exit()  
+        # caption
         # hidden states --> embedding
         self.U = nn.Linear(hidden_dim, 512)
         # visual features --> embedding
@@ -23,35 +32,41 @@ class Attention(nn.Module):
         self.v = nn.Linear(512, 1)
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(1)
+           
+        # fc   
         self.fc = nn.Sequential(
                     nn.Flatten(),
                     nn.Linear(
-                        np.prod(encoder_dim*49), output_dim
+                        np.prod(encoder_dim*49), self.fc_output_dim
                     ),
                     nn.ReLU(True),
             )
 
     # caption
-    # def forward(self, img_features, hidden_states):
-    #     U_h = self.U(hidden_states) 
-    #     W_s = self.W(img_features)
+    def forward(self, img_features, hidden_states):
+        if self.attention_type == "caption":
+            U_h = self.U(hidden_states) 
+            W_s = self.W(img_features)
+            
+            att = self.tanh(W_s + U_h)
         
-    #     att = self.tanh(W_s + U_h)
-       
-    #     e = self.v(att).squeeze(2)
-    #     patch_weights = self.softmax(e)
-    #     selected_visual_features = (img_features * patch_weights.unsqueeze(2)).sum(1)
-    #     #selected_visual_features = img_features * patch_weights.unsqueeze(2)
-    #     #selected_visual_features = self.fc(selected_visual_features)
-    #     return selected_visual_features, patch_weights
-
-    # only fc
-    def forward(self, img_features, hidden_states):  
-        batch_size, patch_number, _ = img_features.size() 
-        patch_weights = torch.zeros(batch_size, patch_number, device=img_features.device)  
-        selected_visual_features = self.fc(img_features)
-
+            e = self.v(att).squeeze(2)
+            patch_weights = self.softmax(e)
+            selected_visual_features = (img_features * patch_weights.unsqueeze(2)).sum(1)
+            #selected_visual_features = img_features * patch_weights.unsqueeze(2)
+            #selected_visual_features = self.fc(selected_visual_features)
+            #print("---- caption -----")
+        elif self.attention_type == "fc":
+            batch_size, patch_number, _ = img_features.size() 
+            patch_weights = torch.zeros(batch_size, patch_number, device=img_features.device)  
+            selected_visual_features = self.fc(img_features)
+            #print("---- fc -----")
+        else:    
+            print("Error (attention.py): undefined attention model: %s"%(self.attention_type))
+            exit()
+        
         return selected_visual_features, patch_weights
+
     
     # average all patch features
     # def forward(self, img_features, hidden_states):
@@ -86,7 +101,7 @@ if __name__ == "__main__":
     #attention_model = Attention(encoder_dim=128, hidden_dim=512)
     #summary(attention_model, input_size=((1,196,128),(1,1,512)))
 
-    attention_model = Attention(encoder_dim=256, hidden_dim=512, output_dim=512)
+    attention_model = Attention(encoder_dim=256, hidden_dim=512, output_dim=512, attention_type="caption")
     batch_n = 5
     img_features = torch.rand((batch_n,49,256))
     hidden_states = torch.rand((batch_n,1,512))

@@ -108,20 +108,24 @@ class PPOAgent(Agent):
                
 
         if self.config.get("visual_encoder") == "CNN":
+           
             self.actor_critic = CNNPolicy(observation_space=observation_space, 
                 goal_observation_space=env.get_goal_observation_space(), 
                 polar_point_goal=polar_point_goal,
                 action_space=env.action_space,
                 rnn_type=self.config.get("rnn_type"),
+                attention_type=str(self.config.get("attention_type")),
                 hidden_size=int(self.config.get("hidden_size")))
         else:
             # normalize with running mean and var if rgb images exist
-            # assume that 
+            # assume that
+            
             self.actor_critic = ResNetPolicy(observation_space=observation_space, 
                 goal_observation_space=env.get_goal_observation_space(), 
                 polar_point_goal=polar_point_goal,
                 action_space=env.action_space,
                 rnn_type=self.config.get("rnn_type"),
+                attention_type=str(self.config.get("attention_type")),
                 hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in env.observation_space,
                 attention=self.config.get("attention")) 

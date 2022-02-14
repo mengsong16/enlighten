@@ -493,14 +493,15 @@ class RNNStateEncoder(nn.Module):
         return x, hidden_states
 
 class AttentionRNNStateEncoder(RNNStateEncoder):
-    def __init__(self, attention, visual_map_size, hidden_size):
+    def __init__(self, attention, attention_type, visual_map_size, hidden_size):
         # need to do initialization here because RNNStateEncoder derives from a NN module
         super().__init__()
 
         self.attention = attention
         if self.attention:
             # Attention visual encoder output dimension = RNN hidden size
-            self.attention_model = Attention(encoder_dim=visual_map_size, hidden_dim=hidden_size, output_dim=hidden_size)
+            self.attention_model = Attention(encoder_dim=visual_map_size, hidden_dim=hidden_size, output_dim=hidden_size, attention_type=attention_type)
+
             
     # masks: not_dones
     # hidden_states: [N, 1, hidden_size]
@@ -694,17 +695,23 @@ class LSTMStateEncoder(AttentionRNNStateEncoder):
     def __init__(
         self,
         attention: bool,
-        visual_input_size: int,
+        attention_type: str,
+        visual_encoder_output_size: int,
         other_input_size: int,
         hidden_size: int,
         num_layers: int = 1,
         visual_map_size: int = 256
     ):
         #super().__init__()
-        super().__init__(attention, visual_map_size, hidden_size)
+        super().__init__(attention, attention_type, visual_map_size, hidden_size)
 
         # h+c
         self.num_recurrent_layers = num_layers * 2
+
+        if self.attention:
+            visual_input_size = self.attention_model.output_size
+        else:
+            visual_input_size = visual_encoder_output_size   
 
         self.rnn = nn.LSTM(
             input_size=visual_input_size+other_input_size,
@@ -746,16 +753,22 @@ class GRUStateEncoder(AttentionRNNStateEncoder):
     def __init__(
         self,
         attention: bool,
-        visual_input_size: int,
+        attention_type: str,
+        visual_encoder_output_size: int,
         other_input_size: int,
         hidden_size: int,
         num_layers: int = 1,
         visual_map_size: int = 256,
     ):
         #super().__init__()
-        super().__init__(attention, visual_map_size, hidden_size)
+        super().__init__(attention, attention_type, visual_map_size, hidden_size)
 
         self.num_recurrent_layers = num_layers
+
+        if self.attention:
+            visual_input_size = self.attention_model.output_size
+        else:
+            visual_input_size = visual_encoder_output_size    
 
         self.rnn = nn.GRU(
             input_size=visual_input_size+other_input_size,
@@ -797,19 +810,20 @@ def build_rnn_state_encoder(
 
 def build_attention_rnn_state_encoder(
     attention: bool,
-    visual_input_size: int,
+    visual_encoder_output_size: int,
     other_input_size: int,
     hidden_size: int,
     visual_map_size: int,
-    rnn_type: str = "gru",
+    rnn_type: str,
+    attention_type: str,
     num_layers: int = 1,
 ):
     
     rnn_type = rnn_type.lower()
     if rnn_type == "gru":
-        return GRUStateEncoder(attention, visual_input_size, other_input_size, hidden_size, num_layers, visual_map_size)
+        return GRUStateEncoder(attention, attention_type, visual_encoder_output_size, other_input_size, hidden_size, num_layers, visual_map_size)
     elif rnn_type == "lstm":
-        return LSTMStateEncoder(attention, visual_input_size, other_input_size, hidden_size, num_layers, visual_map_size)
+        return LSTMStateEncoder(attention, attention_type, visual_encoder_output_size, other_input_size, hidden_size, num_layers, visual_map_size)
     else:
         raise RuntimeError(f"Did not recognize rnn type '{rnn_type}'")
 
@@ -1032,7 +1046,7 @@ def test_gru():
     N = 2
 
     # create model
-    gru = GRUStateEncoder(attention=False, visual_input_size=visual_input_size, other_input_size=other_input_size, 
+    gru = GRUStateEncoder(attention=False, visual_encoder_output_size=visual_input_size, other_input_size=other_input_size, 
         hidden_size=hidden_size, num_layers=1, visual_map_size=0)
     
     for i in range(10):

@@ -353,6 +353,7 @@ class NavEnv(gym.Env):
     def create_goal_sensor(self):
         # add goal to observations
         if self.config.get("goal_conditioned"):
+        #if self.config.get("random_goal"):
             assert self.config.get("goal_format") in ["pointgoal", "imagegoal"], "Goal format is not supported!"
             if self.config.get("goal_format") == "pointgoal":
                 self.goal_sensor = PointGoal(config=self.config, env=self)
@@ -386,7 +387,7 @@ class NavEnv(gym.Env):
 
     def get_goal_observation(self):
         if self.goal_sensor is not None:
-            return self.goal_sensor.get_observation(goal_position=self.goal_position) 
+            return self.goal_sensor.get_observation(goal_position=self.goal_position, start_position=self.start_position, start_rotation=self.start_rotation) 
         else:
             print("Goal observation does not exist since the env is not goal conditioned")
             return None 
@@ -430,8 +431,10 @@ class NavEnv(gym.Env):
         new_agent_state.position = np.array(new_position, dtype="float32")  
 
         if new_rotation is not None:
+            # quaternion
             if quaternion:
-                new_agent_state.rotation = new_rotation
+                # new_rotation type: quaternion
+                new_agent_state.rotation = new_rotation  
             # euler     
             else:    
                 new_agent_state.rotation = get_rotation_quat(np.array(new_rotation, dtype="float32"))
@@ -441,7 +444,9 @@ class NavEnv(gym.Env):
     def set_agent_state(self, new_position, new_rotation=None, is_initial=False, quaternion=False):
         self.agent.set_state(self.create_agent_state(new_position=new_position, new_rotation=new_rotation, quaternion=quaternion), is_initial=is_initial)
 
+    # get goal observation
     def get_observations_at(self, position, rotation, keep_agent_at_new_pose=False):
+        # reset agent state to the goal location
         current_state = self.get_agent_state()
 
         self.set_agent_state(new_position=position, new_rotation=rotation, is_initial=False, quaternion=True)
@@ -484,9 +489,13 @@ class NavEnv(gym.Env):
             print("Optimal trajectory exists between start position %s and goal position %s"%(self.get_agent_position(), self.goal_position))        
         else:
            self.goal_position = np.array(self.config.get('goal_position'), dtype="float32")
-           start_point = np.array(self.config.get('agent_initial_position'), dtype="float32")
-           self.set_agent_state(new_position=start_point, 
-                        new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
+           self.start_position = np.array(self.config.get('agent_initial_position'), dtype="float32")
+           self.start_rotation = np.array(self.config.get('agent_initial_rotation'), dtype="float32")
+           # quarternion
+           self.start_rotation = get_rotation_quat(np.array(self.start_rotation, dtype="float32"))
+
+           self.set_agent_state(new_position=self.start_position, 
+                        new_rotation=self.start_rotation, is_initial=True, quaternion=True)
 
     # may need to fix y coordinate of start and goal position
     def set_start_goal_once(self):
@@ -518,28 +527,32 @@ class NavEnv(gym.Env):
 
         # fixed start
         if not self.random_start:
-            start_point = np.array(self.config.get('agent_initial_position'), dtype="float32")
-            
+            self.start_position = np.array(self.config.get('agent_initial_position'), dtype="float32")
+            self.start_rotation = np.array(self.config.get('agent_initial_rotation'), dtype="float32")
+            # quarternion
+            self.start_rotation = get_rotation_quat(np.array(self.start_rotation, dtype="float32"))
+
             if self.sim.pathfinder.is_loaded:
-                if self.sim.pathfinder.is_navigable(start_point):
-                    self.set_agent_state(new_position=start_point, 
-                        new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
+                if self.sim.pathfinder.is_navigable(self.start_position):
+                    self.set_agent_state(new_position=self.start_position, 
+                        new_rotation=self.start_rotation, is_initial=True, quaternion=True)
                 else:
                     print("Error: provided start position is not navigable!")
                     exit() 
             else:
-                self.set_agent_state(new_position=start_point, 
-                        new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)
+                self.set_agent_state(new_position=self.start_position, 
+                        new_rotation=self.start_rotation, is_initial=True, quaternion=True)
             #print(start_point)
             #self.set_agent_state(new_position=start_point, \
             #    new_rotation=self.config.get('agent_initial_rotation'), is_initial=True)             
         # random start
         else:
             if self.sim.pathfinder.is_loaded:
-                start_point = self.sim.pathfinder.get_random_navigable_point()
-                start_rotation = quat_from_angle_axis(self.sim.random.uniform_float(0, 2.0 * np.pi), np.array([0, 1, 0]))
-                self.set_agent_state(new_position=start_point, \
-                    new_rotation=start_rotation, is_initial=True, quaternion=True) 
+                self.start_position = self.sim.pathfinder.get_random_navigable_point()
+                # quarternion
+                self.start_rotation = quat_from_angle_axis(self.sim.random.uniform_float(0, 2.0 * np.pi), np.array([0, 1, 0]))
+                self.set_agent_state(new_position=self.start_position, \
+                    new_rotation=self.start_rotation, is_initial=True, quaternion=True) 
             else:
                 print("Error: navmesh is not available so is not able to set random start point")                
 
@@ -554,12 +567,10 @@ class NavEnv(gym.Env):
         obs = self.sensor_suite.get_observations(sim_obs)
 
         if self.config.get("goal_conditioned"):
+        #if self.config.get("random_goal"):
             obs = self.add_goal_obs(obs)
 
         #self.step_count_per_episode += 1
-
-        
-
 
         # update all measurements
         self.measurements.update_measures(
@@ -588,6 +599,7 @@ class NavEnv(gym.Env):
         obs = self.sensor_suite.get_observations(sim_obs)
 
         if self.config.get("goal_conditioned"):
+        #if self.config.get("random_goal"):    
             obs = self.add_goal_obs(obs)
 
         # self.did_collide = self.extract_collisions(sim_obs)
@@ -620,7 +632,7 @@ class NavEnv(gym.Env):
     def is_collision(self):
         return self.measurements.measures["collisions"].get_metric()["is_collision"]         
 
-    def render(self, mode: str = "color_sensor", attention_image=None, save_attention_image=True) -> Any:
+    def render(self, mode: str = "color_sensor", attention_image=None) -> Any:
         r"""
         Args:
             mode: sensor whose observation is used for returning the frame,
@@ -631,6 +643,11 @@ class NavEnv(gym.Env):
         """
 
         assert self.config.get(mode), "render mode should be active in the config file"
+
+        if self.config.get("attention"):
+            save_attention_image = True
+        else:    
+            save_attention_image = False
         # create viewer
         if self.viewer is None:
             #self.viewer = SimpleImageViewer()
@@ -956,7 +973,7 @@ def test_env():
     #else:
     #    env = create_garage_env()
     
-    for episode in range(5):
+    for episode in range(10):
         print("***********************************")
         print('Episode: {}'.format(episode))
         #step = 0
@@ -967,13 +984,14 @@ def test_env():
         #env.print_collide_info()
         print("Goal position: %s"%(env.goal_position))
         if env.config.get("goal_conditioned"):
+        #if env.config.get("random_goal"):
             print("Goal observation: "+str(env.get_goal_observation().shape))
         #print("Goal observation: %s"%(env.get_goal_observation()))
         
         print('-----------------------------')
 
        
-        for i in range(300):  # max steps per episode
+        for i in range(500):  # max steps per episode
             action = env.action_space.sample()
             #if gym_env:
             obs, reward, done, info = env.step(action)
@@ -1005,9 +1023,11 @@ def test_env():
             print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
 
             env.print_agent_state()
-
+            if env.config.get("goal_conditioned"):
+                print("Goal observation: "+str(env.get_goal_observation()))
             env.get_current_scene_light_vector()
             print('-------------------------------')
+            
 
             #step += 1
             if done:

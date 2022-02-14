@@ -313,18 +313,20 @@ class PointGoalReward(Measure):
 
     
     def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
-        measurements.check_measure_dependencies(self.cls_uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid])
-        self._previous_measure = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
+        if self._config.get("goal_reward"):
+            measurements.check_measure_dependencies(self.cls_uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid])
+            self._previous_measure = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
         
         self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)  # type: ignore
 
     def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
         self._metric = float(self._config.get("slack_reward"))
 
-        current_measure = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
+        if self._config.get("goal_reward"):
+            current_measure = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
 
-        self._metric += (self._previous_measure - current_measure)
-        self._previous_measure = current_measure
+            self._metric += (self._previous_measure - current_measure)
+            self._previous_measure = current_measure
 
         success = measurements.measures[Success.cls_uuid].get_metric()
         if bool(success):

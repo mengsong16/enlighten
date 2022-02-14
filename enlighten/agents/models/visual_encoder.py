@@ -213,12 +213,12 @@ class ResNetEncoder(VisualEncoder):
         else:
             self.running_mean_and_var = nn.Sequential()
 
-        self.output_size = output_size
+        self.fc_output_size = output_size
         self.attention = attention
 
         #/////////////////
-        # if self.attention:
-        #     self.output_size = 256
+        #if self.attention:
+        #    self.output_size = 256
         #/////////////////    
 
         if not self.is_blind:
@@ -332,7 +332,7 @@ class ResNetEncoder(VisualEncoder):
             self.fc = nn.Sequential(
                     nn.Flatten(),
                     nn.Linear(
-                        np.prod(output_shape), self.output_size
+                        np.prod(output_shape), self.fc_output_size
                     ),
                     nn.ReLU(True),
             )
@@ -351,7 +351,8 @@ class ResNetEncoder(VisualEncoder):
                     self.fc
                 )
             # dummy
-            self.visual_feature_map_dim = 0    
+            self.visual_feature_map_dim = 0 
+            self.output_size = self.fc_output_size   
         # add attention  
         # remove the last block 
         # for res18, output shape is (128, 14, 14)
@@ -367,7 +368,8 @@ class ResNetEncoder(VisualEncoder):
             ) 
             # visual feature map dimension (only for attention)
             #self.visual_feature_map_dim = 128 # 14*14
-            self.visual_feature_map_dim = 256 #256  # 7*7     
+            self.visual_feature_map_dim = 256 #256  # 7*7 
+            self.output_size = self.visual_feature_map_dim    
 
         #print(self.visual_encoder.children().children())
         #print(type(self.visual_encoder))

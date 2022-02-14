@@ -16,11 +16,11 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "vangogh_daylight_fix_start_fix_goal_attention_fc"
+experiment_name: "vangogh_daylight_random_start_random_goal_no_attention_seq_goal_conditioned_current_state"
 
 # robot
 agent_initial_position: [3, 0, 1] # [0, 0, 0]
-agent_initial_rotation: [0, 70, 0] #[0, 90, 0]
+agent_initial_rotation: [0, 70, 0] #[0, 90, 0] # euler angles
 forward_resolution: 0.25
 rotate_resolution: 10
 
@@ -42,18 +42,19 @@ measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'sp
 
 
 # goal
-goal_conditioned: false
+goal_conditioned: true
 goal_format: pointgoal # imagegoal #pointgoal
 goal_coord_system: polar  #  cartesian
 goal_dimension: 2
 goal_position: [4, 0, -1]
-random_goal: false #true
-random_start: false #true
+random_goal: true # if true, goal conditioned
+random_start: true #true
 
 # reward
 success_distance: 0.2 # l2 distance in meter
-success_reward: 2.5 
-slack_reward: -1.0e-4
+success_reward: 2.5 #100 #2.5 
+slack_reward: -1.0e-4 #-1 #-1.0e-4
+goal_reward: true
 #distance_to: "point" #view_points
 
 # episode termination condition
@@ -69,7 +70,8 @@ pretrained_model_path: data/ddppo-models/gibson-2plus-resnet50.pth
 # Whether or not the visual encoder backbone will be trained
 train_encoder: true
 rnn_type: gru #gru  # lstm
-attention: true #false # true
+attention: false #false # true
+attention_type: caption #fc
 
 # sampling
 use_double_buffered_sampler: false
@@ -103,7 +105,7 @@ reward_window_size: 50 # compute stats every n episodes
 tensorboard_dir: "tensorboard"
 
 # PPO
-clip_param: 0.2 #0.6 # 0.3 no improve
+clip_param: 0.2 #0.2 #0.6 # 0.3 no improve
 kl_coef: 0
 # ppo_epoch: # of training epoches inside each time agent update 
 # num of backprop inside each agent update = ppo_epoch * num_mini_batch

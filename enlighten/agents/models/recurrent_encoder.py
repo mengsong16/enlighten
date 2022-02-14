@@ -43,9 +43,10 @@ class RecurrentVisualEncoder(Net):
         goal_observation_space,
         action_space,
         visual_encoder,
-        hidden_size: int, # output size of visual encoder
-        num_recurrent_layers: int = 1,
-        rnn_type: str="gru",
+        hidden_size, # output size of visual encoder
+        num_recurrent_layers=1,
+        rnn_type="gru",
+        attention_type="caption",
         polar_point_goal=False,
         goal_visual_encoder=None,
         attention=False
@@ -85,9 +86,10 @@ class RecurrentVisualEncoder(Net):
         self._hidden_size = hidden_size
 
         if self.is_blind:
-            visual_embedding_size = 0
+            visual_encoder_output_size = 0
         else: 
-            visual_embedding_size =  self.visual_encoder.output_size   
+            visual_encoder_output_size = self.visual_encoder.output_size   
+            
             # if attention:
             #     # visual encoder output a feature map where each pixel has channel self.visual_encoder.dim
             #     visual_embedding_size = self.visual_encoder.dim
@@ -98,11 +100,12 @@ class RecurrentVisualEncoder(Net):
         
         self.state_encoder = build_attention_rnn_state_encoder(
             attention,
-            visual_embedding_size,
+            visual_encoder_output_size,
             other_input_size,
             self._hidden_size,
             visual_map_size=self.visual_encoder.visual_feature_map_dim,
             rnn_type=rnn_type,
+            attention_type=attention_type,
             num_layers=num_recurrent_layers
         )
 

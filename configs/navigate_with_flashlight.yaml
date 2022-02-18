@@ -16,7 +16,7 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "vangogh_daylight_random_start_random_goal_no_attention_seq_goal_conditioned_current_state"
+experiment_name: "vangogh_daylight_random_start_random_goal_goal_conditioned_absolute_test"
 
 # robot
 agent_initial_position: [3, 0, 1] # [0, 0, 0]
@@ -44,7 +44,9 @@ measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'sp
 # goal
 goal_conditioned: true
 goal_format: pointgoal # imagegoal #pointgoal
-goal_coord_system: polar  #  cartesian
+goal_coord_system: polar #polar  #cartesian
+goal_gps_compass: false  # false use absolute goal location
+goal_input_location: baseline #value_function #baseline
 goal_dimension: 2
 goal_position: [4, 0, -1]
 random_goal: true # if true, goal conditioned
@@ -53,7 +55,7 @@ random_start: true #true
 # reward
 success_distance: 0.2 # l2 distance in meter
 success_reward: 2.5 #100 #2.5 
-slack_reward: -1.0e-4 #-1 #-1.0e-4
+slack_reward: -1.0e-4 #-1 #-1.0e-4 #-1.0e-2
 goal_reward: true
 #distance_to: "point" #view_points
 

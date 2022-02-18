@@ -44,6 +44,7 @@ class RecurrentVisualEncoder(Net):
         action_space,
         visual_encoder,
         hidden_size, # output size of visual encoder
+        goal_input_location,
         num_recurrent_layers=1,
         rnn_type="gru",
         attention_type="caption",
@@ -60,6 +61,9 @@ class RecurrentVisualEncoder(Net):
         self.prev_action_encoder = nn.Embedding(num_embeddings=action_space.n+1, embedding_dim=32)
         self._n_prev_action = 32
         other_input_size = self._n_prev_action
+        self.goal_input_size = 0
+
+        self.goal_input_location = goal_input_location
 
         # goal embedding 
         if goal_observation_space is not None: 
@@ -69,12 +73,19 @@ class RecurrentVisualEncoder(Net):
                     n_input_goal = goal_observation_space.shape[0] + 1
                 else:    
                     n_input_goal = goal_observation_space.shape[0]
-                self.goal_encoder = nn.Linear(n_input_goal, 32)
-                other_input_size += 32
+
+                self.goal_input_size = 32    
+                self.goal_encoder = nn.Linear(n_input_goal, self.goal_input_size)
+
+                if self.goal_input_location == "baseline":
+                    other_input_size += self.goal_input_size
             # imagegoal  
             else:
                 self.goal_encoder = goal_visual_encoder
-                other_input_size += hidden_size
+                self.goal_input_size = hidden_size
+
+                if self.goal_input_location == "baseline":
+                    other_input_size += self.goal_input_size
         else:
             self.goal_encoder = None        
 
@@ -109,7 +120,10 @@ class RecurrentVisualEncoder(Net):
             num_layers=num_recurrent_layers
         )
 
-
+    # @property
+    # def goal_input_size(self):
+    #     return self.goal_input_size
+    
     @property
     def output_size(self):
         return self._hidden_size
@@ -173,6 +187,7 @@ class RecurrentVisualEncoder(Net):
 
         other_input = []
         # goal embedding
+        goal_embedding = None
         if self.goal_encoder is not None:
             if "pointgoal" in observations:
                 goal_observations = observations["pointgoal"]
@@ -184,7 +199,9 @@ class RecurrentVisualEncoder(Net):
                 # input should be a dictionary when using a visual encoder
                 goal_embedding = self.goal_encoder({"color_sensor": image_goal})
 
-            other_input.append(goal_embedding)
+            if self.goal_input_location == "baseline":
+                other_input.append(goal_embedding)
+
         
         # action embedding
         prev_actions = prev_actions.squeeze(-1)
@@ -207,5 +224,13 @@ class RecurrentVisualEncoder(Net):
             visual_input, other_input, rnn_hidden_states, masks
         )
 
-        return out, rnn_hidden_states, patch_weights
+        # if self.goal_input_location == "baseline":
+        #     return out, rnn_hidden_states, patch_weights
+        # elif self.goal_input_location == "value_function":
+        #     return out, rnn_hidden_states, patch_weights, goal_embedding
+        # else:
+        #     print("undefined goal input location in recurrent_encoder.py")
+
+        return out, rnn_hidden_states, patch_weights, goal_embedding    
+
 

@@ -78,17 +78,27 @@ class CategoricalNet(nn.Module):
 # features --> categoricalNet --> current action distribution
 # features --> critic --> V(s)
 class Policy(nn.Module, metaclass=abc.ABCMeta):
-    def __init__(self, net, dim_actions, attention=False):
+    def __init__(self, net, dim_actions, goal_input_location, attention=False):
         super().__init__()
-        # visual recurrent encoder
+        # visual recurrent encoder, rnn
         self.net = net
         self.dim_actions = dim_actions
         self.attention = attention
+        self.goal_input_location = goal_input_location
 
-        self.action_distribution = CategoricalNet(
-            self.net.output_size, self.dim_actions
-        )
-        self.critic = CriticHead(self.net.output_size)
+
+        if self.goal_input_location == "baseline":
+            self.action_distribution = CategoricalNet(
+                self.net.output_size, self.dim_actions
+            )
+            self.critic = CriticHead(self.net.output_size)
+        elif self.goal_input_location == "value_function":
+            self.action_distribution = CategoricalNet(
+                self.net.output_size+self.net.goal_input_size, self.dim_actions
+            )
+            self.critic = CriticHead(self.net.output_size+self.net.goal_input_size)    
+        else:
+            print("Error: undefined goal input location in polcy.py")    
 
     def forward(self, *x):
         raise NotImplementedError
@@ -117,16 +127,19 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
 
     def get_value(self, observations, rnn_hidden_states, prev_actions, masks):
         # visual rnn encoder
-        features, _, _ = self.net(
+        features, _, _, goal_embedding = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
+        if self.goal_input_location == "value_function":
+            features = torch.cat([features, goal_embedding], dim=1)
+        
         return self.critic(features)
 
     
     def get_attention_map(self, observations, rnn_hidden_states, prev_actions, masks):
         assert self.attention==True, "Error: attention should be set to True"
         # visual rnn encoder
-        _, _, attention_map = self.net(
+        _, _, attention_map, _ = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
         return attention_map
@@ -156,12 +169,17 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
         # get RecurrentVisualEncoder (visual rnn encoder) output
         # note that features is h sequence (T*N) during training and is h_t (N) during evaluation
         # therefore, value and distribution is also a sequence (T*N) during training
-        features, rnn_hidden_states, _ = self.net(
+        
+        # features are a sequence of hidden states (history) during training
+        features, rnn_hidden_states, _, goal_embedding = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
 
+        # both actor and critic conditioned on goal
+        if self.goal_input_location == "value_function":
+            features = torch.cat([features, goal_embedding], dim=1)
         #exit()
-        # actor
+        # actor 
         distribution = self.action_distribution(features)
         # critic
         value = self.critic(features)
@@ -207,6 +225,7 @@ class CNNPolicy(Policy):
         action_space,
         rnn_type,
         attention_type,
+        goal_input_location,
         hidden_size: int = 512,
         attention: bool=False,
         **kwargs
@@ -230,12 +249,14 @@ class CNNPolicy(Policy):
                 visual_encoder=visual_encoder,
                 goal_visual_encoder=goal_visual_encoder,
                 hidden_size=hidden_size,
+                goal_input_location=goal_input_location,
                 polar_point_goal=polar_point_goal,
                 rnn_type=rnn_type,
                 attention_type=attention_type,
                 **kwargs,
             ),
             dim_actions = action_space.n,
+            goal_input_location = goal_input_location,
             attention = attention
         )  
 
@@ -248,6 +269,7 @@ class ResNetPolicy(Policy):
         action_space,
         rnn_type,
         attention_type,
+        goal_input_location,
         baseplanes: int = 32,
         backbone: str = "resnet18",
         normalize_visual_inputs: bool = False,
@@ -282,6 +304,7 @@ class ResNetPolicy(Policy):
                 visual_encoder=visual_encoder,
                 goal_visual_encoder=goal_visual_encoder,
                 hidden_size=hidden_size,
+                goal_input_location=goal_input_location,
                 polar_point_goal=polar_point_goal,
                 rnn_type=rnn_type,
                 attention_type=attention_type,
@@ -289,6 +312,7 @@ class ResNetPolicy(Policy):
                 **kwargs,
             ),
             dim_actions = action_space.n,
+            goal_input_location = goal_input_location, 
             attention = attention
         ) 
 

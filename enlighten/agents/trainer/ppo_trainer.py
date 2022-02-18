@@ -170,6 +170,7 @@ class PPOTrainer(BaseRLTrainer):
                 action_space=self.envs.action_spaces[0],
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
+                goal_input_location=str(self.config.get("goal_input_location")),
                 hidden_size=int(self.config.get("hidden_size"))
                 )
         else:
@@ -181,6 +182,7 @@ class PPOTrainer(BaseRLTrainer):
                 action_space=self.envs.action_spaces[0],
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
+                goal_input_location=str(self.config.get("goal_input_location")),
                 hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in observation_space,
                 attention = self.config.get("attention")

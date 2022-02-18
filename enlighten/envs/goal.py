@@ -29,6 +29,8 @@ class PointGoal(HabitatSensor):
 
         self.env = env
 
+        self.goal_gps_compass = config.get("goal_gps_compass")
+
         super().__init__(uuid="pointgoal", config=config)
     
 
@@ -84,19 +86,21 @@ class PointGoal(HabitatSensor):
         *args: Any, 
         **kwargs: Any
     ):
-        # agent_state = self.env.get_agent_state()
-        # agent_position = agent_state.position
-        # rotation_world_agent = agent_state.rotation # quarternion
+        if self.goal_gps_compass:
+            agent_state = self.env.get_agent_state()
+            agent_position = agent_state.position
+            rotation_world_agent = agent_state.rotation # quarternion
+        
         goal_world_position = np.array(goal_position, dtype=np.float32)
 
-
-        # return self._compute_pointgoal(
-        #    agent_position, rotation_world_agent, goal_world_position
-        # )
-
-        return self._compute_pointgoal(
-            start_position, start_rotation, goal_world_position
-        )
+        if self.goal_gps_compass:
+            return self._compute_pointgoal(
+            agent_position, rotation_world_agent, goal_world_position
+            )
+        else:
+            return self._compute_pointgoal(
+                start_position, start_rotation, goal_world_position
+            )
 
 # image goal can only be RGB image
 class ImageGoal(HabitatSensor):

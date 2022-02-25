@@ -19,6 +19,7 @@ from enlighten.utils.config_utils import parse_config
 from enlighten.utils.geometry_utils import get_rotation_quat, euclidean_distance 
 from enlighten.utils.path import *
 from enlighten.tasks.measures import Measurements
+from enlighten.envs.explore import State_Visitation
 
 import abc
 import copy
@@ -229,6 +230,10 @@ class NavEnv(gym.Env):
         self.measurements = Measurements(measure_ids=measure_ids, env=self, config=self.config)
         # set current episode
         self.current_episode = 0
+
+        # set visitation dictionaries
+        self.train_state_count_dict = State_Visitation(position_resolution=float(self.config.get("forward_resolution")), rotation_resolution=float(self.config.get("rotate_resolution")))
+        self.episode_state_count_dict = State_Visitation(position_resolution=float(self.config.get("forward_resolution")), rotation_resolution=float(self.config.get("rotate_resolution")))
         
 
     def create_sim_config(self):
@@ -283,13 +288,15 @@ class NavEnv(gym.Env):
             "turn_right": habitat_sim.agent.ActionSpec(
                 "turn_right", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along y axis (rotate along local frame)
             ),
-            # "look_up": habitat_sim.agent.ActionSpec(
-            #     "look_up", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate a degree along x axis (rotate along local frame)
-            # ),
-            # "look_down": habitat_sim.agent.ActionSpec(
-            #     "look_down", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along x axis (rotate along local frame)
-            # )
+            
         }
+
+        if int(self.config.get("action_number")) == 6:
+            # rotate a degree along x axis (rotate along local frame)
+            action_space["look_up"] = habitat_sim.agent.ActionSpec("look_up", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))))
+            # rotate -a degree along x axis (rotate along local frame)
+            action_space["look_down"] = habitat_sim.agent.ActionSpec("look_down", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))))
+
         return action_space
 
     def get_sim_action_space(self):
@@ -417,7 +424,17 @@ class NavEnv(gym.Env):
     def get_agent_rotation_euler(self):
         agent_state = self.agent.get_state()
         
-        return qt.as_euler_angles(agent_state.rotation)   
+        return qt.as_euler_angles(agent_state.rotation)
+
+    # [x, y, z, alpha, beta, gamma]
+    def get_agent_state_xyz_euler(self):
+        agent_state = self.agent.get_state()
+        # position: [x,y,z]
+        # rotation: quarternion [x,y,z,q]
+
+        euler = qt.as_euler_angles(agent_state.rotation)
+        
+        return np.concatenate((agent_state.position, euler), axis=0)       
 
 
     def print_agent_state(self):  
@@ -557,6 +574,8 @@ class NavEnv(gym.Env):
                 print("Error: navmesh is not available so is not able to set random start point")                
 
     def step(self, action):
+        # step simulator
+        # transit to s'
         action_name = self.action_mapping[action]
         sim_obs = self.sim.step(action_name)
         # self.did_collide = self.extract_collisions(sim_obs)
@@ -579,23 +598,39 @@ class NavEnv(gym.Env):
         )
 
         #self.measurements.print_measures()
+
+        # update visitation dictionaries
+        # must done before calculating the reward and after env transited to s'
+        current_state = self.get_agent_state_xyz_euler()
+        # must update visitation count before get reward
+        self.train_state_count_dict.add(current_state)
+        self.episode_state_count_dict.add(current_state)
+
+        current_train_state_count = self.train_state_count_dict.get(current_state)
+        current_episode_state_count = self.episode_state_count_dict.get(current_state)
         
-        reward = self.get_reward()
+        reward = self.get_reward(current_train_state_count, current_episode_state_count)
+
+        # update prev state count
+        self.prev_train_state_count = current_train_state_count
+        self.prev_episode_state_count = current_episode_state_count
 
         done = self.is_done()
 
         # add metrics (e.g, success) to info for tensorboard stats
         info = {"success": int(self.is_success()), "spl": self.get_spl()}
+
+
         return obs, reward, done, info              
 
     def reset(self):
-        # will reset agent.initial_state to its initial pose
+        # reset agent.initial_state to its initial pose
         sim_obs = self.sim.reset()
 
         # reset start and goal
         self.set_start_goal()
 
-        # sim_obs includes all modes
+        # get the initial observation
         obs = self.sensor_suite.get_observations(sim_obs)
 
         if self.config.get("goal_conditioned"):
@@ -606,8 +641,20 @@ class NavEnv(gym.Env):
         # self.collision_count_per_episode = 0
         #self.step_count_per_episode = 0
 
+        # reset measurements
         self.measurements.reset_measures(measurements=self.measurements)
 
+        # reset episode visitation count
+        self.episode_state_count_dict.reset()
+
+        # count s0 to visitation count
+        current_state = self.get_agent_state_xyz_euler()
+        self.train_state_count_dict.add(current_state)
+        self.episode_state_count_dict.add(current_state)
+
+        # record prev_state_count
+        self.prev_train_state_count = self.train_state_count_dict.get(current_state)
+        self.prev_episode_state_count = self.episode_state_count_dict.get(current_state)
         #self.previous_measure = self.get_current_distance()
 
         return obs
@@ -878,8 +925,21 @@ class NavEnv(gym.Env):
         else:
             return self.get_euclidean_distance()    
 
-    def get_reward(self):
-        return self.measurements.measures["point_goal_reward"].get_metric()    
+    def get_reward(self, current_train_state_count, current_episode_state_count):
+        extrinsic_reward = self.measurements.measures["point_goal_reward"].get_metric()
+        novelty_change = 1.0 / float(current_train_state_count) - float(self.config.get("prev_state_novelty_coef")) / float(self.prev_train_state_count)
+        intrinsic_reward = max(novelty_change, 0.0)
+        intrinsic_reward *= float(current_episode_state_count == 1)
+        intrinsic_reward *= float(self.config.get("intrinsic_reward_coef"))
+
+        #print("~~~~~~~~~~~~~~~~~~~~~~~~~")
+        #print("Extrinsic reward: %f"%(extrinsic_reward))
+        #print("Intrinsic reward: %f"%(intrinsic_reward))
+        #print("~~~~~~~~~~~~~~~~~~~~~~~~~")
+        #assert intrinsic_reward == 0.0
+
+        reward = extrinsic_reward + intrinsic_reward
+        return reward   
 
     def is_done(self):
         return self.measurements.measures["done"].get_metric()  
@@ -988,6 +1048,7 @@ def test_env():
             print("Goal observation: "+str(env.get_goal_observation().shape))
         #print("Goal observation: %s"%(env.get_goal_observation()))
         
+        
         print('-----------------------------')
 
        
@@ -1002,37 +1063,46 @@ def test_env():
             #     info = env_step.env_info
             #     done = env_step.terminal
 
-            print('-----------------------------')
-            print('step: %d'%(i+1))
-            print('action: %s'%(env.action_index_to_name(action)))
+            # print('-----------------------------')
+            # print('step: %d'%(i+1))
+            # print('action: %s'%(env.action_index_to_name(action)))
             #print('observation: %s, %s'%(str(obs.shape), str(type(obs))))
             #print('observation: %s'%(str(type(obs))))
-            print('observation: %s'%(obs.keys()))
-            #print(obs["color_sensor"].shape)
-            #print(obs["color_sensor"])
-            #print(obs["depth_sensor"].shape)
-            #print(obs["semantic_sensor"].shape)
-            #print(obs)
-            print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
-            print('reward: %f'%(reward))
-            print('done: '+str(done))
-            #env.print_collide_info()
+            # print('observation: %s'%(obs.keys()))
+            # #print(obs["color_sensor"].shape)
+            # #print(obs["color_sensor"])
+            # #print(obs["depth_sensor"].shape)
+            # #print(obs["semantic_sensor"].shape)
+            # #print(obs)
+            # print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
+            # print('reward: %f'%(reward))
+            # print('done: '+str(done))
+            # #env.print_collide_info()
             
-            # Garage env needs set render mode explicitly
-            render_obs = env.render(mode="color_sensor")
-            print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
+            # # Garage env needs set render mode explicitly
+            # render_obs = env.render(mode="color_sensor")
+            # print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
 
-            env.print_agent_state()
-            if env.config.get("goal_conditioned"):
-                print("Goal observation: "+str(env.get_goal_observation()))
-            env.get_current_scene_light_vector()
-            print('-------------------------------')
+            # env.print_agent_state()
+            # if env.config.get("goal_conditioned"):
+            #     print("Goal observation: "+str(env.get_goal_observation()))
+            # env.get_current_scene_light_vector()
+            # print('state: %s'%(env.get_agent_state_xyz_euler()))
+            # print(env.train_state_count_dict.state_to_key(env.get_agent_state_xyz_euler()))
+            #print(env.get_agent_state_xyz_euler().shape)
+            #print('state: %s'%(env.get_agent_state_xyz_euler()[:3]))
+            #print('state: %s'%(env.get_agent_state_xyz_euler()[3:]))
+            #print('-------------------------------')
             
 
             #step += 1
             if done:
                 break
                
+        # env.episode_state_count_dict.print()
+        # print('----------------------------------')
+        # env.train_state_count_dict.print()
+        # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")       
         print('Episode finished after {} timesteps.'.format(i+1))
         print('Collision count: %d'%(env.get_current_collision_counts()))
     
@@ -1090,8 +1160,9 @@ def test_stop_action():
         env.print_agent_state()
         #env.print_collide_info()
         print("Goal position: %s"%(env.goal_position))
-        print("Goal observation: "+str(env.get_goal_observation().shape))
+        #print("Goal observation: "+str(env.get_goal_observation().shape))
         #print("Goal observation: %s"%(env.get_goal_observation()))
+        
         
         print('-----------------------------')
         for i in range(3):  # max steps per episode

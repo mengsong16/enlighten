@@ -123,7 +123,7 @@ class RolloutStorage:
     def to(self, device):
         self.buffers.map_in_place(lambda v: v.to(device))
 
-    # insert one step data (a_t, r_t, v_t, s_{t+1}, d_{t+1}, h_{t+1}) to the specific buffer
+    # insert one step data (a_t, r_t, v_t, o_{t+1}, d_{t+1}, h_{t+1}) to the specific buffer
     def insert(
         self,
         next_observations=None,

@@ -180,10 +180,10 @@ class BaseRLTrainer(BaseTrainer):
         self.num_steps_done = 0
         self._last_checkpoint_percent = -1.0
 
-        self.num_updates = self.config.get("num_updates")
-        self.total_num_steps = self.config.get("total_num_steps")
-        self.num_checkpoints = self.config.get("num_checkpoints")
-        self.checkpoint_interval = self.config.get("checkpoint_interval")
+        self.num_updates = int(self.config.get("num_updates"))
+        self.total_num_steps = int(self.config.get("total_num_steps"))
+        self.num_checkpoints = int(self.config.get("num_checkpoints"))
+        self.checkpoint_interval = int(self.config.get("checkpoint_interval"))
         self.validate_config_para()
 
         

@@ -394,6 +394,7 @@ class NavEnv(gym.Env):
 
     def get_goal_observation(self):
         if self.goal_sensor is not None:
+            # for image goal, use the default goal_azimuth
             return self.goal_sensor.get_observation(goal_position=self.goal_position, start_position=self.start_position, start_rotation=self.start_rotation) 
         else:
             print("Goal observation does not exist since the env is not goal conditioned")
@@ -585,6 +586,7 @@ class NavEnv(gym.Env):
         # sim_obs includes all modes
         obs = self.sensor_suite.get_observations(sim_obs)
 
+        # goal conditioned (either random goal or fixed goal)
         if self.config.get("goal_conditioned"):
         #if self.config.get("random_goal"):
             obs = self.add_goal_obs(obs)
@@ -964,6 +966,7 @@ class NavEnv(gym.Env):
             self.viewer.close()
 
 
+
 ################################ test ##########################################
 def move_forward(env):
     env.reset()
@@ -1027,6 +1030,14 @@ def check_coordinate_system():
 
 #     return env
 
+def save_goal_image(img, current_episode):
+    if not os.path.exists(output_path):
+            os.mkdir(output_path)
+
+    filename = str(current_episode)+ ".jpg" 
+    cv2.imwrite(os.path.join(output_path, filename), img)         
+            
+
 def test_env():
     #if gym_env:
     env =  NavEnv()
@@ -1045,7 +1056,10 @@ def test_env():
         print("Goal position: %s"%(env.goal_position))
         if env.config.get("goal_conditioned"):
         #if env.config.get("random_goal"):
-            print("Goal observation: "+str(env.get_goal_observation().shape))
+            goal = env.get_goal_observation()
+            print("Goal observation: "+str(goal.shape))
+            if env.config.get("goal_format") == "imagegoal":
+                save_goal_image(goal, episode)
         #print("Goal observation: %s"%(env.get_goal_observation()))
         
         
@@ -1085,7 +1099,8 @@ def test_env():
 
             # env.print_agent_state()
             # if env.config.get("goal_conditioned"):
-            #     print("Goal observation: "+str(env.get_goal_observation()))
+            #      print("Goal observation: "+str(env.get_goal_observation()))
+            #      print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
             # env.get_current_scene_light_vector()
             # print('state: %s'%(env.get_agent_state_xyz_euler()))
             # print(env.train_state_count_dict.state_to_key(env.get_agent_state_xyz_euler()))

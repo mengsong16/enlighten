@@ -16,7 +16,7 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "vangogh_daylight_random_start_random_goal_goal_conditioned_absolute_long"
+experiment_name: "vangogh_night_random_start_random_goal_relative_goal_conditioned"
 
 # robot
 agent_initial_position: [3, 0, 1] # [0, 0, 0]
@@ -37,7 +37,7 @@ max_depth: 1 #5.0
 dictionary_observation_space: true
 
 # task
-dark_mode: false #true #false
+dark_mode: true #true #false
 flashlight_z: 0.2 #0.8 #0.2
 measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'spl', 'softspl', 'point_goal_reward', 'return']
 
@@ -46,7 +46,7 @@ measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'sp
 goal_conditioned: true
 goal_format: pointgoal # imagegoal #pointgoal
 goal_coord_system: polar #polar  #cartesian
-goal_gps_compass: false  # false use absolute goal location
+goal_gps_compass: true  # false use absolute goal location
 goal_input_location: baseline #value_function #baseline
 goal_dimension: 2
 goal_position: [4, 0, -1]
@@ -168,7 +168,7 @@ distrib_backend: GLOO
 # for DDPPO
 sync_frac: 0.6
 # default port
-default_port: 8738 #8738 # 8865
+default_port: 8865 #8738 # 8865
 
 
 

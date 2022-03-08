@@ -128,7 +128,7 @@ class ImageGoal(HabitatSensor):
         return self.env.observation_space.spaces["color_sensor"]
 
     # goal_position: [x, y, z]
-    # goal_azimuth: scalar in [0, 2*pi]
+    # goal_azimuth: scalar in [0, 2*pi], now fixed to 0
     def _get_image_goal(self, goal_position, goal_azimuth):
         goal_world_position = np.array(goal_position, dtype=np.float32)
         

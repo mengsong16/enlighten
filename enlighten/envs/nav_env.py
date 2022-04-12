@@ -929,10 +929,16 @@ class NavEnv(gym.Env):
 
     def get_reward(self, current_train_state_count, current_episode_state_count):
         extrinsic_reward = self.measurements.measures["point_goal_reward"].get_metric()
-        novelty_change = 1.0 / float(current_train_state_count) - float(self.config.get("prev_state_novelty_coef")) / float(self.prev_train_state_count)
-        intrinsic_reward = max(novelty_change, 0.0)
-        intrinsic_reward *= float(current_episode_state_count == 1)
-        intrinsic_reward *= float(self.config.get("intrinsic_reward_coef"))
+
+        intrinsic_reward_coef = float(self.config.get("intrinsic_reward_coef"))
+        if intrinsic_reward_coef != 0 :
+            novelty_change = 1.0 / float(current_train_state_count) - float(self.config.get("prev_state_novelty_coef")) / float(self.prev_train_state_count)
+            intrinsic_reward = max(novelty_change, 0.0)
+            intrinsic_reward *= float(current_episode_state_count == 1)
+            intrinsic_reward *= intrinsic_reward_coef
+        else:
+            #print("no intrinsic reward")
+            intrinsic_reward = 0.0
 
         #print("~~~~~~~~~~~~~~~~~~~~~~~~~")
         #print("Extrinsic reward: %f"%(extrinsic_reward))
@@ -1040,11 +1046,11 @@ def save_goal_image(img, current_episode):
 
 def test_env():
     #if gym_env:
-    env =  NavEnv()
+    env =  NavEnv(config_file=os.path.join(config_path, "pointgoal_baseline.yaml"))
     #else:
     #    env = create_garage_env()
     
-    for episode in range(10):
+    for episode in range(20):
         print("***********************************")
         print('Episode: {}'.format(episode))
         #step = 0
@@ -1077,24 +1083,25 @@ def test_env():
             #     info = env_step.env_info
             #     done = env_step.terminal
 
-            # print('-----------------------------')
-            # print('step: %d'%(i+1))
+            print('-----------------------------')
+            print('step: %d'%(i+1))
             # print('action: %s'%(env.action_index_to_name(action)))
             #print('observation: %s, %s'%(str(obs.shape), str(type(obs))))
             #print('observation: %s'%(str(type(obs))))
-            # print('observation: %s'%(obs.keys()))
-            # #print(obs["color_sensor"].shape)
-            # #print(obs["color_sensor"])
-            # #print(obs["depth_sensor"].shape)
+            #print('observation: %s'%(obs.keys()))
+            #print(obs["color_sensor"].shape)
+            #print(obs["color_sensor"])
+            #print(obs["depth_sensor"].shape)
+            #print(obs["depth_sensor"])
             # #print(obs["semantic_sensor"].shape)
             # #print(obs)
             # print('agent rotation [euler]: '+str(env.get_agent_rotation_euler()))
-            # print('reward: %f'%(reward))
+            print('reward: %f'%(reward))
             # print('done: '+str(done))
             # #env.print_collide_info()
             
             # # Garage env needs set render mode explicitly
-            # render_obs = env.render(mode="color_sensor")
+            #render_obs = env.render(mode="color_sensor")
             # print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
 
             # env.print_agent_state()

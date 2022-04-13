@@ -59,6 +59,11 @@ from habitat_sim.utils.common import quat_from_angle_axis
 
 from enlighten.envs import HabitatSensor, Dictionary_Observations, HabitatSimRGBSensor, HabitatSimDepthSensor, HabitatSimSemanticSensor, ImageGoal, PointGoal
 
+import torch
+import urllib.request
+
+import matplotlib.pyplot as plt
+
 class SensorSuite:
     r"""Represents a set of sensors, with each sensor being identified
     through a unique id.
@@ -235,6 +240,26 @@ class NavEnv(gym.Env):
         self.train_state_count_dict = State_Visitation(position_resolution=float(self.config.get("forward_resolution")), rotation_resolution=float(self.config.get("rotate_resolution")))
         self.episode_state_count_dict = State_Visitation(position_resolution=float(self.config.get("forward_resolution")), rotation_resolution=float(self.config.get("rotate_resolution")))
         
+        # set depth estimation model
+        self.visual_odometry = self.config.get("visual_odometry")
+        assert self.config.get("color_sensor"), "Need RGB sensor to do localization"
+        if self.visual_odometry:
+            assert self.config.get("goal_reward") == False, "Visual odometry reward cannot be used with distance to goal reward together"
+            # load model
+            model_type = "MiDaS_small"
+            self.midas = torch.hub.load("intel-isl/MiDaS", model_type)
+
+            self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+            self.midas.to(self.device)
+            self.midas.eval()
+            # load model transforms
+            midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
+
+            if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
+                self.transform = midas_transforms.dpt_transform
+            else:
+                self.transform = midas_transforms.small_transform
+
 
     def create_sim_config(self):
         # simulator configuration
@@ -329,7 +354,9 @@ class NavEnv(gym.Env):
             color_sensor_spec.postition = [0.0, sensor_height, 0.0]
             color_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
             sensor_specs.append(color_sensor_spec)
-            sensors.append(HabitatSimRGBSensor(config=self.config))
+            color_sensor = HabitatSimRGBSensor(config=self.config)
+            self.BGR_mode = color_sensor.RGB2BGR
+            sensors.append(color_sensor)
 
         if self.config.get("depth_sensor"):
             depth_sensor_spec = habitat_sim.CameraSensorSpec()
@@ -574,6 +601,31 @@ class NavEnv(gym.Env):
             else:
                 print("Error: navmesh is not available so is not able to set random start point")                
 
+    def estimate_depth(self, obs):
+        # input image: [224,224,3], in range of [0,255]
+        img = obs["color_sensor"]
+        #print(self.BGR_mode)
+        # BGR to RGB
+        if self.BGR_mode:   
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        input_batch = self.transform(img).to(self.device)
+
+        with torch.no_grad():
+            prediction = self.midas(input_batch)
+
+            prediction = torch.nn.functional.interpolate(
+                prediction.unsqueeze(1),
+                size=img.shape[:2],
+                mode="bicubic",
+                align_corners=False,
+            ).squeeze()
+
+        # output depth: [224,224]
+        predicted_depth_map = prediction.cpu().numpy()
+        average_predicted_depth = np.mean(predicted_depth_map)
+        return average_predicted_depth
+
     def step(self, action):
         # step simulator
         # transit to s'
@@ -599,6 +651,16 @@ class NavEnv(gym.Env):
             sim_obs=sim_obs,
         )
 
+        # estimate depth from RGB observation
+        if self.visual_odometry:
+            current_average_predicted_depth = self.estimate_depth(obs)
+            #print(output.shape)
+            self.average_predicted_depth_change = self.prev_average_predicted_depth - current_average_predicted_depth
+            # normailze
+            self.average_predicted_depth_change /= 1000.0
+            #print(self.average_predicted_depth_change)
+            self.prev_average_predicted_depth = current_average_predicted_depth
+
         #self.measurements.print_measures()
 
         # update visitation dictionaries
@@ -612,6 +674,9 @@ class NavEnv(gym.Env):
         current_episode_state_count = self.episode_state_count_dict.get(current_state)
         
         reward = self.get_reward(current_train_state_count, current_episode_state_count)
+        # add visual odometry reward
+        if self.visual_odometry:
+            reward += self.average_predicted_depth_change
 
         # update prev state count
         self.prev_train_state_count = current_train_state_count
@@ -658,6 +723,9 @@ class NavEnv(gym.Env):
         self.prev_train_state_count = self.train_state_count_dict.get(current_state)
         self.prev_episode_state_count = self.episode_state_count_dict.get(current_state)
         #self.previous_measure = self.get_current_distance()
+
+        # initialize prev predicted depth
+        self.prev_average_predicted_depth = self.estimate_depth(obs)
 
         return obs
 
@@ -720,7 +788,7 @@ class NavEnv(gym.Env):
         #print(obs.shape)
         #print('------------------')
         # show image and map in viewer
-        # color
+        # color RGB
         if obs.shape[2] == 3:
             
             img = np.asarray(obs).astype(np.uint8)

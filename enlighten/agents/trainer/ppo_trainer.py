@@ -65,7 +65,7 @@ from enlighten.utils.path import *
 
 from enlighten.agents.algorithms.ppo_agent import PPOAgent
 from enlighten.envs.nav_env import NavEnv
-from enlighten.utils.video_utils import generate_video, images_to_video, create_video, remove_jpg
+from enlighten.utils.video_utils import generate_video, images_to_video, create_video, remove_jpg, BGR_mode
 from enlighten.tasks.measures import Measurements
 
 class PPOTrainer(BaseRLTrainer):
@@ -1130,7 +1130,8 @@ class PPOTrainer(BaseRLTrainer):
             if not os.path.exists(video_path):
                 os.makedirs(video_path)
 
-            create_video(video_path=video_path, video_name=video_name)
+            is_BGR_mode = BGR_mode(self.config)
+            create_video(video_path=video_path, BGR_mode=is_BGR_mode, video_name=video_name)
 
             if remove_images:
                 remove_jpg(video_path)

@@ -26,6 +26,17 @@ cv2 = try_cv2_import()
 
 from enlighten.utils.tensorboard_utils import TensorboardWriter
 
+def BGR_mode(config):
+    # BGR_mode = False
+    # if config.get("single_scene"):
+    #     if "replica" in config.get("scene_id"):
+    #         BGR_mode = True
+    # else:    
+    #     if "replica" in config.get("dataset_path"):
+    #         BGR_mode = True
+    BGR_mode = True
+    return BGR_mode
+            
 def generate_video(
     video_option: List[str],
     video_dir: Optional[str],
@@ -112,13 +123,15 @@ def images_to_video(
     writer.close()  
 
 # my create video
-def create_video(video_path, video_name="video"):
+def create_video(video_path, BGR_mode, video_name="video"):
     images = []
     for file in os.listdir(video_path):
         if file.endswith(".jpg"):
             #print(os.path.join(output_path, file))
             img = cv2.imread(os.path.join(video_path, file))
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            # BGR to RGB
+            if BGR_mode:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             images.append(img)
 
     if len(images) > 0:
@@ -127,4 +140,4 @@ def create_video(video_path, video_name="video"):
         print("Error: no images exist!")    
 
 if __name__ == "__main__":
-    create_video(video_path="~/enlighten/video")
+    create_video(video_path="~/enlighten/video", BGR_mode=True)

@@ -326,6 +326,7 @@ class PointGoalReward(Measure):
             current_measure = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
 
             self._metric += (self._previous_measure - current_measure)
+            #print("distance to goal reward: %f"%(self._previous_measure - current_measure))
             self._previous_measure = current_measure
 
         success = measurements.measures[Success.cls_uuid].get_metric()

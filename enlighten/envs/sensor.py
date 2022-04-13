@@ -29,6 +29,7 @@ from collections import OrderedDict
 from enum import Enum
 
 from enlighten.utils.config_utils import parse_config
+from enlighten.utils.video_utils import BGR_mode
 
 VisualObservation = Union[np.ndarray]
 
@@ -98,8 +99,7 @@ class HabitatSimRGBSensor(HabitatSensor):
     def __init__(self, config) -> None:
         super().__init__(uuid="color_sensor", config=config)
 
-        if "replica" in config.get("dataset_path"):
-            self.RGB2BGR = True
+        self.RGB2BGR = BGR_mode(config)
 
     def _get_observation_space(self, *args: Any, **kwargs: Any) -> gym.spaces.Box:
         return gym.spaces.Box(
@@ -113,7 +113,7 @@ class HabitatSimRGBSensor(HabitatSensor):
             dtype=np.uint8,
         )
 
-    # [0, 255]
+    # [0, 255] RGB
     def get_observation(
         self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
     ) -> VisualObservation:

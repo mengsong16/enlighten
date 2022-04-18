@@ -677,7 +677,7 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
                 if visual_input is not None:
                     x = torch.cat((visual_input, other_input), dim=1) 
                 else:
-                     x = other_input    
+                    x = other_input    
                 # seq forward
                 # input: x: [T*N, input_size]
                 # input: hidden_states: [N, 1, hidden_size]

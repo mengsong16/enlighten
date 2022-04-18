@@ -17,7 +17,8 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "vangogh_daylight_random_start_random_goal_blind_depth_reward_relative_goal_input"
+#experiment_name: "vangogh_daylight_random_start_random_goal_blind_depth_reward_relative_goal_input"
+experiment_name: "test"
 
 # robot
 agent_initial_position: [3, 0, 1] #[0,0,0] #[3, 0, 1] # [0, 0, 0]

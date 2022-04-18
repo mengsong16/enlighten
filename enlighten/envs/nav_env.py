@@ -241,10 +241,10 @@ class NavEnv(gym.Env):
         self.episode_state_count_dict = State_Visitation(position_resolution=float(self.config.get("forward_resolution")), rotation_resolution=float(self.config.get("rotate_resolution")))
         
         # set depth estimation model
-        self.visual_odometry = self.config.get("visual_odometry")
+        self.depth_reward = self.config.get("depth_reward")
         assert self.config.get("color_sensor"), "Need RGB sensor to do localization"
-        if self.visual_odometry:
-            assert self.config.get("goal_reward") == False, "Visual odometry reward cannot be used with distance to goal reward together"
+        if self.depth_reward:
+            assert self.config.get("goal_reward") == False, "Depth reward cannot be used with distance to goal reward together"
             # load model
             model_type = "MiDaS_small"
             self.midas = torch.hub.load("intel-isl/MiDaS", model_type)
@@ -652,7 +652,8 @@ class NavEnv(gym.Env):
         )
 
         # estimate depth from RGB observation
-        if self.visual_odometry:
+        if self.depth_reward:
+            
             current_average_predicted_depth = self.estimate_depth(obs)
             #print(output.shape)
             self.average_predicted_depth_change = self.prev_average_predicted_depth - current_average_predicted_depth
@@ -675,7 +676,7 @@ class NavEnv(gym.Env):
         
         reward = self.get_reward(current_train_state_count, current_episode_state_count)
         # add visual odometry reward
-        if self.visual_odometry:
+        if self.depth_reward:
             reward += self.average_predicted_depth_change
 
         # update prev state count
@@ -725,7 +726,8 @@ class NavEnv(gym.Env):
         #self.previous_measure = self.get_current_distance()
 
         # initialize prev predicted depth
-        self.prev_average_predicted_depth = self.estimate_depth(obs)
+        if self.depth_reward:
+            self.prev_average_predicted_depth = self.estimate_depth(obs)
 
         return obs
 

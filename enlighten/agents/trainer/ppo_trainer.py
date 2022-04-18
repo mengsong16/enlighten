@@ -171,7 +171,8 @@ class PPOTrainer(BaseRLTrainer):
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
                 goal_input_location=str(self.config.get("goal_input_location")),
-                hidden_size=int(self.config.get("hidden_size"))
+                hidden_size=int(self.config.get("hidden_size")),
+                blind_agent = self.config.get("blind_agent")
                 )
         else:
             # normalize with running mean and var if rgb images exist
@@ -185,7 +186,8 @@ class PPOTrainer(BaseRLTrainer):
                 goal_input_location=str(self.config.get("goal_input_location")),
                 hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in observation_space,
-                attention = self.config.get("attention")
+                attention = self.config.get("attention"),
+                blind_agent = self.config.get("blind_agent")
                 ) 
 
         self.actor_critic.to(self.device)

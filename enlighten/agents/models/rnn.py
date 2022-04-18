@@ -639,11 +639,13 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
 
 
         # number of batches equal
-        assert visual_input.size(0) == other_input.size(0)
+        if visual_input is not None:
+            assert visual_input.size(0) == other_input.size(0)
 
         # single forward: only forward one step, used when collecting data or evaluation
         # T*N = N --> T=1
-        if visual_input.size(0) == hidden_states.size(0):
+        #if visual_input.size(0) == hidden_states.size(0):
+        if other_input.size(0) == hidden_states.size(0):
             if self.attention:
                 # lstm: extract h from [h,c]
                 # gru: no change
@@ -657,7 +659,10 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
             hidden_states = hidden_states.permute(1, 0, 2)    
 
             # x: concatenated input: [N, visual_input_size+other_input]
-            x = torch.cat((visual_input, other_input), dim=1) 
+            if visual_input is not None:
+                x = torch.cat((visual_input, other_input), dim=1) 
+            else:
+                x = other_input    
             # single forward   
             x, hidden_states = self.single_forward(x, hidden_states, masks)
             
@@ -669,7 +674,10 @@ class AttentionRNNStateEncoder(RNNStateEncoder):
             else:    
                 
                 # x: concatenated input: [T*N,visual_input_size+other_input]
-                x = torch.cat((visual_input, other_input), dim=1) 
+                if visual_input is not None:
+                    x = torch.cat((visual_input, other_input), dim=1) 
+                else:
+                     x = other_input    
                 # seq forward
                 # input: x: [T*N, input_size]
                 # input: hidden_states: [N, 1, hidden_size]

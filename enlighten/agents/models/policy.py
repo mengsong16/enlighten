@@ -228,11 +228,16 @@ class CNNPolicy(Policy):
         goal_input_location,
         hidden_size: int = 512,
         attention: bool=False,
+        blind_agent = False,
         **kwargs
     ):
         # CNN output dimension = RNN hidden size
-        visual_encoder = CNNEncoder(observation_space=observation_space, 
-            output_size=hidden_size)
+        if blind_agent is False:
+            visual_encoder = CNNEncoder(observation_space=observation_space, 
+                output_size=hidden_size)
+        else:
+            visual_encoder = None
+            print("===> agent is blind")
 
         # point goal or no goal
         if goal_observation_space is None or len(goal_observation_space.shape) < 3:
@@ -275,16 +280,20 @@ class ResNetPolicy(Policy):
         normalize_visual_inputs: bool = False,
         hidden_size: int = 512,
         attention: bool=False,
+        blind_agent = False,
         **kwargs
     ):
         # ResNet output dimension = RNN hidden size
-        visual_encoder = ResNetEncoder(observation_space=observation_space, 
-            output_size=hidden_size,
-            baseplanes=baseplanes,
-            make_backbone=getattr(resnet, backbone),
-            normalize_visual_inputs=normalize_visual_inputs,
-            attention=attention)
-
+        if blind_agent is False:
+            visual_encoder = ResNetEncoder(observation_space=observation_space, 
+                output_size=hidden_size,
+                baseplanes=baseplanes,
+                make_backbone=getattr(resnet, backbone),
+                normalize_visual_inputs=normalize_visual_inputs,
+                attention=attention)
+        else:
+            visual_encoder = None        
+            print("===> agent is blind")
         
         # point goal or no goal
         if goal_observation_space is None or len(goal_observation_space.shape) < 3:

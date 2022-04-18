@@ -28,10 +28,10 @@ class Net(nn.Module, metaclass=abc.ABCMeta):
     def num_recurrent_layers(self):
         pass
 
-    @property
-    @abc.abstractmethod
-    def is_blind(self):
-        pass
+    # @property
+    # @abc.abstractmethod
+    # def is_blind(self):
+    #     pass
 
 class RecurrentVisualEncoder(Net):
     r"""Network which passes the input image through CNN and concatenates
@@ -81,7 +81,9 @@ class RecurrentVisualEncoder(Net):
                     other_input_size += self.goal_input_size
             # imagegoal  
             else:
+                assert goal_visual_encoder is not None, "goal visual encoder is None but image goal is used"
                 self.goal_encoder = goal_visual_encoder
+                
                 self.goal_input_size = hidden_size
 
                 if self.goal_input_location == "baseline":
@@ -96,7 +98,10 @@ class RecurrentVisualEncoder(Net):
         # RNN state embedding
         self._hidden_size = hidden_size
 
-        if self.is_blind:
+        # let visual encoder check whether its observation space is none
+        if self.visual_encoder is None:
+            visual_encoder_output_size = 0
+        elif self.visual_encoder.is_blind:
             visual_encoder_output_size = 0
         else: 
             visual_encoder_output_size = self.visual_encoder.output_size   
@@ -109,12 +114,18 @@ class RecurrentVisualEncoder(Net):
             #     # visual encoder output a vector which equals to the hidden size of RNN
             #     visual_embedding_size =  self._hidden_size   
         
+        if self.visual_encoder is not None:
+            visual_map_size = self.visual_encoder.visual_feature_map_dim
+        else:
+            visual_map_size = 0
+
+        # create RNN model
         self.state_encoder = build_attention_rnn_state_encoder(
             attention,
             visual_encoder_output_size,
             other_input_size,
             self._hidden_size,
-            visual_map_size=self.visual_encoder.visual_feature_map_dim,
+            visual_map_size=visual_map_size,
             rnn_type=rnn_type,
             attention_type=attention_type,
             num_layers=num_recurrent_layers
@@ -126,11 +137,7 @@ class RecurrentVisualEncoder(Net):
     
     @property
     def output_size(self):
-        return self._hidden_size
-
-    @property
-    def is_blind(self):
-        return self.visual_encoder.is_blind
+        return self._hidden_size 
 
     @property
     def num_recurrent_layers(self):
@@ -180,11 +187,13 @@ class RecurrentVisualEncoder(Net):
     def forward(self, observations, rnn_hidden_states, prev_actions, masks):
         
         # visual observation embedding
-        if not self.is_blind:
-            visual_input = self.visual_encoder(observations)
+        if self.visual_encoder is None:
+            visual_input = None
+        elif self.visual_encoder.is_blind:
+            visual_input = None
         else:
-            visual_input = None    
-
+            visual_input = self.visual_encoder(observations)
+      
         other_input = []
         # goal embedding
         goal_embedding = None
@@ -198,9 +207,12 @@ class RecurrentVisualEncoder(Net):
                 image_goal = observations["imagegoal"]
                 # input should be a dictionary when using a visual encoder
                 goal_embedding = self.goal_encoder({"color_sensor": image_goal})
+                
 
+        if goal_embedding is not None:
             if self.goal_input_location == "baseline":
                 other_input.append(goal_embedding)
+
 
         
         # action embedding

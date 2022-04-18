@@ -115,7 +115,8 @@ class PPOAgent(Agent):
                 action_space=env.action_space,
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
-                hidden_size=int(self.config.get("hidden_size")))
+                hidden_size=int(self.config.get("hidden_size")),
+                blind_agent = self.config.get("blind_agent"))
         else:
             # normalize with running mean and var if rgb images exist
             # assume that
@@ -128,7 +129,8 @@ class PPOAgent(Agent):
                 attention_type=str(self.config.get("attention_type")),
                 hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in env.observation_space,
-                attention=self.config.get("attention")) 
+                attention=self.config.get("attention"),
+                blind_agent = self.config.get("blind_agent")) 
 
         self.actor_critic.to(self.device)
 

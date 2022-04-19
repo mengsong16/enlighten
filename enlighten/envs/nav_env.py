@@ -1114,9 +1114,9 @@ def save_goal_image(img, current_episode):
     cv2.imwrite(os.path.join(output_path, filename), img)         
             
 
-def test_env():
+def test_env(yaml_name):
     #if gym_env:
-    env =  NavEnv(config_file=os.path.join(config_path, "pointgoal_baseline.yaml"))
+    env =  NavEnv(config_file=os.path.join(config_path, yaml_name))
     #else:
     #    env = create_garage_env()
     
@@ -1142,7 +1142,7 @@ def test_env():
         print('-----------------------------')
 
        
-        for i in range(500):  # max steps per episode
+        for i in range(100):  # max steps per episode
             action = env.action_space.sample()
             #if gym_env:
             obs, reward, done, info = env.step(action)
@@ -1171,7 +1171,7 @@ def test_env():
             # #env.print_collide_info()
             
             # # Garage env needs set render mode explicitly
-            #render_obs = env.render(mode="color_sensor")
+            render_obs = env.render(mode="color_sensor")
             # print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
 
             # env.print_agent_state()
@@ -1281,7 +1281,7 @@ def test_stop_action():
         
 
 if __name__ == "__main__":    
-    test_env()
+    test_env("replica_nav.yaml")
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
     #test_rollout_storage()

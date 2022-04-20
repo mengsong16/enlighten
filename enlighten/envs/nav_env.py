@@ -242,8 +242,9 @@ class NavEnv(gym.Env):
         
         # set depth estimation model
         self.depth_reward = self.config.get("depth_reward")
-        assert self.config.get("color_sensor"), "Need RGB sensor to do localization"
+        
         if self.depth_reward:
+            assert self.config.get("color_sensor"), "Need RGB sensor to estimate depth"
             assert self.config.get("goal_reward") == False, "Depth reward cannot be used with distance to goal reward together"
             # load model
             model_type = "MiDaS_small"
@@ -907,7 +908,7 @@ class NavEnv(gym.Env):
         found_path, geodesic_distance, _ = self.shortest_path(start_point=self.get_agent_position(), 
         end_point=goal_positions)
         return found_path, geodesic_distance
-    # get euclidean distance from current position to goal
+    # get euclidean distance from current position to goal [x,y,z] distance
     def get_euclidean_distance(self):
         return euclidean_distance(position_a=self.get_agent_position(), position_b=self.goal_position)
 
@@ -1171,12 +1172,15 @@ def test_env(yaml_name):
             # #env.print_collide_info()
             
             # # Garage env needs set render mode explicitly
-            render_obs = env.render(mode="color_sensor")
+            if "color_sensor" in obs.keys():
+                render_obs = env.render(mode="color_sensor")
+            else:    
+                render_obs = env.render(mode="depth_sensor")
             # print('render observation: %s, %s'%(str(render_obs.shape), str(type(render_obs))))
 
             # env.print_agent_state()
             # if env.config.get("goal_conditioned"):
-            #      print("Goal observation: "+str(env.get_goal_observation()))
+            # print("Goal observation: "+str(env.get_goal_observation()))
             #      print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
             # env.get_current_scene_light_vector()
             # print('state: %s'%(env.get_agent_state_xyz_euler()))
@@ -1282,6 +1286,7 @@ def test_stop_action():
 
 if __name__ == "__main__":    
     test_env("replica_nav.yaml")
+    #test_env("pointgoal_baseline.yaml")
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
     #test_rollout_storage()

@@ -1,6 +1,9 @@
 # scene
 single_scene: true # train on single scene or a scene dataset
 scene_id: /dataset/replica_v1/office_3/mesh.ply
+#scene_id: /dataset/replica_v1/office_3/habitat/mesh_semantic.ply
+#scene_id: /dataset/replica_v1/office_3/habitat/mesh_semantic.glb
+
 #scene_id: /home/meng/habitat-sim/data/replica/stages/frl_apartment_stage.glb
 #scene_id: /home/meng/habitat-sim/data/replica/stages/Stage_v3_sc0_staging.glb
 
@@ -14,7 +17,7 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "replica_office_3_daylight_random_start_random_goal_depth_distance_reward_relative_goal_input"
+experiment_name: "replica_office_3_daylight_random_start_random_goal_rgbd_distance_reward_absolute_goal_input"
 #experiment_name: "test"
 
 # robot
@@ -25,7 +28,7 @@ rotate_resolution: 10 # degree
 action_number: 4
 
 # observation space (env)
-color_sensor: false
+color_sensor: true
 depth_sensor: true #true
 semantic_sensor: false
 image_width: 224 #256
@@ -45,7 +48,7 @@ blind_agent: false
 goal_conditioned: true #false
 goal_format: pointgoal # imagegoal #pointgoal
 goal_coord_system: polar #polar  #cartesian
-goal_gps_compass: true #true  # false use absolute goal location relative to the start location
+goal_gps_compass: false #true  # false use absolute goal location relative to the start location
 goal_input_location: baseline #value_function #baseline
 goal_dimension: 2
 goal_position: [-1.0238545, -1.02069, 4.7970867] #[-3.0798626, -1.02069, 4.007386 ] #[-1.5169233, -1.02069, 5.332902] #[-1.5169233, -1.02069, 5.332902] #[-1.0238545, -1.02069, 4.7970867] 

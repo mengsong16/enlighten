@@ -58,6 +58,7 @@ import quaternion as qt
 from habitat_sim.utils.common import quat_from_angle_axis
 
 from enlighten.envs import HabitatSensor, Dictionary_Observations, HabitatSimRGBSensor, HabitatSimDepthSensor, HabitatSimSemanticSensor, ImageGoal, PointGoal
+from enlighten.envs.sensor import StateSensor
 
 import torch
 import urllib.request
@@ -100,7 +101,11 @@ class SensorSuite:
         else:
             #if self.goal_conditioned == True and self.config.get("goal_format") == "pointgoal":
             #    raise ValueError("Can only concatenate images not goal vectors when observation space is numpy array")
-            
+            if "state_sensor" in self.sensors:
+                if "color_sensor" in self.sensors or "depth_sensor" in self.sensors or "semantic_sensor" in self.sensors:
+                    print("Error: cannot concatenate state space with image observation space")
+                    exit()
+
             self.observation_spaces = self.concatenate_observation_space(ordered_spaces)   
 
     def get_specific_sensor(self, uuid: str) -> HabitatSensor:
@@ -128,6 +133,7 @@ class SensorSuite:
 
 
     # Return a numpy array concatenating all observation modes
+    # state observation or concatenated image observations
     def get_array_observations(self, *args: Any, **kwargs: Any):
         r"""Numpy array containing sensor observations"""
 
@@ -339,6 +345,7 @@ class NavEnv(gym.Env):
 
     # ref: class ImageExtractor
     def create_sensors_and_sensor_specs(self):
+           
         image_height = int(self.config.get("image_height"))
         image_width = int(self.config.get("image_width"))
         sensor_height = 1.5
@@ -379,6 +386,8 @@ class NavEnv(gym.Env):
             sensor_specs.append(semantic_sensor_spec) 
             sensors.append(HabitatSimSemanticSensor(config=self.config))
         
+        if self.config.get("state_sensor"):
+            sensors.append(StateSensor(config=self.config))
         
         # set render mode according to all available sensors
         self.set_render_mode()
@@ -491,6 +500,7 @@ class NavEnv(gym.Env):
         self.agent.set_state(self.create_agent_state(new_position=new_position, new_rotation=new_rotation, quaternion=quaternion), is_initial=is_initial)
 
     # get goal observation
+    # used in getting image goal
     def get_observations_at(self, position, rotation, keep_agent_at_new_pose=False):
         # reset agent state to the goal location
         current_state = self.get_agent_state()
@@ -499,7 +509,7 @@ class NavEnv(gym.Env):
 
         sim_obs = self.sim.get_sensor_observations(agent_ids=self.sim._default_agent_id)
 
-        obs = self.sensor_suite.get_observations(sim_obs)
+        obs = self.sensor_suite.get_observations(sim_obs=sim_obs, env=self)
 
         # get agent back to current pose
         if not keep_agent_at_new_pose:
@@ -637,7 +647,7 @@ class NavEnv(gym.Env):
         #     self.collision_count_per_episode += 1
         
         # sim_obs includes all modes
-        obs = self.sensor_suite.get_observations(sim_obs)
+        obs = self.sensor_suite.get_observations(sim_obs=sim_obs, env=self)
 
         # goal conditioned (either random goal or fixed goal)
         if self.config.get("goal_conditioned"):
@@ -700,7 +710,7 @@ class NavEnv(gym.Env):
         self.set_start_goal()
 
         # get the initial observation
-        obs = self.sensor_suite.get_observations(sim_obs)
+        obs = self.sensor_suite.get_observations(sim_obs=sim_obs, env=self)
 
         if self.config.get("goal_conditioned"):
         #if self.config.get("random_goal"):    
@@ -764,6 +774,7 @@ class NavEnv(gym.Env):
 
         assert self.config.get(mode), "render mode should be active in the config file"
 
+
         if self.config.get("attention"):
             save_attention_image = True
         else:    
@@ -776,6 +787,12 @@ class NavEnv(gym.Env):
         sim_obs = self.sim.get_sensor_observations(agent_ids=self.sim._default_agent_id)
         obs = self.sensor_suite.get_specific_observation(uuid=mode, sim_obs=sim_obs)
 
+        # show state observation
+        if mode == "state_sensor":
+            print(obs)
+            return
+
+        # show image observation
         if not isinstance(obs, np.ndarray):
             # If it is not a numpy array, it is a torch tensor
             # The function expects the result to be a numpy array
@@ -1161,8 +1178,13 @@ def test_env(yaml_name):
             #print('observation: %s'%(str(type(obs))))
             #print('observation: %s'%(obs.keys()))
             print(obs["color_sensor"].shape)
+            print(obs["state_sensor"])
+            print(obs["pointgoal"])
+            #print(obs["imagegoal"].shape)
             #print(obs["color_sensor"])
             print(obs["depth_sensor"].shape)
+            #env.print_agent_state()
+            #print('agent angle [euler]: '+str(env.get_agent_rotation_euler()))
             #print(obs["depth_sensor"])
             # #print(obs["semantic_sensor"].shape)
             # #print(obs)

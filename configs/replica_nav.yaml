@@ -28,6 +28,7 @@ rotate_resolution: 10 # degree
 action_number: 4
 
 # observation space (env)
+state_sensor: true
 color_sensor: true
 depth_sensor: true #true
 semantic_sensor: false
@@ -44,13 +45,16 @@ flashlight_z: 0.2 #0.8 #0.2
 measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'spl', 'softspl', 'point_goal_reward', 'return']
 blind_agent: false
 
+# goal and state
+goal_coord_system: polar # [polar, cartesian], shared by state representation
+goal_dimension: 2 # [2, 3], shared by state representation
+state_only: false # only use state as input to the agent
+
 # goal
 goal_conditioned: true #false
 goal_format: pointgoal # imagegoal #pointgoal
-goal_coord_system: polar #polar  #cartesian
 goal_gps_compass: false #true  # false use absolute goal location relative to the start location
 goal_input_location: baseline #value_function #baseline
-goal_dimension: 2
 goal_position: [-1.0238545, -1.02069, 4.7970867] #[-3.0798626, -1.02069, 4.007386 ] #[-1.5169233, -1.02069, 5.332902] #[-1.5169233, -1.02069, 5.332902] #[-1.0238545, -1.02069, 4.7970867] 
 random_goal: true #false # if true, goal conditioned
 random_start: true #false #true

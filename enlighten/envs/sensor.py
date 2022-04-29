@@ -30,6 +30,8 @@ from enum import Enum
 
 from enlighten.utils.config_utils import parse_config
 from enlighten.utils.video_utils import BGR_mode
+from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar, quaternion_from_coeff
+
 
 VisualObservation = Union[np.ndarray]
 
@@ -115,7 +117,8 @@ class HabitatSimRGBSensor(HabitatSensor):
 
     # [0, 255] RGB
     def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
+        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]],
+        *args: Any, **kwargs: Any
     ) -> VisualObservation:
         obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
         
@@ -164,7 +167,8 @@ class HabitatSimDepthSensor(HabitatSensor):
         )
 
     def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
+        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]],
+        *args: Any, **kwargs: Any
     ) -> VisualObservation:
 
         obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
@@ -203,9 +207,99 @@ class HabitatSimSemanticSensor(HabitatSensor):
         )
 
     def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
+        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]],
+        *args: Any, **kwargs: Any
     ) -> VisualObservation:
         obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
         obs = np.expand_dims(obs, axis=2)
         
         return obs
+
+class StateSensor(HabitatSensor):
+    r"""Sensor for state observations which are used in PointGoal Navigation.
+
+    For the agent in simulator the forward direction is along negative-z.
+    In 2D polar coordinate format the angle returned is azimuth from the start.
+    The coordinate system is the local coordinate system when the agent is at the start location of current episode.
+
+    Args:
+        _state_coord_system: coordinate system for specifying the goal which can be done
+            in cartesian or polar coordinates.
+        _state_dimension: number of dimensions used to specify the goal
+    """
+
+    def __init__(self, config):
+        self._state_coord_system = config.get("goal_coord_system")
+        assert self._state_coord_system in ["cartesian", "polar"], "state coordinate system should be cartesian or polar"
+
+        self._state_dimension = config.get("goal_dimension")
+        assert self._state_dimension in [2, 3], "state dimension should be 2 or 3"
+
+        #self.env = env
+
+        super().__init__(uuid="state_sensor", config=config)
+    
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        return spaces.Box(
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            shape=(self._state_dimension,),
+            dtype=np.float32,
+        )
+
+    def _compute_coordinate_representation(self, source_position, source_rotation, state_position):
+        # use source local coordinate system as global coordinate system
+        # step 1: align origin 
+        direction_vector = state_position - source_position
+        # step 2: align axis 
+        direction_vector = quaternion_rotate_vector(
+            source_rotation.inverse(), direction_vector
+        )
+
+        if self._state_coord_system == "polar":
+            # 2D movement: r, -phi
+            # -phi: angle relative to positive z axis (i.e reverse to robot forward direction)
+            # -phi: azimuth, around y axis
+            if self._state_dimension == 2:
+                rho, phi = cartesian_to_polar(
+                    -direction_vector[2], direction_vector[0]
+                )
+                return np.array([rho, -phi], dtype=np.float32)
+            #  3D movement: r, -phi, theta 
+            #  -phi: azimuth, around y axis
+            #  theta: around z axis   
+            else:
+                # -z, x --> x, y --> -\phi
+                _, phi = cartesian_to_polar(
+                    -direction_vector[2], direction_vector[0]
+                )
+                theta = np.arccos(
+                    direction_vector[1]
+                    / np.linalg.norm(direction_vector)
+                )
+                # r = l2 norm
+                rho = np.linalg.norm(direction_vector)
+
+                return np.array([rho, -phi, theta], dtype=np.float32)
+        else:
+            # 2D movement : [-z,x]
+            # reverse the direction of z axis towards robot forward direction
+            if self._state_dimension == 2:
+                return np.array(
+                    [-direction_vector[2], direction_vector[0]],
+                    dtype=np.float32,
+                )
+            # 3D movement: [x,y,z] 
+            # do not reverse the direction of z axis      
+            else:
+                return np.array(direction_vector, dtype=np.float32)
+
+    def get_observation(self, sim_obs, env):
+        start_position = env.start_position # [x,y,z] in world coord system
+        start_rotation = env.start_rotation # quarternion
+        current_position = env.agent.get_state().position # [x,y,z] in world coord system
+        
+        return self._compute_coordinate_representation(
+                start_position, start_rotation, np.array(current_position, dtype=np.float32)
+            )

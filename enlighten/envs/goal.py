@@ -42,22 +42,31 @@ class PointGoal(HabitatSensor):
             dtype=np.float32,
         )
 
+    # source_rotation: quartenion representing a 3D rotation
     def _compute_pointgoal(self, source_position, source_rotation, goal_position):
+        # use source local coordinate system as global coordinate system
+        # step 1: align origin 
         direction_vector = goal_position - source_position
-        # use source rotation as x axis
+        # step 2: align axis 
         direction_vector_agent = quaternion_rotate_vector(
             source_rotation.inverse(), direction_vector
         )
 
         if self._goal_coord_system == "polar":
-            # rho, -phi
+            # 2D movement: r, -phi
+            # -phi: angle relative to positive z axis (i.e reverse to robot forward direction)
+            # -phi: azimuth, around y axis
             if self._goal_dimension == 2:
+                # -z, x --> x, y --> (r, -\phi)
                 rho, phi = cartesian_to_polar(
                     -direction_vector_agent[2], direction_vector_agent[0]
                 )
                 return np.array([rho, -phi], dtype=np.float32)
-            #  rho, -phi, theta   
+            #  3D movement: r, -phi, theta 
+            #  -phi: azimuth, around y axis
+            #  theta: around z axis   
             else:
+                # -z, x --> x, y --> -\phi
                 _, phi = cartesian_to_polar(
                     -direction_vector_agent[2], direction_vector_agent[0]
                 )
@@ -65,15 +74,20 @@ class PointGoal(HabitatSensor):
                     direction_vector_agent[1]
                     / np.linalg.norm(direction_vector_agent)
                 )
+                # r = l2 norm
                 rho = np.linalg.norm(direction_vector_agent)
 
                 return np.array([rho, -phi, theta], dtype=np.float32)
         else:
+            # 2D movement: [-z,x]
+            # reverse the direction of z axis towards robot forward direction
             if self._goal_dimension == 2:
                 return np.array(
                     [-direction_vector_agent[2], direction_vector_agent[0]],
                     dtype=np.float32,
                 )
+            # 3D movement: [x,y,z]    
+            # do not reverse the direction of z axis
             else:
                 return np.array(direction_vector_agent, dtype=np.float32)
 

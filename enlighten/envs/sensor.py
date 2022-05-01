@@ -229,10 +229,10 @@ class StateSensor(HabitatSensor):
     """
 
     def __init__(self, config):
-        self._state_coord_system = config.get("goal_coord_system")
+        self._state_coord_system = config.get("state_coord_system")
         assert self._state_coord_system in ["cartesian", "polar"], "state coordinate system should be cartesian or polar"
 
-        self._state_dimension = config.get("goal_dimension")
+        self._state_dimension = config.get("state_dimension")
         assert self._state_dimension in [2, 3], "state dimension should be 2 or 3"
 
         #self.env = env

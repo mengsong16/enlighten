@@ -17,8 +17,8 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "replica_office_3_daylight_random_start_random_goal_rgbd_distance_reward_absolute_goal_input"
-#experiment_name: "test"
+#experiment_name: "replica_office_3_daylight_random_start_random_goal_rgbd_distance_reward_absolute_goal_input"
+experiment_name: "test"
 
 # robot
 agent_initial_position: [-0.06879283, -1.02069, -1.8099788] #[0,0,0] #[3, 0, 1] # [0, 0, 0]
@@ -30,7 +30,7 @@ action_number: 4
 # observation space (env)
 state_sensor: true
 color_sensor: true
-depth_sensor: true #true
+depth_sensor: false #true
 semantic_sensor: false
 image_width: 224 #256
 image_height: 224 #256 
@@ -45,15 +45,17 @@ flashlight_z: 0.2 #0.8 #0.2
 measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'spl', 'softspl', 'point_goal_reward', 'return']
 blind_agent: false
 
-# goal and state
-goal_coord_system: polar # [polar, cartesian], shared by state representation
-goal_dimension: 2 # [2, 3], shared by state representation
-state_only: false # only use state as input to the agent
+# state
+state_coord_system: polar # [polar, cartesian]
+state_dimension: 2 # [2, 3]
+state_only: true # only use state as input to the agent
 
 # goal
 goal_conditioned: true #false
 goal_format: pointgoal # imagegoal #pointgoal
 goal_gps_compass: false #true  # false use absolute goal location relative to the start location
+goal_coord_system: polar # [polar, cartesian]
+goal_dimension: 2 # [2, 3]
 goal_input_location: baseline #value_function #baseline
 goal_position: [-1.0238545, -1.02069, 4.7970867] #[-3.0798626, -1.02069, 4.007386 ] #[-1.5169233, -1.02069, 5.332902] #[-1.5169233, -1.02069, 5.332902] #[-1.0238545, -1.02069, 4.7970867] 
 random_goal: true #false # if true, goal conditioned
@@ -81,6 +83,7 @@ pretrained_whole_model: false
 pretrained_model_path: data/ddppo-models/gibson-2plus-resnet50.pth
 # Whether or not the visual encoder backbone will be trained
 train_encoder: true
+rnn_policy: true
 rnn_type: gru #gru  # lstm
 attention: false #false # true
 attention_type: caption #fc
@@ -132,7 +135,7 @@ entropy_coef: 0.01
 lr: 2.5e-4 #2.5e-3 #1e-3 #2.5e-4
 eps: 1.0e-5 #1e-5
 max_grad_norm: 0.5
-# visual encoder output size = rnn hidden size           
+# visual encoder output size = state encoder output size = rnn hidden size           
 hidden_size: 512  
 use_gae: true
 gamma: 0.99

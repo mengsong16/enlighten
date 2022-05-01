@@ -4,6 +4,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 import abc
+from enlighten.agents.models.state_encoder import MLPEncoder
 
 import torch
 from gym import spaces
@@ -80,7 +81,7 @@ class CategoricalNet(nn.Module):
 class Policy(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, net, dim_actions, goal_input_location, attention=False):
         super().__init__()
-        # visual recurrent encoder, rnn
+        # visual recurrent encoder, rnn or mlp
         self.net = net
         self.dim_actions = dim_actions
         self.attention = attention
@@ -229,12 +230,21 @@ class CNNPolicy(Policy):
         hidden_size: int = 512,
         attention: bool=False,
         blind_agent = False,
+        rnn_policy = True,
+        state_only = False,
+        polar_state = True,
         **kwargs
     ):
         # CNN output dimension = RNN hidden size
         if blind_agent is False:
-            visual_encoder = CNNEncoder(observation_space=observation_space, 
-                output_size=hidden_size)
+            if state_only:
+                assert "state_sensor" in observation_space.spaces, "state sensor should be true"
+                visual_encoder = None # the state encoder will be created later in the recurrent encoder
+                print("===> agent is state only")   
+            else:    
+                visual_encoder = CNNEncoder(observation_space=observation_space, 
+                    output_size=hidden_size)
+
         else:
             visual_encoder = None
             print("===> agent is blind")
@@ -250,6 +260,7 @@ class CNNPolicy(Policy):
         super().__init__(
             net = RecurrentVisualEncoder(  
                 goal_observation_space=goal_observation_space,
+                observation_space=observation_space,
                 action_space=action_space,
                 visual_encoder=visual_encoder,
                 goal_visual_encoder=goal_visual_encoder,
@@ -258,6 +269,9 @@ class CNNPolicy(Policy):
                 polar_point_goal=polar_point_goal,
                 rnn_type=rnn_type,
                 attention_type=attention_type,
+                rnn_policy = rnn_policy,
+                state_only = state_only,
+                polar_state = polar_state,
                 **kwargs,
             ),
             dim_actions = action_space.n,
@@ -281,16 +295,24 @@ class ResNetPolicy(Policy):
         hidden_size: int = 512,
         attention: bool=False,
         blind_agent = False,
+        rnn_policy = True,
+        state_only = False,
+        polar_state = True,
         **kwargs
     ):
         # ResNet output dimension = RNN hidden size
         if blind_agent is False:
-            visual_encoder = ResNetEncoder(observation_space=observation_space, 
-                output_size=hidden_size,
-                baseplanes=baseplanes,
-                make_backbone=getattr(resnet, backbone),
-                normalize_visual_inputs=normalize_visual_inputs,
-                attention=attention)
+            if state_only:
+                assert "state_sensor" in observation_space.spaces, "state sensor should be true"
+                visual_encoder = None # the state encoder will be created later in the recurrent encoder
+                print("===> agent is state only")   
+            else:    
+                visual_encoder = ResNetEncoder(observation_space=observation_space, 
+                    output_size=hidden_size,
+                    baseplanes=baseplanes,
+                    make_backbone=getattr(resnet, backbone),
+                    normalize_visual_inputs=normalize_visual_inputs,
+                    attention=attention)
         else:
             visual_encoder = None        
             print("===> agent is blind")
@@ -309,6 +331,7 @@ class ResNetPolicy(Policy):
         super().__init__(
             net = RecurrentVisualEncoder( 
                 goal_observation_space=goal_observation_space,
+                observation_space=observation_space,
                 action_space=action_space,
                 visual_encoder=visual_encoder,
                 goal_visual_encoder=goal_visual_encoder,
@@ -318,6 +341,9 @@ class ResNetPolicy(Policy):
                 rnn_type=rnn_type,
                 attention_type=attention_type,
                 attention=attention,
+                rnn_policy = rnn_policy,
+                state_only = state_only,
+                polar_state = polar_state,
                 **kwargs,
             ),
             dim_actions = action_space.n,

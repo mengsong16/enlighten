@@ -106,6 +106,10 @@ class PPOAgent(Agent):
                 observation_space, obs_transforms
             )
                
+        if self.config.get("state_coord_system") == "polar":
+            polar_state = True
+        else:
+            polar_state = False    
 
         if self.config.get("visual_encoder") == "CNN":
            
@@ -116,7 +120,10 @@ class PPOAgent(Agent):
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
                 hidden_size=int(self.config.get("hidden_size")),
-                blind_agent = self.config.get("blind_agent"))
+                blind_agent = self.config.get("blind_agent"),
+                rnn_policy = self.config.get("rnn_policy"),
+                state_only = self.config.get("state_only"),
+                polar_state = polar_state)
         else:
             # normalize with running mean and var if rgb images exist
             # assume that
@@ -130,7 +137,10 @@ class PPOAgent(Agent):
                 hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in env.observation_space,
                 attention=self.config.get("attention"),
-                blind_agent = self.config.get("blind_agent")) 
+                blind_agent = self.config.get("blind_agent"),
+                rnn_policy = self.config.get("rnn_policy"),
+                state_only = self.config.get("state_only"),
+                polar_state = polar_state) 
 
         self.actor_critic.to(self.device)
 

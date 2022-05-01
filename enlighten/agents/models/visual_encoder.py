@@ -19,6 +19,8 @@ import gym
 
 from enlighten.agents.models import resnet
 
+
+
 # Allow rgb and depth
 class VisualEncoder(nn.Module):
     r"""A Simple 3-Conv CNN followed by a fully connected layer

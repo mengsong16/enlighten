@@ -175,8 +175,16 @@ class RecurrentVisualEncoder(Net):
         # mlp policy    
         else:
             # create MLP model
-            self.state_encoder = MLPEncoder(input_dim=visual_state_encoder_output_size+other_state_encoder_input_size, 
-                hidden_layer=1, output_dim=hidden_size)  
+            if self.state_only:
+                self.state_encoder_layer = 0
+            else:
+                self.state_encoder_layer = 2    
+            
+            if self.state_encoder_layer > 0:
+                self.state_encoder = MLPEncoder(input_dim=visual_state_encoder_output_size+other_state_encoder_input_size, 
+                    hidden_layer=self.state_encoder_layer, output_dim=hidden_size)  
+            else:
+                self.state_encoder = None     
 
     # hidden size = final output size
     @property
@@ -314,13 +322,19 @@ class RecurrentVisualEncoder(Net):
             return out, rnn_hidden_states, patch_weights, goal_embedding
         # mlp policy
         else:
+            
             if other_input is not None:
                 input_tensor = torch.cat((visual_input, other_input), dim=1)
             else:
                 input_tensor = visual_input    
-            out = self.state_encoder(input_tensor)
 
+            if self.state_encoder_layer > 0:    
+                out = self.state_encoder(input_tensor)
+            else:
+                out = input_tensor
+                assert out.size(dim=1) == self._hidden_size, "If no state encoder, the output should have size: %d"%(self._hidden_size)
             return out, None, None, None
+
             
 
 

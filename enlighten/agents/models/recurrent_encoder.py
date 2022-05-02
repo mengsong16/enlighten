@@ -55,13 +55,26 @@ class RecurrentVisualEncoder(Net):
         attention=False,
         rnn_policy = True,
         state_only = False,
-        polar_state = True
+        polar_state = True,
+        cos_augmented_goal = False,
+        cos_augmented_state = False
     ):
         super().__init__()
 
         self.rnn_policy = rnn_policy
         self.state_only = state_only
         self.polar_state = polar_state
+        self.cos_augmented_goal = cos_augmented_goal
+        self.cos_augmented_state = cos_augmented_state
+
+        if self.polar_state:
+            print("======> polor state")
+        if self.cos_augmented_state:
+            print("======> state is cos augmented")
+        else:
+            print("======> state is NOT cos augmented")   
+
+             
 
         other_state_encoder_input_size = 0
         # action embedding only required by rnn
@@ -77,12 +90,22 @@ class RecurrentVisualEncoder(Net):
         # goal embedding 
         self.polar_point_goal = polar_point_goal
         self.goal_input_location = goal_input_location
+
+        if self.polar_point_goal:
+            print("======> polor goal")
+        if self.cos_augmented_goal:
+            print("======> goal is cos augmented")
+        else:
+            print("======> goal is NOT cos augmented")
          
         if goal_observation_space is not None: 
             # pointgoal
             if len(goal_observation_space.shape) < 3:
                 if self.polar_point_goal:
-                    self.input_point_goal_size = goal_observation_space.shape[0] + 1
+                    if self.cos_augmented_goal:
+                        self.input_point_goal_size = goal_observation_space.shape[0] + 1
+                    else:    
+                        self.input_point_goal_size = goal_observation_space.shape[0]
                 else:    
                     self.input_point_goal_size = goal_observation_space.shape[0]
 
@@ -121,7 +144,11 @@ class RecurrentVisualEncoder(Net):
         # state encoder
         if state_only:
             if self.polar_state:
-                input_state_size = observation_space["state_sensor"].shape[0] + 1
+                if self.polar_state:
+                    if self.cos_augmented_state:
+                        input_state_size = observation_space["state_sensor"].shape[0] + 1
+                    else:    
+                        input_state_size = observation_space["state_sensor"].shape[0]
             else:    
                 input_state_size = observation_space["state_sensor"].shape[0]
  
@@ -249,7 +276,8 @@ class RecurrentVisualEncoder(Net):
         if "pointgoal" in observations:
             goal_observations = observations["pointgoal"]
             if self.polar_point_goal:
-                goal_observations = self.augment_polar_observation(goal_observations)
+                if self.cos_augmented_goal:
+                    goal_observations = self.augment_polar_observation(goal_observations)    
             
             if self.state_only == False:
                 goal_embedding = self.goal_encoder(goal_observations)
@@ -292,7 +320,8 @@ class RecurrentVisualEncoder(Net):
         if self.state_only:
             state_observations = observations["state_sensor"]
             if self.polar_state:
-                state_observations = self.augment_polar_observation(state_observations)
+                if self.cos_augmented_state:
+                    state_observations = self.augment_polar_observation(state_observations)
             
             # concate with point goal
             if "pointgoal" in observations:
@@ -300,6 +329,8 @@ class RecurrentVisualEncoder(Net):
             # concate with image goal
             elif "imagegoal" in observations: 
                 state_observations = torch.cat((state_observations, goal_embedding), dim=1)
+
+
             visual_input = self.state_embed_encoder(state_observations)  
     
         # visual encoder

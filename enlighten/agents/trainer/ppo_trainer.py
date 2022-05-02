@@ -162,6 +162,11 @@ class PPOTrainer(BaseRLTrainer):
 
         self._goal_obs_space = self.envs.get_goal_observation_space()
 
+        if self.config.get("state_coord_system") == "polar":
+            polar_state = True
+        else:
+            polar_state = False
+
         # create actor critic
         if self.config.get("visual_encoder") == "CNN":
             self.actor_critic = CNNPolicy(observation_space=observation_space, 
@@ -174,7 +179,10 @@ class PPOTrainer(BaseRLTrainer):
                 hidden_size=int(self.config.get("hidden_size")),
                 blind_agent = self.config.get("blind_agent"),
                 rnn_policy = self.config.get("rnn_policy"),
-                state_only = self.config.get("state_only")
+                state_only = self.config.get("state_only"),
+                polar_state = polar_state,
+                cos_augmented_goal = self.config.get("cos_augmented_goal"),
+                cos_augmented_state = self.config.get("cos_augmented_state")
                 )
         else:
             # normalize with running mean and var if rgb images exist
@@ -191,7 +199,10 @@ class PPOTrainer(BaseRLTrainer):
                 attention = self.config.get("attention"),
                 blind_agent = self.config.get("blind_agent"),
                 rnn_policy = self.config.get("rnn_policy"),
-                state_only = self.config.get("state_only") 
+                state_only = self.config.get("state_only"),
+                polar_state = polar_state,
+                cos_augmented_goal = self.config.get("cos_augmented_goal"),
+                cos_augmented_state = self.config.get("cos_augmented_state") 
                 ) 
 
         self.actor_critic.to(self.device)
@@ -1068,6 +1079,7 @@ class PPOTrainer(BaseRLTrainer):
         self.avg_measurements = Measurements(measure_ids=eval_metrics, env=env, config=self.config)
         self.avg_measurements.init_all_to_zero()
         self.avg_measurements.print_measures()
+
         
         for episode_index in range(n_episodes):
             

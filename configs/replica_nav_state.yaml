@@ -17,8 +17,9 @@ content_scenes: ["*"]
 scenes_dir: "data/scene_datasets/"
 
 # experiments
-experiment_name: "replica_office_3_daylight_random_start_random_goal_state_no_distance_reward_relative_goal_input_nocos"
-#experiment_name: "test"
+#experiment_name: "replica_office_3_daylight_random_start_random_goal_state_no_distance_reward_relative_goal_input_mlp_nocos"
+#experiment_name: "replica_office_3_daylight_random_start_random_goal_rgb_distance_reward_relative_goal_input"
+experiment_name: "test"
 
 # robot
 agent_initial_position: [-0.06879283, -1.02069, -1.8099788] #[0,0,0] #[3, 0, 1] # [0, 0, 0]
@@ -48,6 +49,7 @@ blind_agent: false
 # state
 state_coord_system: polar # [polar, cartesian]
 state_dimension: 2 # [2, 3]
+cos_augmented_state: false
 state_only: true # only use state as input to the agent
 
 # goal
@@ -56,6 +58,7 @@ goal_format: pointgoal # imagegoal #pointgoal
 goal_gps_compass: true #true  # false use absolute goal location relative to the start location
 goal_coord_system: polar # [polar, cartesian]
 goal_dimension: 2 # [2, 3]
+cos_augmented_goal: false
 goal_input_location: baseline #value_function #baseline
 goal_position: [-1.0238545, -1.02069, 4.7970867] #[-3.0798626, -1.02069, 4.007386 ] #[-1.5169233, -1.02069, 5.332902] #[-1.5169233, -1.02069, 5.332902] #[-1.0238545, -1.02069, 4.7970867] 
 random_goal: true #false # if true, goal conditioned
@@ -83,7 +86,7 @@ pretrained_whole_model: false
 pretrained_model_path: data/ddppo-models/gibson-2plus-resnet50.pth
 # Whether or not the visual encoder backbone will be trained
 train_encoder: true
-rnn_policy: true
+rnn_policy: false
 rnn_type: gru #gru  # lstm
 attention: false #false # true
 attention_type: caption #fc
@@ -153,7 +156,7 @@ eval_checkpoint_folder: "checkpoints"
 # otherwise, eval all checkpoints in eval_checkpoint_folder
 eval_checkpoint_file: "ckpt.9.pth"
 # use checkpoint config file
-eval_use_ckpt_config: false
+eval_use_ckpt_config: true
 video_dir: "video"
 
 # Evaluate on all episodes

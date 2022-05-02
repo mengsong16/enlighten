@@ -233,6 +233,8 @@ class CNNPolicy(Policy):
         rnn_policy = True,
         state_only = False,
         polar_state = True,
+        cos_augmented_goal = False,
+        cos_augmented_state = False,
         **kwargs
     ):
         # CNN output dimension = RNN hidden size
@@ -272,6 +274,8 @@ class CNNPolicy(Policy):
                 rnn_policy = rnn_policy,
                 state_only = state_only,
                 polar_state = polar_state,
+                cos_augmented_goal = cos_augmented_goal,
+                cos_augmented_state = cos_augmented_state,
                 **kwargs,
             ),
             dim_actions = action_space.n,
@@ -298,6 +302,8 @@ class ResNetPolicy(Policy):
         rnn_policy = True,
         state_only = False,
         polar_state = True,
+        cos_augmented_goal = False,
+        cos_augmented_state = False,
         **kwargs
     ):
         # ResNet output dimension = RNN hidden size
@@ -344,6 +350,8 @@ class ResNetPolicy(Policy):
                 rnn_policy = rnn_policy,
                 state_only = state_only,
                 polar_state = polar_state,
+                cos_augmented_goal = cos_augmented_goal,
+                cos_augmented_state = cos_augmented_state,
                 **kwargs,
             ),
             dim_actions = action_space.n,

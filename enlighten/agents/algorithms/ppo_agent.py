@@ -81,13 +81,21 @@ class PPOAgent(Agent):
 
         # load checkpoint
         checkpoint_path = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name"), self.config.get("eval_checkpoint_file"))
-        print("Loaded checkpoint at: "+str(checkpoint_path))
+        if os.path.exists(checkpoint_path):
+            print("Loading checkpoint at: "+str(checkpoint_path))
+        else:
+            print("Error: path does not exist: %s"%(checkpoint_path))
+            exit()    
+
         
         if not random_agent:
             ckpt = torch.load(checkpoint_path, map_location="cpu")
             # use checkpoint config
             if self.config.get("eval_use_ckpt_config"):
                 self.config = copy.deepcopy(ckpt["config"])
+                print(self.config)
+                print("=====> Loaded config from checkpoint")
+                
 
         # set random seed
         set_seed(seed=int(self.config.get("seed")), env=self.env)
@@ -109,7 +117,8 @@ class PPOAgent(Agent):
         if self.config.get("state_coord_system") == "polar":
             polar_state = True
         else:
-            polar_state = False    
+            polar_state = False  
+     
 
         if self.config.get("visual_encoder") == "CNN":
            
@@ -119,11 +128,15 @@ class PPOAgent(Agent):
                 action_space=env.action_space,
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
+                goal_input_location=str(self.config.get("goal_input_location")),
                 hidden_size=int(self.config.get("hidden_size")),
                 blind_agent = self.config.get("blind_agent"),
                 rnn_policy = self.config.get("rnn_policy"),
                 state_only = self.config.get("state_only"),
-                polar_state = polar_state)
+                polar_state = polar_state,
+                cos_augmented_goal = self.config.get("cos_augmented_goal"),
+                cos_augmented_state = self.config.get("cos_augmented_state")
+                )
         else:
             # normalize with running mean and var if rgb images exist
             # assume that
@@ -134,15 +147,19 @@ class PPOAgent(Agent):
                 action_space=env.action_space,
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
+                goal_input_location=str(self.config.get("goal_input_location")),
                 hidden_size=int(self.config.get("hidden_size")),
                 normalize_visual_inputs="color_sensor" in env.observation_space,
                 attention=self.config.get("attention"),
                 blind_agent = self.config.get("blind_agent"),
                 rnn_policy = self.config.get("rnn_policy"),
                 state_only = self.config.get("state_only"),
-                polar_state = polar_state) 
+                polar_state = polar_state,
+                cos_augmented_goal = self.config.get("cos_augmented_goal"),
+                cos_augmented_state = self.config.get("cos_augmented_state")) 
 
         self.actor_critic.to(self.device)
+
 
         # load model
         if not random_agent:
@@ -157,12 +174,12 @@ class PPOAgent(Agent):
             )
             logger.info("Checkpoint loaded")
             #print(ckpt["state_dict"].keys())
-            #exit()
+            
         else:
             logger.error(
                 "Model checkpoint wasn't loaded, evaluating " "a random model."
             )
-        
+         
         # set to eval mode
         self.actor_critic.eval()
 
@@ -170,6 +187,7 @@ class PPOAgent(Agent):
         self.recurrent_hidden_states: Optional[torch.Tensor] = None
         self.not_done_masks: Optional[torch.Tensor] = None
         self.prev_actions: Optional[torch.Tensor] = None
+
 
     def reset(self) -> None:
         # initialize data structures
@@ -223,8 +241,8 @@ class PPOAgent(Agent):
 
 
 def test():
-    env =  NavEnv()
-    agent = PPOAgent(env=env)
+    env =  NavEnv(config_file=os.path.join(config_path, "replica_nav_state.yaml"))
+    agent = PPOAgent(env=env, config_file=os.path.join(config_path, "replica_nav_state.yaml"))
     #print(env.get_goal_observation_space())
     step = 0
     obs = env.reset()

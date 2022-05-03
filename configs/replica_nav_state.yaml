@@ -18,7 +18,6 @@ scenes_dir: "data/scene_datasets/"
 
 # experiments
 #experiment_name: "replica_office_3_daylight_random_start_random_goal_state_no_distance_reward_relative_goal_input_mlp_nocos"
-#experiment_name: "replica_office_3_daylight_random_start_random_goal_rgb_distance_reward_relative_goal_input"
 experiment_name: "test"
 
 # robot
@@ -50,6 +49,7 @@ blind_agent: false
 state_coord_system: polar # [polar, cartesian]
 state_dimension: 2 # [2, 3]
 cos_augmented_state: false
+state_relative_to_start: false
 state_only: true # only use state as input to the agent
 
 # goal
@@ -75,8 +75,8 @@ depth_reward: false
 #distance_to: "point" #view_points
 
 # episode termination condition
-max_steps_per_episode: 500 #500
-max_collisions_per_episode: 200
+max_steps_per_episode: 500 #200 #500
+max_collisions_per_episode: 200 #100 #200
 
 # neural network
 visual_encoder: ResNet #ResNet # CNN 
@@ -160,7 +160,7 @@ eval_use_ckpt_config: true
 video_dir: "video"
 
 # Evaluate on all episodes
-test_episode_count: 50 #-1: test on all episodes in dataset
+test_episode_count: 10 #50 #-1: test on all episodes in dataset
 eval_metrics: ['success', 'spl', 'softspl', 'return']
 
 
@@ -181,7 +181,7 @@ distrib_backend: GLOO
 # for DDPPO
 sync_frac: 0.6
 # default port
-default_port: 8842 #8860 #8738 # 8865
+default_port: 8844 #8860 #8738 # 8865
 
 
 

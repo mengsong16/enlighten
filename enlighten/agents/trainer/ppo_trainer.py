@@ -1043,7 +1043,7 @@ class PPOTrainer(BaseRLTrainer):
         writer: TensorboardWriter,
         checkpoint_index: int = 0):
         if self.config.get("single_scene") == True:
-            self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, rendering=True)
+            self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, rendering=False)
         else:
             self._eval_checkpoint_dataset(checkpoint_path, writer, checkpoint_index)    
 
@@ -1052,7 +1052,7 @@ class PPOTrainer(BaseRLTrainer):
             if k not in step_measurements.measures:
                 print("Error: evaluation metrics must appear as step metrics")
             else:
-                print(step_measurements.measures[k].get_metric())
+                #print(step_measurements.measures[k].get_metric())
                 new_value = v.get_metric() + step_measurements.measures[k].get_metric()
                 v.set_metric(new_value)
 
@@ -1080,7 +1080,7 @@ class PPOTrainer(BaseRLTrainer):
         self.avg_measurements.init_all_to_zero()
         self.avg_measurements.print_measures()
 
-        
+        success_num_steps = []
         for episode_index in range(n_episodes):
             
             obs = env.reset()
@@ -1106,7 +1106,7 @@ class PPOTrainer(BaseRLTrainer):
                 
                 obs, reward, done, info = env.step(action)
 
-                print("Step: %d, Action: %d, Reward: %f"%(step, action, reward))
+                #print("Step: %d, Action: %d, Reward: %f"%(step, action, reward))
 
                 if rendering:
                     if self.config.get("attention"):
@@ -1120,6 +1120,16 @@ class PPOTrainer(BaseRLTrainer):
                     break   
 
                 step += 1 
+
+            # update success steps
+            #print(env.measurements.measures["success"]._metric)
+            if env.is_success():
+                success_num_steps.append(step+1)
+                print("Episode %d: succeed, steps: %d"%(episode_index, step+1))   
+            else:
+                print("Episode %d: fail"%(episode_index)) 
+            print("------------------------------------------------")       
+        
         # average metrics over all episodes
         self.average_avg_measurements(n_episodes)
 
@@ -1129,13 +1139,28 @@ class PPOTrainer(BaseRLTrainer):
         ms = self.avg_measurements.print_measures()
         print("------------------------------------------------")
 
+        
+        
+        sn = ""
+        if len(success_num_steps) > 0:
+            success_num_steps = np.array(success_num_steps)
+            sn += "min steps of successful episode: %d\n"%(np.amin(success_num_steps))
+            sn += "mean steps of successful episode: %d\n"%(np.mean(success_num_steps))
+            sn += "max steps of successful episode: %d\n"%(np.amax(success_num_steps))
+        print(sn)
+        print("------------------------------------------------")
+        
         # save evaluation results to txt
         if save_text_results:
             video_path = os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))
+            if not os.path.exists(video_path):
+                os.mkdir(video_path)
+
             txt_name =  f"ckpt-{checkpoint_idx}-eval-results.txt"
             with open(os.path.join(video_path, txt_name), 'w') as outfile:
                 outfile.write(string_n_episode+"\n")
                 outfile.write(ms)
+                outfile.write(sn)
             print("Saved evaluation file.")    
         # save testing episodes to video
         if not random_agent:

@@ -23,6 +23,7 @@ from enlighten.envs.explore import State_Visitation
 
 import abc
 import copy
+import quaternion
 
 from typing import (
     TYPE_CHECKING,
@@ -452,7 +453,7 @@ class NavEnv(gym.Env):
     def get_agent_state(self):
         agent_state = self.agent.get_state()
         # position: [x,y,z]
-        # rotation: quarternion [x,y,z,q]
+        # rotation: quarternion [q,x,y,z]
         
         return agent_state
 
@@ -468,7 +469,7 @@ class NavEnv(gym.Env):
     def get_agent_state_xyz_euler(self):
         agent_state = self.agent.get_state()
         # position: [x,y,z]
-        # rotation: quarternion [x,y,z,q]
+        # rotation: quarternion [q,x,y,z]
 
         euler = qt.as_euler_angles(agent_state.rotation)
         
@@ -1177,12 +1178,12 @@ def test_env(yaml_name):
             #print('observation: %s, %s'%(str(obs.shape), str(type(obs))))
             #print('observation: %s'%(str(type(obs))))
             #print('observation: %s'%(obs.keys()))
-            print(obs["color_sensor"].shape)
+            #print(obs["color_sensor"].shape)
             print(obs["state_sensor"])
-            print(obs["pointgoal"])
+            #print(obs["pointgoal"])
             #print(obs["imagegoal"].shape)
             #print(obs["color_sensor"])
-            print(obs["depth_sensor"].shape)
+            #print(obs["depth_sensor"].shape)
             #env.print_agent_state()
             #print('agent angle [euler]: '+str(env.get_agent_rotation_euler()))
             #print(obs["depth_sensor"])
@@ -1304,7 +1305,9 @@ def test_stop_action():
         print('Episode finished after {} timesteps.'.format(step))
         print('Collision count: %d'%(env.get_current_collision_counts()))
 
-        
+def zero_quat():
+    print(qt.as_euler_angles(np.quaternion(1,0,0,0)))
+    print(get_rotation_quat(np.array([0,0,0], dtype="float32")))        
 
 if __name__ == "__main__":    
     test_env("replica_nav_state.yaml")
@@ -1313,5 +1316,6 @@ if __name__ == "__main__":
     #check_coordinate_system()
     #test_rollout_storage()
     #test_stop_action()
+    #zero_quat()
 
     

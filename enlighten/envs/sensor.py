@@ -235,7 +235,12 @@ class StateSensor(HabitatSensor):
         self._state_dimension = config.get("state_dimension")
         assert self._state_dimension in [2, 3], "state dimension should be 2 or 3"
 
-        #self.env = env
+        self.state_relative_to_origin = config.get("state_relative_to_origin")
+
+        if self.state_relative_to_origin:
+            print("====> state relative to 0")
+        else:
+            print("====> state relative to start")    
 
         super().__init__(uuid="state_sensor", config=config)
     
@@ -300,6 +305,11 @@ class StateSensor(HabitatSensor):
         start_rotation = env.start_rotation # quarternion
         current_position = env.agent.get_state().position # [x,y,z] in world coord system
         
-        return self._compute_coordinate_representation(
-                start_position, start_rotation, np.array(current_position, dtype=np.float32)
-            )
+        if self.state_relative_to_origin:
+            return self._compute_coordinate_representation(
+                    np.array([0,0,0], dtype="float32"), np.quaternion(1,0,0,0), np.array(current_position, dtype=np.float32)
+                )
+        else:
+            return self._compute_coordinate_representation(
+                    start_position, start_rotation, np.array(current_position, dtype=np.float32)
+                )        

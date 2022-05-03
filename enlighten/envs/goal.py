@@ -30,6 +30,16 @@ class PointGoal(HabitatSensor):
         self.env = env
 
         self.goal_gps_compass = config.get("goal_gps_compass")
+        self.goal_relative_to_origin = config.get("goal_relative_to_origin")
+
+        if self.goal_relative_to_origin:
+            print("====> goal relative to 0")
+            assert self.goal_gps_compass == False, "goal relative to origin and goal gps compass cannot not be true at the same time"
+        elif self.goal_gps_compass:
+            print("====> goal relative to current state")
+            assert self.goal_relative_to_origin == False, "goal relative to origin and goal gps compass cannot not be true at the same time"
+        else:    
+            print("====> goal relative to start")
 
         super().__init__(uuid="pointgoal", config=config)
     
@@ -107,7 +117,11 @@ class PointGoal(HabitatSensor):
         
         goal_world_position = np.array(goal_position, dtype=np.float32)
 
-        if self.goal_gps_compass:
+        if self.goal_relative_to_origin:
+            return self._compute_pointgoal(
+            np.array([0,0,0], dtype="float32"), np.quaternion(1,0,0,0), goal_world_position
+            )
+        elif self.goal_gps_compass:
             return self._compute_pointgoal(
             agent_position, rotation_world_agent, goal_world_position
             )

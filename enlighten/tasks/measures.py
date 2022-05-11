@@ -154,21 +154,32 @@ class Success(Measure):
         self._env = env
         self._config = config
 
+        self.stop_depend_success = self._config.get("stop_depend_success")
+
+
         super().__init__()
 
     
-    def reset_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+    def reset_metric(self, measurements, is_stop_called, episode=None, *args: Any, **kwargs: Any):
         measurements.check_measure_dependencies(self.cls_uuid, [DistanceToGoal.cls_uuid])
-        self.update_metric(measurements=measurements, episode=episode, *args, **kwargs)  # type: ignore
+        self.update_metric(measurements=measurements, is_stop_called=is_stop_called, episode=episode, *args, **kwargs)  # type: ignore
 
-    def update_metric(self, measurements, episode=None, *args: Any, **kwargs: Any):
+    def update_metric(self, measurements, is_stop_called, episode=None, *args: Any, **kwargs: Any):
         distance_to_target = measurements.measures[DistanceToGoal.cls_uuid].get_metric()
 
+        #print("is_stop_called: "+str(is_stop_called))
+
         # succeed
-        if (distance_to_target < self._config.get("success_distance")):
-            self._metric = 1.0
-        else:
-            self._metric = 0.0
+        if self.stop_depend_success:
+            if is_stop_called and distance_to_target < self._config.get("success_distance"):
+                self._metric = 1.0
+            else:
+                self._metric = 0.0
+        else:    
+            if distance_to_target < self._config.get("success_distance"):
+                self._metric = 1.0
+            else:
+                self._metric = 0.0
 
 class SPL(Measure):
     r"""SPL (Success weighted by Path Length)

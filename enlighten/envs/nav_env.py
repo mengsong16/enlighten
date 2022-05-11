@@ -267,6 +267,8 @@ class NavEnv(gym.Env):
                 self.transform = midas_transforms.dpt_transform
             else:
                 self.transform = midas_transforms.small_transform
+        
+        self.is_stop_called = False
 
 
     def create_sim_config(self):
@@ -642,6 +644,13 @@ class NavEnv(gym.Env):
         # step simulator
         # transit to s'
         action_name = self.action_mapping[action]
+        
+        if action_name == "stop":
+            self.is_stop_called = True
+        else:
+            self.is_stop_called = False    
+            
+        
         sim_obs = self.sim.step(action_name)
         # self.did_collide = self.extract_collisions(sim_obs)
         # if self.did_collide:
@@ -657,10 +666,14 @@ class NavEnv(gym.Env):
 
         #self.step_count_per_episode += 1
 
+        # if self.is_stop_called:
+        #     print(action_name)
+        
         # update all measurements
         self.measurements.update_measures(
             measurements=self.measurements,
             sim_obs=sim_obs,
+            is_stop_called=self.is_stop_called
         )
 
         # estimate depth from RGB observation
@@ -721,8 +734,11 @@ class NavEnv(gym.Env):
         # self.collision_count_per_episode = 0
         #self.step_count_per_episode = 0
 
+        # initialize stop action called
+        self.is_stop_called = False
+
         # reset measurements
-        self.measurements.reset_measures(measurements=self.measurements)
+        self.measurements.reset_measures(measurements=self.measurements, is_stop_called=self.is_stop_called)
 
         # reset episode visitation count
         self.episode_state_count_dict.reset()
@@ -740,6 +756,8 @@ class NavEnv(gym.Env):
         # initialize prev predicted depth
         if self.depth_reward:
             self.prev_average_predicted_depth = self.estimate_depth(obs)
+
+       
 
         return obs
 
@@ -1003,7 +1021,7 @@ class NavEnv(gym.Env):
         
         return top_down_map
 
-    
+    # return geodesic distance from current location to goal location, if no path, return Eulidean distance
     def get_current_distance(self):
         if self.sim.pathfinder.is_loaded:
             found_path, geodesic_distance = self.get_geodesic_distance_single_goal()

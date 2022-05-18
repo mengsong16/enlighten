@@ -760,7 +760,8 @@ def construct_envs_based_on_dataset(
     scenes = config.get("content_scenes")
     # load all scenes in the dataset
     if "*" in config.get("content_scenes"):
-        scenes = dataset.get_scenes_to_load(config)
+        #scenes = dataset.get_scenes_to_load(config)
+        scenes = dataset.get_scene_names_to_load(config)
 
     # shuffle scenes
     if num_environments > 1:

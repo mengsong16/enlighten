@@ -8,6 +8,7 @@ import gzip
 import json
 import os
 from typing import List, Optional
+from tqdm import tqdm
 
 
 from enlighten.datasets.dataset import ALL_SCENES_MASK, Dataset, not_none_validator, Episode, EpisodeIterator
@@ -81,48 +82,57 @@ class PointNavDatasetV1(Dataset):
             config.get("dataset_path").format(split=config.get("split"))
         ) and os.path.exists(config.get("scenes_dir"))
 
-    @classmethod
-    # TO DO: needs to simplify and check whether will change content_scenes to ["*"], whether is corect when content_scenes is a scene list
-    def get_scenes_to_load(cls, config) -> List[str]:
-        r"""Return list of scene ids for which dataset has separate files with
-        episodes.
-        """
-        assert cls.check_config_paths_exist(config)
-        dataset_dir = os.path.dirname(
-            config.get("dataset_path").format(split=config.get("split"))
-        )
-        
-        #cfg = config.clone()
-        cfg = copy.deepcopy(config)
-        #cfg.defrost()
-        #cfg.CONTENT_SCENES = []
-        cfg["content_scenes"] = []
-        # create a dataset class, e.g. cls is PointNavDatasetV1
-        dataset = cls(cfg)
-        # if config has given a list of scenes
+    def has_individual_scene_files(self, config):
+        datasetfile_path = config.get("dataset_path").format(split=config.get("split"))
+        with gzip.open(datasetfile_path, "rt") as f:
+            self.from_json(f.read(), scenes_dir=config.get("scenes_dir"))
+
+        # Read separate file for each scene
+        dataset_dir = os.path.dirname(datasetfile_path)
+        # self.content_scenes_path: {data_path}/content/{scene}.json.gz
         has_individual_scene_files = os.path.exists(
-            dataset.content_scenes_path.split("{scene}")[0].format(
+            self.content_scenes_path.split("{scene}")[0].format(
                 data_path=dataset_dir
             )
         )
-        # if config has given a list of scenes
-        if has_individual_scene_files:
-            return cls._get_scenes_from_folder(
-                content_scenes_path=dataset.content_scenes_path,
+        
+        return has_individual_scene_files, dataset_dir
+    
+    def get_scene_names(self, config, dataset_dir):
+        # get scene names from the list of content_scenes
+        scenes = config.get("content_scenes")
+        
+        # if *, get all scene names
+        if ALL_SCENES_MASK in scenes:
+            scenes = self._get_scenes_from_folder(
+                content_scenes_path=self.content_scenes_path,
                 dataset_dir=dataset_dir,
             )
-        # if config does not have content_scenes, use all scenes, i.e. content_scenes=["*"]    
-        else:
-            # Load the full dataset, things are not split into separate files
-            cfg["content_scenes"] = [ALL_SCENES_MASK]
-            dataset = cls(cfg)
-            return list(map(cls.scene_from_scene_path, dataset.scene_ids))
 
+        return scenes
+
+    def get_scene_names_to_load(self, config) -> List[str]:
+        r"""Return list of scene ids for which dataset has separate files with
+        episodes.
+        """
+        assert self.check_config_paths_exist(config)
+
+        has_individual_scene_files, dataset_dir = self.has_individual_scene_files(config)
+        # if each scene has an individual file, load the specific scenes or all scene names from the folder
+        if has_individual_scene_files:
+            return self.get_scene_names(config, dataset_dir)
+        else:
+            print("Not implemented if scenes do not have individual scene files")
+            
+
+
+    # get all scene names under the folder
     @staticmethod
     def _get_scenes_from_folder(
         content_scenes_path: str, dataset_dir: str
     ) -> List[str]:
         scenes: List[str] = []
+        
         content_dir = content_scenes_path.split("{scene}")[0]
         scene_dataset_ext = content_scenes_path.split("{scene}")[1]
         content_dir = content_dir.format(data_path=dataset_dir)
@@ -136,42 +146,40 @@ class PointNavDatasetV1(Dataset):
         scenes.sort()
         return scenes
 
+
     def __init__(self, config = None) -> None:
         self.episodes = []
 
         if config is None:
             return
-
-        datasetfile_path = config.get("dataset_path").format(split=config.get("split"))
-        with gzip.open(datasetfile_path, "rt") as f:
-            self.from_json(f.read(), scenes_dir=config.get("scenes_dir"))
-
-        # Read separate file for each scene
-        dataset_dir = os.path.dirname(datasetfile_path)
-        has_individual_scene_files = os.path.exists(
-            self.content_scenes_path.split("{scene}")[0].format(
-                data_path=dataset_dir
-            )
-        )
+        
+        has_individual_scene_files, dataset_dir = self.has_individual_scene_files(config)
+        # if each scene has a separate file
+        
         if has_individual_scene_files:
-            scenes = config.get("content_scenes")
-            if ALL_SCENES_MASK in scenes:
-                scenes = self._get_scenes_from_folder(
-                    content_scenes_path=self.content_scenes_path,
-                    dataset_dir=dataset_dir,
-                )
-
-            for scene in scenes:
+            scenes = self.get_scene_names(config, dataset_dir)
+            
+            print("Loaded scenes: %d"%len(scenes))
+            print("Start loading episodes ...")
+            # load episodes from each scene
+            self.scene_episode_num = {}
+            for scene in tqdm(scenes):
                 scene_filename = self.content_scenes_path.format(
                     data_path=dataset_dir, scene=scene
                 )
                 with gzip.open(scene_filename, "rt") as f:
-                    self.from_json(f.read(), scenes_dir=config.get("scenes_dir"))
+                    n_episode = self.from_json(f.read(), scenes_dir=config.get("scenes_dir"))
+                self.scene_episode_num[scene] = n_episode
+                
+            for key, value in self.scene_episode_num.items():
+                print("%s: %d"%(key, value))
 
+            print("Total loaded episodes: %d"%(len(self.episodes)))        
         else:
             self.episodes = list(
                 filter(self.build_content_scenes_filter(config), self.episodes)
             )
+            
 
     def from_json(
         self, json_str: str, scenes_dir: Optional[str] = None
@@ -180,6 +188,7 @@ class PointNavDatasetV1(Dataset):
         if CONTENT_SCENES_PATH_FIELD in deserialized:
             self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]
 
+        n_episode = 0
         for episode in deserialized["episodes"]:
             episode = NavigationEpisode(**episode)
 
@@ -197,7 +206,11 @@ class PointNavDatasetV1(Dataset):
                 for path in episode.shortest_paths:
                     for p_index, point in enumerate(path):
                         path[p_index] = ShortestPathPoint(**point)
+            
+            n_episode += 1
             self.episodes.append(episode)
+        
+        return n_episode
 
 # make a dataset PointNavDatasetV1
 def make_dataset(id_dataset, **kwargs):

@@ -38,7 +38,7 @@ def get_rotation_quat(rotation):
 def quaternion_rotate_vector(quat: np.quaternion, v: np.array) -> np.array:
     r"""Rotates a vector by a quaternion
     Args:
-        quaternion: The quaternion to rotate by
+        quaternion: The quaternion to rotate by [w,x,y,z]
         v: The vector to rotate
     Returns:
         np.array: The rotated vector
@@ -58,7 +58,7 @@ def cartesian_to_polar(x, y):
 
 
 def quaternion_from_coeff(coeffs: np.ndarray) -> np.quaternion:
-    r"""Creates a quaternions from coeffs in [x, y, z, w] format"""
+    r"""Creates a quaternions [w,x,y,z] from coeffs in [x, y, z, w] format"""
     quat = np.quaternion(0, 0, 0, 0)
     quat.real = coeffs[3]
     quat.imag = coeffs[0:3]

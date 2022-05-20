@@ -195,6 +195,7 @@ habitat_sim.registry.register_move_fn(
 )
 
 
+# single scene environment
 class NavEnv(gym.Env):
     r"""Base gym navigation environment
     """
@@ -343,8 +344,13 @@ class NavEnv(gym.Env):
     def get_gym_action_space(self):
         return self.action_space  
 
+    # get simulator config
     def get_sim_config(self):
-        return self.sim_config.sim_cfg    
+        return self.sim_config.sim_cfg
+
+    # get agent config
+    def get_agent_config(self):
+        return self.sim_config.agents[0]        
 
     # ref: class ImageExtractor
     def create_sensors_and_sensor_specs(self):
@@ -717,13 +723,11 @@ class NavEnv(gym.Env):
         return obs, reward, done, info              
 
     def reset(self):
-        # reset agent.initial_state to its initial pose
-        sim_obs = self.sim.reset()
-
-        # reset start and goal
+        # reset agent start and goal
         self.set_start_goal()
 
-        # get the initial observation
+        # reset simulator and get the initial observation
+        sim_obs = self.sim.reset()
         obs = self.sensor_suite.get_observations(sim_obs=sim_obs, env=self)
 
         if self.config.get("goal_conditioned"):
@@ -757,7 +761,6 @@ class NavEnv(gym.Env):
         if self.depth_reward:
             self.prev_average_predicted_depth = self.estimate_depth(obs)
 
-       
 
         return obs
 
@@ -820,6 +823,7 @@ class NavEnv(gym.Env):
         # get map
         if self.sim.pathfinder.is_loaded:
             path_points = self.get_optimal_trajectory()
+            #print(path_points)
             topdown_map = self.get_map(path_points)
         else:
             topdown_map = None    
@@ -1162,6 +1166,7 @@ def test_env(yaml_name):
         print('Episode: {}'.format(episode))
         #step = 0
         env.reset()
+        #exit()
         print('-----------------------------')
         print('Reset')
         env.print_agent_state()

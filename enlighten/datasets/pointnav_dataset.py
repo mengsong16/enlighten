@@ -83,7 +83,10 @@ class PointNavDatasetV1(Dataset):
         ) and os.path.exists(config.get("scenes_dir"))
 
     def has_individual_scene_files(self, config):
+        
         datasetfile_path = config.get("dataset_path").format(split=config.get("split"))
+        
+        # read train/val/val_mini.json.gz
         with gzip.open(datasetfile_path, "rt") as f:
             self.from_json(f.read(), scenes_dir=config.get("scenes_dir"))
 
@@ -111,6 +114,16 @@ class PointNavDatasetV1(Dataset):
 
         return scenes
 
+    def get_scene_name_from_scene_path(self, scene_path: str) -> str:
+        r"""Helper method to get the scene name from an episode.
+
+        :param scene_path: The path to the scene, assumes this is formatted
+                            ``/path/to/<scene_name>.<ext>``
+
+        :return: <scene_name> from the path
+        """
+        return os.path.splitext(os.path.basename(scene_path))[0]
+
     def get_scene_names_to_load(self, config) -> List[str]:
         r"""Return list of scene ids for which dataset has separate files with
         episodes.
@@ -122,8 +135,9 @@ class PointNavDatasetV1(Dataset):
         if has_individual_scene_files:
             return self.get_scene_names(config, dataset_dir)
         else:
-            print("Not implemented if scenes do not have individual scene files")
-            
+            # self.scene_ids: a list scene paths of extracted from episodes
+            return list(map(self.get_scene_name_from_scene_path, self.scene_ids))
+
 
 
     # get all scene names under the folder
@@ -174,11 +188,13 @@ class PointNavDatasetV1(Dataset):
             for key, value in self.scene_episode_num.items():
                 print("%s: %d"%(key, value))
 
-            print("Total loaded episodes: %d"%(len(self.episodes)))        
+                   
         else:
             self.episodes = list(
                 filter(self.build_content_scenes_filter(config), self.episodes)
             )
+        
+        print("Total loaded episodes: %d"%(len(self.episodes))) 
             
 
     def from_json(

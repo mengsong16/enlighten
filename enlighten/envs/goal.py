@@ -7,6 +7,7 @@ from gym import spaces
 from enlighten.envs import HabitatSensor, Dictionary_Observations
 from enlighten.utils.config_utils import parse_config
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar, quaternion_from_coeff
+from enlighten.utils.geometry_utils import get_rotation_quat
 
 class PointGoal(HabitatSensor):
     r"""Sensor for PointGoal observations which are used in PointGoal Navigation.
@@ -105,7 +106,7 @@ class PointGoal(HabitatSensor):
     def get_observation(
         self, 
         start_position, # [x,y,z] in world coord system
-        start_rotation, # quarternion
+        start_rotation, # quarternion [w,x,y,z]
         goal_position, # [x,y,z] in world coord system 
         *args: Any, 
         **kwargs: Any
@@ -113,7 +114,7 @@ class PointGoal(HabitatSensor):
         if self.goal_gps_compass:
             agent_state = self.env.get_agent_state()
             agent_position = agent_state.position
-            rotation_world_agent = agent_state.rotation # quarternion
+            rotation_world_agent = agent_state.rotation # np.quarternion [w,x,y,z]
         
         goal_world_position = np.array(goal_position, dtype=np.float32)
 
@@ -177,3 +178,8 @@ class ImageGoal(HabitatSensor):
         self._current_image_goal = self._get_image_goal(goal_position, goal_azimuth)
 
         return self._current_image_goal
+
+if __name__ == "__main__":
+    print(np.quaternion(1,0,0,0))
+    print(quaternion_from_coeff([0,0,0,1]))
+    print(get_rotation_quat([0,0,0]))

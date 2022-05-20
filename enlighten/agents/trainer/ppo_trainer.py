@@ -1083,8 +1083,8 @@ class PPOTrainer(BaseRLTrainer):
         success_num_steps = []
         for episode_index in range(n_episodes):
             
-            obs = env.reset()
-            agent.reset()
+            obs = env.reset() # reset agent state
+            agent.reset() # initialize structures
             done = False
             env.set_current_episode(episode_index)
 

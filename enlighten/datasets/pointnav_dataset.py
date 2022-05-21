@@ -201,20 +201,29 @@ class PointNavDatasetV1(Dataset):
         self, json_str: str, scenes_dir: Optional[str] = None
     ) -> None:
         deserialized = json.loads(json_str)
+        
         if CONTENT_SCENES_PATH_FIELD in deserialized:
             self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]
+            
 
         n_episode = 0
         for episode in deserialized["episodes"]:
             episode = NavigationEpisode(**episode)
 
             if scenes_dir is not None:
+                # remove DEFAULT_SCENE_PATH_PREFIX = data/scene_datasets/
                 if episode.scene_id.startswith(DEFAULT_SCENE_PATH_PREFIX):
                     episode.scene_id = episode.scene_id[
                         len(DEFAULT_SCENE_PATH_PREFIX) :
                     ]
+                # remove /habitat-challenge-data/
+                if episode.scene_id.startswith("/habitat-challenge-data/"):
+                    episode.scene_id = episode.scene_id[
+                        len("/habitat-challenge-data/") :
+                    ]
 
                 episode.scene_id = os.path.join(scenes_dir, episode.scene_id)
+
 
             for g_index, goal in enumerate(episode.goals):
                 episode.goals[g_index] = NavigationGoal(**goal)

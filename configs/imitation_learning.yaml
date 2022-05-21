@@ -1,9 +1,9 @@
 # dataset
 dataset_type: PointNav-v1
-split: val  #[train, val, val_mini]
+split: val_mini  #[train, val, val_mini]
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode data store
 content_scenes: ["*"]
-scenes_dir: "/dataset/gibson"  # where mesh data store
+scenes_dir: "/dataset"  # where mesh data store
 
 # experiments
 experiment_name: "test"
@@ -68,8 +68,6 @@ max_collisions_per_episode: 200
 num_environments: 6 #6
 
 # training
-torch_gpu_id: 0
-simulator_gpu_id: 0
 seed: 1
 
 # total_num_steps: steps collected in all environments (num_environments)  

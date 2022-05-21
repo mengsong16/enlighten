@@ -5,6 +5,7 @@ import os
 import numpy as np
 import gym
 from gym import spaces
+import copy
 
 import habitat_sim
 from habitat_sim.gfx import LightInfo, LightPositionModel, DEFAULT_LIGHTING_KEY, NO_LIGHT_KEY
@@ -30,8 +31,9 @@ class MultiNavEnv(NavEnv):
         config_file = os.path.join(config_path, config_file)
         self.config = parse_config(config_file)
     
-        # create simulator configuration
-        self.sim_config, sensors = self.create_sim_config()
+        # create simulator configuration and sensors
+        self.create_sim_config()
+
         # create simulator
         self.sim = habitat_sim.Simulator(self.sim_config) 
 
@@ -46,7 +48,7 @@ class MultiNavEnv(NavEnv):
        
            
         # create gym observation space
-        self.observation_space = self.create_gym_observation_space(sensors)
+        self.observation_space = self.create_gym_observation_space(self.sensors)
         
         # create goal sensors (must be created after the main observation space is created)
         self.create_goal_sensor()
@@ -69,18 +71,26 @@ class MultiNavEnv(NavEnv):
         
         # load goal radius
         self.goal_radius = float(self.config.get("success_distance"))
+
+        # create shortest path planner
+        self.create_shortest_path_follower()
     
-    def create_sim_config(self):
+    def create_sim_cfg(self, scene_id):
         # simulator configuration
         sim_config = habitat_sim.SimulatorConfiguration()
         
-        # set dummy scene path
-        sim_config.scene_id = self.config.get('scene_id')
+        # set scene
+        sim_config.scene_id = scene_id
         self.current_scene = sim_config.scene_id
 
         # set dataset path
         # if not set, the value is "default"
         #sim_config.scene_dataset_config_file = self.config.get('dataset_path')
+
+        # set random seed for the Simulator and Pathfinder
+        sim_config.random_seed = int(self.config.get('seed'))
+
+        # sim_config.gpu_device_id = 0 by default use gpu 0 to render
 
         # enable physics
         sim_config.enable_physics = True
@@ -98,17 +108,23 @@ class MultiNavEnv(NavEnv):
             print("Daylight mode is on: global scene light setup is: %s"%(sim_config.scene_light_setup))
             #print(sim_config.scene_light_setup)
             #print("****************************")
-            
+        
+        return sim_config
+
+    def create_sim_config(self):
+        # create sim cfg
+        sim_config = self.create_sim_cfg(scene_id=self.config.get('scene_id'))  
 
         # sensors and sensor specifications
-        sensor_specs, sensors = self.create_sensors_and_sensor_specs()
+        sensor_specs, self.sensors = self.create_sensors_and_sensor_specs()
         
         # agent configuration
-        agent_cfg = habitat_sim.agent.AgentConfiguration()
-        agent_cfg.action_space = self.create_sim_action_space()
-        agent_cfg.sensor_specifications = sensor_specs
+        self.agent_cfg = habitat_sim.agent.AgentConfiguration()
+        self.agent_cfg.action_space = self.create_sim_action_space()
+        self.agent_cfg.sensor_specifications = sensor_specs
 
-        return habitat_sim.Configuration(sim_config, [agent_cfg]), sensors
+        self.sim_config = habitat_sim.Configuration(sim_config, [self.agent_cfg])
+
 
     def get_episode_start_position(self, episode):
         return np.array(episode.start_position, dtype=np.float32)
@@ -123,16 +139,17 @@ class MultiNavEnv(NavEnv):
     def reconfigure(self, episode):
         # reset scene id
         episode_scene = episode.scene_id
+        
         if self.current_scene != episode_scene:
-            self.current_scene = episode_scene
-            self.set_scene_id_in_config(episode_scene)
+            self.sim_config = habitat_sim.Configuration(self.create_sim_cfg(episode_scene), [self.agent_cfg])
             self.sim.reconfigure(self.sim_config)
         
         # reset agent state and goal according to episode
+        # is_initial must be true, otherwise will be set to the previous start position and rotation
         self.set_start_goal(new_goal_position=self.get_episode_goal_position(episode), 
             new_start_position=self.get_episode_start_position(episode), 
             new_start_rotation=self.get_episode_start_rotation(episode), 
-            is_initial=False)
+            is_initial=True)
 
     def init_start_goal(self):
         goal_position = np.array(self.config.get('goal_position'), dtype="float32")
@@ -157,12 +174,13 @@ class MultiNavEnv(NavEnv):
         self.set_agent_state(new_position=self.start_position, 
             new_rotation=self.start_rotation, is_initial=True, quaternion=True)
     
-    def reset(self, episode=None):
+    def reset(self, episode=None, plan_shortest_path=False):
         # reset scene, agent start and goal
         if episode is None:
             self.set_agent_to_initial_state()
         else:    
             self.reconfigure(episode)
+
 
         # reset simulator and get the initial observation
         sim_obs = self.sim.reset()
@@ -177,6 +195,16 @@ class MultiNavEnv(NavEnv):
 
         # reset measurements
         self.measurements.reset_measures(measurements=self.measurements, is_stop_called=self.is_stop_called)
+
+        # plan shortest path
+        # must be called after agent has been set to the start location
+        if plan_shortest_path:
+            try:
+                self.optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
+            except habitat_sim.errors.GreedyFollowerError as e:
+                self.optimal_action_seq = []
+        else:
+            self.optimal_action_seq = []    
 
         return obs
     
@@ -232,18 +260,19 @@ class MultiNavEnv(NavEnv):
         self.sim_config.sim_cfg.scene_id = new_scene
 
 def test_env():
-    env = MultiNavEnv()
+    env = MultiNavEnv(config_file="imitation_learning.yaml")
     for i in range(10):
-        obs = env.reset()
-        print('Episode: {}'.format(i))
+        obs = env.reset(plan_shortest_path=True)
+        print('Episode: {}'.format(i+1))
         print("Goal position: %s"%(env.goal_position))
         env.print_agent_state()
         #print(env.get_optimal_trajectory())
+        print("Optimal action seq: %s"%env.optimal_action_seq)
 
         for j in range(100):
             action = env.action_space.sample()
             obs, reward, done, info = env.step(action)
-            env.render()
+            #env.render()
 
         print("===============================")
 

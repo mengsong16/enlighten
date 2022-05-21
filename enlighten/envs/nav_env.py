@@ -283,6 +283,9 @@ class NavEnv(gym.Env):
         # if not set, the value is "default"
         sim_config.scene_dataset_config_file = self.config.get('dataset_path')
 
+        # set random seed for the Simulator and Pathfinder
+        sim_config.random_seed = int(self.config.get('seed'))
+
         # enable physics
         sim_config.enable_physics = True
 
@@ -538,6 +541,7 @@ class NavEnv(gym.Env):
         index = self.action_mapping.index(name) 
         return index   
 
+    # initialize at the beginning of each episode 
     def set_start_goal(self):
         if self.sim.pathfinder.is_loaded:
             trajectory_not_exist = True
@@ -562,6 +566,7 @@ class NavEnv(gym.Env):
            self.set_agent_state(new_position=self.start_position, 
                         new_rotation=self.start_rotation, is_initial=True, quaternion=True)
 
+    # initialize at the beginning of each episode
     # may need to fix y coordinate of start and goal position
     def set_start_goal_once(self):
         self.random_goal = self.config.get('random_goal') 

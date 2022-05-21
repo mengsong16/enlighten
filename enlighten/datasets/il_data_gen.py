@@ -51,12 +51,13 @@ def shortest_path_follower(yaml_name):
         obs = env.reset(episode=episode, plan_shortest_path=True)
         print('Episode: {}'.format(i+1))
         print("Goal position: %s"%(env.goal_position))
-        env.print_agent_state()
-        print("Optimal action seq: %s"%env.optimal_action_seq)
+        #env.print_agent_state()
+        print("Start position: %s"%(env.start_position))
+        print("Optimal action sequence: %s"%env.optimal_action_seq)
 
-        for j in range(100):
-            action = env.action_space.sample()
-            obs, reward, done, info = env.step(action)
+        # for j in range(100):
+        #     action = env.action_space.sample()
+        #     obs, reward, done, info = env.step(action)
             #env.render()
 
         print("===============================")

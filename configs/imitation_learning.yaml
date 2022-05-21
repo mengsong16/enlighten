@@ -1,6 +1,6 @@
 # dataset
 dataset_type: PointNav-v1
-split: val_mini  #[train, val, val_mini]
+split: train  #[train, val, val_mini]
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode data store
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store

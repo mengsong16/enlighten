@@ -71,9 +71,7 @@ class MultiNavEnv(NavEnv):
         
         # load goal radius
         self.goal_radius = float(self.config.get("success_distance"))
-
-        # create shortest path planner
-        self.create_shortest_path_follower()
+        
     
     def create_sim_cfg(self, scene_id):
         # simulator configuration
@@ -174,13 +172,16 @@ class MultiNavEnv(NavEnv):
         self.set_agent_state(new_position=self.start_position, 
             new_rotation=self.start_rotation, is_initial=True, quaternion=True)
     
+    def check_optimal_action_sequence(self):
+        assert len(self.optimal_action_seq) > 0, "Error: optimal action sequence must have at least one element"
+        assert self.optimal_action_seq[-1] == self.action_name_to_index("stop"), "Error: the last action in the optimal action sequence must be STOP"
+       
     def reset(self, episode=None, plan_shortest_path=False):
         # reset scene, agent start and goal
         if episode is None:
             self.set_agent_to_initial_state()
         else:    
             self.reconfigure(episode)
-
 
         # reset simulator and get the initial observation
         sim_obs = self.sim.reset()
@@ -196,12 +197,21 @@ class MultiNavEnv(NavEnv):
         # reset measurements
         self.measurements.reset_measures(measurements=self.measurements, is_stop_called=self.is_stop_called)
 
+        # if navmesh loaded, then pathfinder is loaded, then seed it
+        if self.sim.pathfinder.is_loaded:
+            self.sim.pathfinder.seed(int(self.config.get("seed")))
+            print("Path finder loaded and seeded.")
+
         # plan shortest path
-        # must be called after agent has been set to the start location
+        # must be called after agent has been set to the start location, and goal has been reset
         if plan_shortest_path:
+            # create shortest path planner, must create everytime reset is called
+            self.create_shortest_path_follower()
             try:
                 self.optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
+                self.check_optimal_action_sequence()
             except habitat_sim.errors.GreedyFollowerError as e:
+                print("Error: optimal path NOT found!")
                 self.optimal_action_seq = []
         else:
             self.optimal_action_seq = []    
@@ -246,15 +256,29 @@ class MultiNavEnv(NavEnv):
 
         return reward   
 
+    # agent location must already been reset
     def create_shortest_path_follower(self):
-        self.follower = self.sim.make_greedy_follower(
-                agent_id=0,
-                goal_radius=self.goal_radius,
-                stop_key=self.action_name_to_index("stop"),  # 0
-                forward_key=self.action_name_to_index("move_forward"), # 1
-                left_key=self.action_name_to_index("turn_left"), # 2 
-                right_key=self.action_name_to_index("turn_right"),  #3
-            )   
+        # self.follower = self.sim.make_greedy_follower(
+        #         agent_id=0,
+        #         goal_radius=self.goal_radius,
+        #         stop_key=self.action_name_to_index("stop"),  # 0
+        #         forward_key=self.action_name_to_index("move_forward"), # 1
+        #         left_key=self.action_name_to_index("turn_left"), # 2 
+        #         right_key=self.action_name_to_index("turn_right"),  #3
+        #     ) 
+
+        # could map to action index or name string, no mapping action will be None
+        assert self.sim.pathfinder.is_loaded, "Error: try to create path follower before creating path finder"
+        self.follower = habitat_sim.GreedyGeodesicFollower(
+            pathfinder=self.sim.pathfinder,
+            agent=self.agent,
+            goal_radius=self.goal_radius,
+            stop_key=self.action_name_to_index("stop"),
+            forward_key=self.action_name_to_index("move_forward"),
+            left_key=self.action_name_to_index("turn_left"),
+            right_key=self.action_name_to_index("turn_right"))
+
+        print("Path follower created.")      
     
     def set_scene_id_in_config(self, new_scene):
         self.sim_config.sim_cfg.scene_id = new_scene
@@ -265,9 +289,10 @@ def test_env():
         obs = env.reset(plan_shortest_path=True)
         print('Episode: {}'.format(i+1))
         print("Goal position: %s"%(env.goal_position))
-        env.print_agent_state()
+        #env.print_agent_state()
+        print("Start position: %s"%(env.start_position))
         #print(env.get_optimal_trajectory())
-        print("Optimal action seq: %s"%env.optimal_action_seq)
+        print("Optimal action sequence: %s"%env.optimal_action_seq)
 
         for j in range(100):
             action = env.action_space.sample()

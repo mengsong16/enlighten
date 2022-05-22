@@ -55,10 +55,10 @@ def shortest_path_follower(yaml_name):
         print("Start position: %s"%(env.start_position))
         print("Optimal action sequence: %s"%env.optimal_action_seq)
 
-        # for j in range(100):
-        #     action = env.action_space.sample()
-        #     obs, reward, done, info = env.step(action)
-            #env.render()
+        for action in env.optimal_action_seq:
+            #action = env.action_space.sample()
+            obs, reward, done, info = env.step(action)
+            env.render()
 
         print("===============================")
 

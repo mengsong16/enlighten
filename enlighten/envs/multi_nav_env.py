@@ -36,15 +36,6 @@ class MultiNavEnv(NavEnv):
 
         # create simulator
         self.sim = habitat_sim.Simulator(self.sim_config) 
-
-        # register dynamic lighting in simulator for dark mode
-        if self.dark_mode:
-            # flashlight: point light x m in front of the robot 
-            self.flashlight_z = float(self.config.get('flashlight_z'))
-
-            self.sim.set_light_setup([
-            LightInfo(vector=[0.0, 0.0, -self.flashlight_z, 1.0], model=LightPositionModel.Camera)
-            ], "current_scene_lighting")
        
            
         # create gym observation space
@@ -141,6 +132,8 @@ class MultiNavEnv(NavEnv):
         if self.current_scene != episode_scene:
             self.sim_config = habitat_sim.Configuration(self.create_sim_cfg(episode_scene), [self.agent_cfg])
             self.sim.reconfigure(self.sim_config)
+            # must recreate agent if simulator is reconfiged, otherwise agent will not move when env.step
+            self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id)
         
         # reset agent state and goal according to episode
         # is_initial must be true, otherwise will be set to the previous start position and rotation
@@ -174,7 +167,9 @@ class MultiNavEnv(NavEnv):
     
     def check_optimal_action_sequence(self):
         assert len(self.optimal_action_seq) > 0, "Error: optimal action sequence must have at least one element"
-        assert self.optimal_action_seq[-1] == self.action_name_to_index("stop"), "Error: the last action in the optimal action sequence must be STOP"
+        if self.optimal_action_seq[-1] != self.action_name_to_index("stop"):
+            print("Error: the last action in the optimal action sequence must be STOP, but %d now, appending STOP."%(self.optimal_action_seq[-1]))
+            self.optimal_action_seq.append(self.action_name_to_index("stop"))
        
     def reset(self, episode=None, plan_shortest_path=False):
         # reset scene, agent start and goal
@@ -277,8 +272,10 @@ class MultiNavEnv(NavEnv):
             forward_key=self.action_name_to_index("move_forward"),
             left_key=self.action_name_to_index("turn_left"),
             right_key=self.action_name_to_index("turn_right"))
+        
+        self.follower.reset()
 
-        print("Path follower created.")      
+        print("Path follower created and reset.")      
     
     def set_scene_id_in_config(self, new_scene):
         self.sim_config.sim_cfg.scene_id = new_scene

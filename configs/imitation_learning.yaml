@@ -1,6 +1,6 @@
 # dataset
 dataset_type: PointNav-v1
-split: train  #[train, val, val_mini]
+split: val_mini  #[train, val, val_mini]
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode data store
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
@@ -32,10 +32,7 @@ max_depth: 10.0
 dictionary_observation_space: true
 
 # task
-dark_mode: false #true #false
-flashlight_z: 0.2 #0.8 #0.2
 measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'spl', 'softspl', 'point_goal_reward', 'return']
-blind_agent: false
 
 # state
 state_coord_system: polar # [polar, cartesian]

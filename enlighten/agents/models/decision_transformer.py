@@ -5,6 +5,7 @@ import torch.nn as nn
 import transformers
 
 from enlighten.agents.models.gpt2 import GPT2Model
+from enlighten.agents.models.dt_encoder import ObservationEncoder, ReturnToGoEncoder, GoalEncoder, ActionEncoder, TimestepEncoder
 
 # based on GPT2
 class DecisionTransformer(nn.Module):
@@ -23,6 +24,8 @@ class DecisionTransformer(nn.Module):
             action_tanh=True,
             **kwargs
     ):
+        super().__init__()
+        
         self.state_dim = state_dim
         self.act_dim = act_dim
         self.max_length = max_length
@@ -119,8 +122,7 @@ class DecisionTransformer(nn.Module):
     # input a sequence of (r,s,t) of length max_length
     # only return the last action
     # for evaluation
-    def get_action(self, states, actions, rewards, returns_to_go, timesteps, **kwargs):
-        # we don't care about the past rewards in this model
+    def get_action(self, states, actions, returns_to_go, timesteps, **kwargs):
 
         states = states.reshape(1, -1, self.state_dim)
         actions = actions.reshape(1, -1, self.act_dim)
@@ -160,7 +162,7 @@ class DecisionTransformer(nn.Module):
             attention_mask = None
 
         # forward the sequence
-        _, action_preds, return_preds = self.forward(
+        action_preds = self.forward(
             states, actions, None, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
 
         return action_preds[0,-1]

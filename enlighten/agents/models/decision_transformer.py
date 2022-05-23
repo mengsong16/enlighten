@@ -47,13 +47,10 @@ class DecisionTransformer(nn.Module):
         # used to embed the concatenated input
         self.embed_ln = nn.LayerNorm(hidden_size)
 
-        # three heads for output (training)
-        # note: we don't predict states or returns for the paper
-        self.predict_state = torch.nn.Linear(hidden_size, self.state_dim)
+        # one heads for output (training)
         self.predict_action = nn.Sequential(
             *([nn.Linear(hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
         )
-        self.predict_return = torch.nn.Linear(hidden_size, 1)
 
     # input: a sequence of (s,a,r,t) of length max_length
     # output: a sequence of predicted (s,a,r) of length max_length
@@ -113,15 +110,11 @@ class DecisionTransformer(nn.Module):
         x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
         # get predictions
-        # x[:,2] = x[:,2,:,:]
-        # predict return given action? not used in current implementation
-        return_preds = self.predict_return(x[:,2])  # predict next return given state and action (world model)
-        # predict state given action? not used in current implementation
-        state_preds = self.predict_state(x[:,2])    # predict next state given state and action (world model)
+        # x[:,1] = x[:,1,:,:]
         # predict action given state
         action_preds = self.predict_action(x[:,1])  # predict next action given state (policy)
 
-        return state_preds, action_preds, return_preds
+        return action_preds
 
     # input a sequence of (r,s,t) of length max_length
     # only return the last action

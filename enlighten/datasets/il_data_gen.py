@@ -58,8 +58,12 @@ def shortest_path_follower(yaml_name):
         for action in env.optimal_action_seq:
             #action = env.action_space.sample()
             obs, reward, done, info = env.step(action)
-            env.render()
+            #env.render()
 
+        # not empty
+        if env.optimal_action_seq:
+            assert done == True, "done should be true after following the shortest path"
+            assert env.is_success() == True, "success should be true after following the shortest path"
         print("===============================")
 
 

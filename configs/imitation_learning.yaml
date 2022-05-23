@@ -1,6 +1,6 @@
 # dataset
 dataset_type: PointNav-v1
-split: val_mini  #[train, val, val_mini]
+split: train  #[train, val, val_mini]
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode data store
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
@@ -37,7 +37,7 @@ measurements: ['steps', 'collisions', 'distance_to_goal', 'success', 'done', 'sp
 # state
 state_coord_system: polar # [polar, cartesian]
 state_dimension: 2 # [2, 3]
-cos_augmented_state: true #false
+cos_augmented_state: false #false
 state_relative_to_origin: true
 state_only: false # only use state as input to the agent
 
@@ -48,7 +48,7 @@ goal_relative_to_origin: false
 goal_gps_compass: true #true  # false use absolute goal location relative to the start location
 goal_coord_system: polar # [polar, cartesian]
 goal_dimension: 2 # [2, 3]
-cos_augmented_goal: true #false
+cos_augmented_goal: false #false
 
 # reward
 success_distance: 0.2 # l2 distance in meter

@@ -62,6 +62,7 @@ def evaluate_episode_rtg(
             #rewards.to(dtype=torch.float32),
             target_return.to(dtype=torch.float32),
             timesteps.to(dtype=torch.long),
+            sample = True,
         )
         # append new action
         actions[-1] = action

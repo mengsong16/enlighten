@@ -54,7 +54,7 @@ class DecisionTransformer(nn.Module):
         self.action_decoder = DiscreteActionDecoder(hidden_size, self.act_dim)
 
         # acton logits --> action prob
-        self.softmax = nn.Softmax(dim=1)
+        self.softmax = nn.Softmax(dim=-1)
 
     # input: a sequence of (s,a,r,t) of length max_length
     # output: a sequence of predicted (s,a,r) of length max_length
@@ -123,7 +123,7 @@ class DecisionTransformer(nn.Module):
     # input a sequence of (r,s,t) of length max_length
     # only return the last action
     # for evaluation
-    def get_action(self, states, actions, returns_to_go, timesteps, **kwargs):
+    def get_action(self, states, actions, returns_to_go, timesteps, sample, **kwargs):
 
         states = states.reshape(1, -1, self.state_dim)
         actions = actions.reshape(1, -1, self.act_dim)
@@ -167,7 +167,17 @@ class DecisionTransformer(nn.Module):
             pred_action_seq_logits = self.forward(
                 states, actions, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
             
-            pred_last_action_logit = pred_action_seq_logits[0,-1]
+            # pluck the logits at the final step and scale by temperature 1.0
+            pred_last_action_logit = pred_action_seq_logits[0,-1] 
+            # apply softmax to convert to probabilities
             probs = self.softmax(pred_last_action_logit)
             # greedily pick the action
-            return torch.argmax(probs, dim=1)
+            #return torch.argmax(probs, dim=1)
+
+            # sample from the distribution or take the most likely
+            if sample:
+                action = torch.multinomial(probs, num_samples=1)
+            else:
+                _, action = torch.topk(probs, k=1, dim=-1)
+        
+        return action

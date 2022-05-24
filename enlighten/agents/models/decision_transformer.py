@@ -28,7 +28,7 @@ class DecisionTransformer(nn.Module):
         
         self.state_dim = state_dim
         self.act_dim = act_dim
-        self.max_length = max_length
+        self.max_length = max_length  # context length
 
         self.hidden_size = hidden_size
         config = transformers.GPT2Config(
@@ -58,7 +58,7 @@ class DecisionTransformer(nn.Module):
     # input: a sequence of (s,a,r,t) of length max_length
     # output: a sequence of predicted (s,a,r) of length max_length
     # for training
-    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None):
+    def forward(self, states, actions, returns_to_go, timesteps, attention_mask=None):
 
         batch_size, seq_length = states.shape[0], states.shape[1]
 
@@ -161,8 +161,9 @@ class DecisionTransformer(nn.Module):
         else:
             attention_mask = None
 
-        # forward the sequence
-        action_preds = self.forward(
-            states, actions, None, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
+        # forward the sequence with no grad
+        with torch.no_grad():
+            action_preds = self.forward(
+                states, actions, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
 
         return action_preds[0,-1]

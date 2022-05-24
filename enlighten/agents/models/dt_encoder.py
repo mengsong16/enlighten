@@ -184,6 +184,15 @@ class GoalEncoder(nn.Module):
     def forward(self, goals):
         return self.model(goals)
 
+class DiscreteActionDecoder(nn.Module):
+    def __init__(self, input_size, action_dim):
+        super().__init__()
+        # no bias
+        self.model = torch.nn.Linear(input_size, action_dim, bias=False)
+
+    def forward(self, hidden_states):
+        return self.model(hidden_states)  # logits
+
 if __name__ == "__main__":
     rgb_space = gym.spaces.Box(
             low=0,

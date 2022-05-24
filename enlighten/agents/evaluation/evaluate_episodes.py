@@ -54,12 +54,12 @@ def evaluate_episode_rtg(
         actions = torch.cat([actions, torch.zeros((1, act_dim), device=device)], dim=0)
         rewards = torch.cat([rewards, torch.zeros(1, device=device)])
 
-        # predict according to the sequence from (s0,a0,r0) up to now
+        # predict according to the sequence from (s0,a0,r0) up to now (context)
         # need to input timesteps as positional embedding
         action = model.get_action(
             (states.to(dtype=torch.float32) - state_mean) / state_std,
             actions.to(dtype=torch.float32),
-            rewards.to(dtype=torch.float32),
+            #rewards.to(dtype=torch.float32),
             target_return.to(dtype=torch.float32),
             timesteps.to(dtype=torch.long),
         )

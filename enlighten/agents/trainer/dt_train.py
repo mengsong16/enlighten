@@ -54,10 +54,6 @@ def experiment(
     else:
         raise NotImplementedError
 
-    if model_type == 'bc':
-        # only keep the first target
-        env_targets = env_targets[:1]  # since BC ignores target, no need for different evaluations
-
     state_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
 
@@ -154,14 +150,13 @@ def experiment(
         optimizer,
         lambda steps: min((steps+1)/warmup_steps, 1)
     )
-
+    
     # create trainer
     trainer = SequenceTrainer(
         model=model,
         optimizer=optimizer,
         batch_size=batch_size,
         scheduler=scheduler,
-        loss_fn=lambda a_hat, a: torch.mean((a_hat - a)**2), # only use l2 loss on actions
         eval_fns=[eval_episodes(tar) for tar in env_targets],
     )
     

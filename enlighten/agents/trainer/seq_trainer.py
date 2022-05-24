@@ -1,14 +1,16 @@
 import numpy as np
 import torch
 import time
+import random
+from torch.nn import functional as F
 
 # train seq2seq imitation learning
 class SequenceTrainer():
-    def __init__(self, model, optimizer, batch_size, loss_fn, scheduler=None, eval_fns=None):
+    def __init__(self, model, optimizer, batch_size, scheduler=None, eval_fns=None):
         self.model = model
         self.optimizer = optimizer
         self.batch_size = batch_size
-        self.loss_fn = loss_fn
+        
         self.scheduler = scheduler
         self.eval_fns = [] if eval_fns is None else eval_fns
         self.diagnostics = dict()
@@ -75,7 +77,7 @@ class SequenceTrainer():
         action_target = action_target.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
 
         # loss is evaluated only on actions
-        loss = self.loss_fn(action_preds, action_target)
+        loss =  F.cross_entropy(action_preds, action_target)
 
         self.optimizer.zero_grad()
         # compute weight gradients

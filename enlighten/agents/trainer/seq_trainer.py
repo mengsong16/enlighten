@@ -77,6 +77,7 @@ class SequenceTrainer():
         action_target = action_target.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
 
         # loss is evaluated only on actions
+        # action_target are ground truth action indices (not one-hot vectors)
         loss =  F.cross_entropy(action_preds, action_target)
 
         self.optimizer.zero_grad()

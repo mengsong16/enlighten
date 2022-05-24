@@ -5,7 +5,7 @@ import torch.nn as nn
 import transformers
 
 from enlighten.agents.models.gpt2 import GPT2Model
-from enlighten.agents.models.dt_encoder import ObservationEncoder, ReturnToGoEncoder, GoalEncoder, ActionEncoder, TimestepEncoder
+from enlighten.agents.models.dt_encoder import ObservationEncoder, ReturnToGoEncoder, GoalEncoder, ActionEncoder, TimestepEncoder, DiscreteActionDecoder
 
 # based on GPT2
 class DecisionTransformer(nn.Module):
@@ -21,7 +21,6 @@ class DecisionTransformer(nn.Module):
             hidden_size,
             max_length=None,
             max_ep_len=4096,
-            action_tanh=True,
             **kwargs
     ):
         super().__init__()
@@ -43,17 +42,19 @@ class DecisionTransformer(nn.Module):
 
         # four heads for input (training)
         # timestep is used as positional embedding
-        self.embed_timestep = nn.Embedding(max_ep_len, hidden_size)
-        self.embed_return = torch.nn.Linear(1, hidden_size)
-        self.embed_state = torch.nn.Linear(self.state_dim, hidden_size)
-        self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
+        self.timestep_encoder = TimestepEncoder(max_ep_len, hidden_size)
+        self.return_to_go_encoder = ReturnToGoEncoder(hidden_size)
+        self.obs_encoder = ObservationEncoder(self.observation_space, hidden_size)
+        self.action_decoder = ActionEncoder(self.act_dim, hidden_size)
+        
         # used to embed the concatenated input
-        self.embed_ln = nn.LayerNorm(hidden_size)
+        self.concat_embed_ln = nn.LayerNorm(hidden_size)
 
         # one heads for output (training)
-        self.predict_action = nn.Sequential(
-            *([nn.Linear(hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
-        )
+        self.action_decoder = DiscreteActionDecoder(hidden_size, self.act_dim)
+
+        # acton logits --> action prob
+        self.softmax = nn.Softmax(dim=1)
 
     # input: a sequence of (s,a,r,t) of length max_length
     # output: a sequence of predicted (s,a,r) of length max_length
@@ -67,10 +68,10 @@ class DecisionTransformer(nn.Module):
             attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
 
         # embed each input modality with a different head
-        state_embeddings = self.embed_state(states)
-        action_embeddings = self.embed_action(actions)
-        returns_embeddings = self.embed_return(returns_to_go)
-        time_embeddings = self.embed_timestep(timesteps)
+        state_embeddings = self.obs_encoder(states)
+        action_embeddings = self.action_encoder(actions)
+        returns_embeddings = self.return_to_go_encoder(returns_to_go)
+        time_embeddings = self.timestep_encoder(timesteps)
 
         # time embeddings are treated similar to positional embeddings
         # append positional embedding to each input modality
@@ -87,8 +88,9 @@ class DecisionTransformer(nn.Module):
         stacked_inputs = torch.stack(
             (returns_embeddings, state_embeddings, action_embeddings), dim=1
         ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size)
+        
         # embed the concatenated input
-        stacked_inputs = self.embed_ln(stacked_inputs)
+        stacked_inputs = self.concat_embed_ln(stacked_inputs)
 
         # to make the attention mask fit the stacked inputs, have to stack it as well
         stacked_attention_mask = torch.stack(
@@ -112,12 +114,11 @@ class DecisionTransformer(nn.Module):
         # after permutation: [batch_size, 3, seq_length, hidden_size]
         x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
-        # get predictions
+        # get prediction logits
         # x[:,1] = x[:,1,:,:]
-        # predict action given state
-        action_preds = self.predict_action(x[:,1])  # predict next action given state (policy)
+        pred_action_logits = self.action_decoder(x[:,1])  # predict next action given state (policy)
 
-        return action_preds
+        return pred_action_logits
 
     # input a sequence of (r,s,t) of length max_length
     # only return the last action
@@ -163,7 +164,10 @@ class DecisionTransformer(nn.Module):
 
         # forward the sequence with no grad
         with torch.no_grad():
-            action_preds = self.forward(
+            pred_action_seq_logits = self.forward(
                 states, actions, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
-
-        return action_preds[0,-1]
+            
+            pred_last_action_logit = pred_action_seq_logits[0,-1]
+            probs = self.softmax(pred_last_action_logit)
+            # greedily pick the action
+            return torch.argmax(probs, dim=1)

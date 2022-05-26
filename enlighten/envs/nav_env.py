@@ -1031,17 +1031,21 @@ class NavEnv(gym.Env):
         return top_down_map
 
     # return geodesic distance from current location to goal location, if no path, return Eulidean distance
+    # used by distance to goal measure
     def get_current_distance(self):
         if self.sim.pathfinder.is_loaded:
             found_path, geodesic_distance = self.get_geodesic_distance_single_goal()
             if found_path:
                 current_measure = geodesic_distance
             else:    
+                print("===> Error: shortest path not found, use Euclidean distance instead")
                 current_measure = self.get_euclidean_distance()
 
             return current_measure
         else:
-            return self.get_euclidean_distance()    
+            print("===> Error: path finder is not loaded, but we need to compute geodesic distance to the goal")
+            exit()
+            #return self.get_euclidean_distance()    
 
     def get_reward(self, current_train_state_count, current_episode_state_count):
         extrinsic_reward = self.measurements.measures["point_goal_reward"].get_metric()

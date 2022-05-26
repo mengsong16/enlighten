@@ -62,6 +62,9 @@ class MultiNavEnv(NavEnv):
         
         # load goal radius
         self.goal_radius = float(self.config.get("success_distance"))
+
+        # seed action and observation space
+        self.seed_action_obs_space()
         
     
     def create_sim_cfg(self, scene_id):
@@ -114,6 +117,11 @@ class MultiNavEnv(NavEnv):
 
         self.sim_config = habitat_sim.Configuration(sim_config, [self.agent_cfg])
 
+
+    def seed_action_obs_space(self):
+        """Set the random seed of the environment."""
+        self.action_space.seed(int(self.config.get('seed')))
+        self.observation_space.seed(int(self.config.get('seed')))
 
     def get_episode_start_position(self, episode):
         return np.array(episode.start_position, dtype=np.float32)

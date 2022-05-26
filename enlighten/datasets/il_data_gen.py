@@ -62,6 +62,7 @@ def shortest_path_follower(yaml_name):
 
         # not empty
         if env.optimal_action_seq:
+            print("Distance to goal at trajectory end: %f"%(env.get_current_distance()))
             assert done == True, "done should be true after following the shortest path"
             assert env.is_success() == True, "success should be true after following the shortest path"
         print("===============================")

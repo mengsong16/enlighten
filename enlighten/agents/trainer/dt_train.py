@@ -17,6 +17,8 @@ from enlighten.utils.path import *
 from enlighten.utils.config_utils import parse_config
 from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.agents.common.other import get_device
+from enlighten.datasets.behavior_dataset import BehaviorDataset
+from enlighten.envs.multi_nav_env import MultiNavEnv
 
 class DTTrainer:
     def __init__(self, config_filename="imitation_learning.yaml"):
@@ -29,7 +31,8 @@ class DTTrainer:
         self.seed = int(self.config.get("seed"))
         set_seed_except_env_seed(self.seed)
 
-        #self.env = create_env(self.config.get("env_id")) 
+        # create env
+        self.env = MultiNavEnv(config_file=config_filename) 
 
         # set device
         self.device = get_device(self.config)
@@ -61,38 +64,12 @@ class DTTrainer:
             dir=os.path.join(root_path)
         )
 
-    # parse all path information into separate lists of 
-    # states (observations), traj_lens, returns
-    def parse_trajectories(self, trajectories):
-        states, traj_lens, returns = [], [], []
-        for path in trajectories:
-            # the last step: return R, previous steps: 0
-            if mode == 'delayed':  # delayed: all rewards moved to end of trajectory
-                path['rewards'][-1] = path['rewards'].sum()
-                path['rewards'][:-1] = 0.
-            states.append(path['observations'])
-            traj_lens.append(len(path['observations']))
-            # return is not discounted
-            returns.append(path['rewards'].sum())
-        
-        traj_lens, returns = np.array(traj_lens), np.array(returns)
-        states = np.concatenate(states, axis=0)
-
-        return states, traj_lens, returns
+    
 
     # self.config.get: config of wandb
     def train(self):
-        # load all trajectories from a specific dataset
-        dataset_path = os.path.join(data_path, f'{env_name}-{dataset}-v2.pkl')
-        with open(dataset_path, 'rb') as f:
-            trajectories = pickle.load(f)
-
-        # parse loaded trajectories into separate lists
-        states, traj_lens, returns = self.parse_trajectories(trajectories)
         
         # print basic info of experiment run
-        # total number of steps of all trajectories
-        num_timesteps = sum(traj_lens)
         print('=' * 50)
         print(f'Starting new experiment: {env_name} {dataset}')
         print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')

@@ -105,7 +105,7 @@ def evaluate_episode_rtg(
     return episode_return, episode_length
 
 # evaluate during training
-def eval_episodes(target_rew):
+def eval_episodes(target_rew, num_eval_episodes):
     # collect returns and lengths for num_eval_episodes episodes
     
     returns, lengths = [], []

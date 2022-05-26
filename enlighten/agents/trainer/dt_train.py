@@ -61,15 +61,9 @@ class DTTrainer:
             dir=os.path.join(root_path)
         )
 
-    # self.config.get: config of wandb
-    def train(self):
-        # load all trajectories from a specific dataset
-        dataset_path = os.path.join(data_path, f'{env_name}-{dataset}-v2.pkl')
-        with open(dataset_path, 'rb') as f:
-            trajectories = pickle.load(f)
-
-        # parse all path information into separate lists of 
-        # states (observations), traj_lens, returns
+    # parse all path information into separate lists of 
+    # states (observations), traj_lens, returns
+    def parse_trajectories(self, trajectories):
         states, traj_lens, returns = [], [], []
         for path in trajectories:
             # the last step: return R, previous steps: 0
@@ -80,18 +74,25 @@ class DTTrainer:
             traj_lens.append(len(path['observations']))
             # return is not discounted
             returns.append(path['rewards'].sum())
+        
         traj_lens, returns = np.array(traj_lens), np.array(returns)
-
-        # compute mean and standard deviation over states from all trajectories
-        # used for input normalization
-        # avoid 0 by adding 1e-6
         states = np.concatenate(states, axis=0)
-        state_mean, state_std = np.mean(states, axis=0), np.std(states, axis=0) + 1e-6
 
+        return states, traj_lens, returns
+
+    # self.config.get: config of wandb
+    def train(self):
+        # load all trajectories from a specific dataset
+        dataset_path = os.path.join(data_path, f'{env_name}-{dataset}-v2.pkl')
+        with open(dataset_path, 'rb') as f:
+            trajectories = pickle.load(f)
+
+        # parse loaded trajectories into separate lists
+        states, traj_lens, returns = self.parse_trajectories(trajectories)
+        
+        # print basic info of experiment run
         # total number of steps of all trajectories
         num_timesteps = sum(traj_lens)
-
-        # print basic info of experiment run
         print('=' * 50)
         print(f'Starting new experiment: {env_name} {dataset}')
         print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')
@@ -99,37 +100,12 @@ class DTTrainer:
         print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
         print('=' * 50)
 
-        K = int(self.config.get('K'))
-        batch_size = int(self.config.get('batch_size'))
-        num_eval_episodes = int(self.config.get('num_eval_episodes'))
-        pct_traj = float(self.config.get.get('pct_traj')) # percentage of top trajectories
-
-        # only train on top pct_traj trajectories (for BC experiment)
-        num_timesteps = max(int(pct_traj*num_timesteps), 1)
-        # sort trajectories from lowest to highest return
-        sorted_inds = np.argsort(returns)  # lowest to highest
-        num_trajectories = 1
-        # get the number of total timesteps of top pct_traj trajectories
-        timesteps = traj_lens[sorted_inds[-1]]
-        # ind iterate from the last to the first
-        ind = len(trajectories) - 2
-        # the total steps should not exceed num_timesteps
-        while ind >= 0 and timesteps + traj_lens[sorted_inds[ind]] < num_timesteps:
-            timesteps += traj_lens[sorted_inds[ind]]
-            num_trajectories += 1
-            ind -= 1
-        # only keep the top percentage trajectory indices    
-        sorted_inds = sorted_inds[-num_trajectories:]
-
-        # used to reweight sampling so we sample according to timesteps instead of trajectories
-        # p_sample is a list of step percentage for each trajectory
-        p_sample = traj_lens[sorted_inds] / sum(traj_lens[sorted_inds])
-
-        # create model
+        
+        # create model and move it to the correct device
         model = DecisionTransformer(
             state_dim=env.observation_space,
             act_dim=int(self.config.get("action_number")),
-            max_length=K,
+            max_length=int(self.config.get('K')),
             max_ep_len=int(self.config.get("max_ep_len")),  
             hidden_size=int(self.config.get('embed_dim')), # parameters starting from here will be passed to gpt2
             n_layer=int(self.config.get('n_layer')),
@@ -140,8 +116,6 @@ class DTTrainer:
             resid_pdrop=float(self.config.get('dropout')),
             attn_pdrop=float(self.config.get('dropout')),
         )
-        
-
         model = model.to(device=self.device)
 
         # create optimizer: AdamW
@@ -160,7 +134,7 @@ class DTTrainer:
         trainer = SequenceTrainer(
             model=model,
             optimizer=optimizer,
-            batch_size=batch_size,
+            batch_size=int(self.config.get('batch_size')),
             scheduler=scheduler,
             eval_fns=[eval_episodes(tar) for tar in env_targets],
         )

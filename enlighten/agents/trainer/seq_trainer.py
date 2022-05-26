@@ -30,7 +30,7 @@ class SequenceTrainer():
 
         # train for num_steps
         for _ in range(num_steps):
-            train_loss = self.train_step()
+            train_loss = self.train_one_step()
             train_losses.append(train_loss)
             if self.scheduler is not None:
                 self.scheduler.step()
@@ -64,7 +64,7 @@ class SequenceTrainer():
         return logs
 
     # train for one step
-    def train_step(self):
+    def train_one_step(self):
         states, actions, rewards, dones, rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
         action_target = torch.clone(actions)
 
@@ -104,14 +104,14 @@ class SequenceTrainer():
         return discount_cumsum
 
     # sample a batch
-    def get_batch(self, batch_size=256, max_len=K):
+    def get_batch(self, trajectories, max_ep_len, batch_size=256, max_len=K):
         # sample batch_size trajectories from the trajectory pool with replacement
         # prefer long trajectory
         batch_inds = np.random.choice(
             np.arange(num_trajectories),
             size=batch_size,
             replace=True,
-            p=p_sample,  # reweights so we sample according to timesteps
+            #p=p_sample,  # reweights so we sample according to timesteps
         )
 
         # separate a trajectory batch into state, action, reward, discounted return, timestep, mask batch
@@ -119,7 +119,8 @@ class SequenceTrainer():
         s, a, r, d, rtg, timesteps, mask = [], [], [], [], [], [], []
         for i in range(batch_size):
             # current trajectory
-            traj = trajectories[int(sorted_inds[batch_inds[i]])]
+            #traj = trajectories[int(sorted_inds[batch_inds[i]])]
+            traj = trajectories[int(batch_inds[i])]
             # randomly pick a segment of length max_len from current trajectory starting from state si
             si = random.randint(0, traj['rewards'].shape[0] - 1)
 

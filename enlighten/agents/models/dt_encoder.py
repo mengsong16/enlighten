@@ -108,8 +108,6 @@ class ObservationEncoder(nn.Module):
             self.fc
         )
         
-       
-        
         print(type(self.visual_encoder))
         summary(self.visual_encoder, (3,224,224), device="cpu")
         

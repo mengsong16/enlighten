@@ -80,7 +80,7 @@ max_ep_len: 128
 
 # training
 batch_size: 64
-pct_traj: 1.0
+#pct_traj: 1.0
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 warmup_steps: 10000

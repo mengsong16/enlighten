@@ -4,6 +4,7 @@ split: train  #[train, val, val_mini]
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode data store
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson/{split}.pkl"
 
 # experiments
 experiment_name: "test"
@@ -69,7 +70,7 @@ seed: 1
 gpu_id: 0
 
 # dt
-K: 20
+K: 20 # context length
 embed_dim: 128
 n_layer: 3
 n_head: 1

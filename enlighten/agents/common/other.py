@@ -19,3 +19,11 @@ def discount_cumsum(self, x, gamma):
     for t in reversed(range(x.shape[0]-1)):
         discount_cumsum[t] = x[t] + gamma * discount_cumsum[t+1]
     return discount_cumsum
+
+def get_obs_channel_num(config):
+    obs_channel = 0
+    if config.get("color_sensor"):
+        obs_channel += 3
+    if config.get("depth_sensor"):
+        obs_channel += 1
+    return obs_channel

@@ -302,6 +302,8 @@ def test_env():
         for j in range(100):
             action = env.action_space.sample()
             obs, reward, done, info = env.step(action)
+            print(obs["color_sensor"].shape)
+            print(obs["pointgoal"].shape)
             #env.render()
 
         print("===============================")

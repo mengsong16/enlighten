@@ -19,7 +19,7 @@ class DecisionTransformer(nn.Module):
             state_dim,
             goal_dim,
             act_num,
-            goal_input, # True when using goal vector, False when using distance to goal (goal_dim=1)
+            goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
             hidden_size,
             max_ep_len,
             context_length=None,
@@ -31,7 +31,7 @@ class DecisionTransformer(nn.Module):
         self.goal_dim = goal_dim
         self.act_num = act_num
         self.context_length = context_length  # context length
-        self.goal_input = goal_input
+        self.goal_form = goal_form
 
         self.hidden_size = hidden_size
         config = transformers.GPT2Config(
@@ -48,10 +48,13 @@ class DecisionTransformer(nn.Module):
         # timestep is used for positional embedding
         self.timestep_encoder = TimestepEncoder(max_ep_len, hidden_size)
         
-        if self.goal_input:
+        if self.goal_form == "rel_goal":
             self.goal_encoder = GoalEncoder(self.goal_dim, hidden_size)
-        else:
+        elif self.goal_form == "distance_to_goal":
             self.distance_to_goal_encoder = DistanceToGoalEncoder(hidden_size)
+        else:
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit()    
     
         self.obs_encoder = ObservationEncoder(self.observation_space, hidden_size)
         self.action_encoder = DiscreteActionEncoder(self.act_num, hidden_size)
@@ -79,10 +82,13 @@ class DecisionTransformer(nn.Module):
         # embed each input modality with a different head
         observation_embeddings = self.obs_encoder(observations)
         action_embeddings = self.action_encoder(actions)
-        if self.goal_input:
+        if self.goal_form == "rel_goal":
             goal_embeddings = self.goal_encoder(goals)
-        else:
+        elif self.goal_form == "distance_to_goal":
             goal_embeddings = self.distance_to_goal_encoder(goals)
+        else:
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit()    
 
         time_embeddings = self.timestep_encoder(timesteps)
 
@@ -138,7 +144,7 @@ class DecisionTransformer(nn.Module):
         # pad observation with 0
         op = torch.zeros((batch_size, padding_length, self.obs_channel, self.obs_height, self.obs_width), device=device)
         # pad action with 0 (stop)
-        ap = torch.ones((batch_size, padding_length), device=device)
+        ap = torch.zeros((batch_size, padding_length), device=device)
         # pad goal with 0
         gp = torch.zeros((batch_size, padding_length, self.goal_dim), device=device)
         # pad timestep with 0
@@ -170,13 +176,13 @@ class DecisionTransformer(nn.Module):
             # only attend to the valid part (non padding part)
             # 0 - not attend, 1 - attend
             attention_mask = torch.ones(1, seq_length)
-            # left pad all tokens to context length
+            # right pad all tokens to context length
             op, ap, gp, tp, mp = self.get_padding(batch_size, self.context_length-seq_length, observations.device)
-            observations = torch.cat([op, observations], dim=1).to(dtype=torch.float32)  
-            actions = torch.cat([ap, actions], dim=1).to(dtype=torch.float32) 
-            goals = torch.cat([gp, goals], dim=1).to(dtype=torch.float32)
-            timesteps = torch.cat([tp, timesteps], dim=1).to(dtype=torch.long)
-            attention_mask = torch.cat([mp, attention_mask], dim=1).to(dtype=torch.long)
+            observations = torch.cat([observations, op], dim=1).to(dtype=torch.float32)  
+            actions = torch.cat([actions, ap], dim=1).to(dtype=torch.float32) 
+            goals = torch.cat([goals, gp], dim=1).to(dtype=torch.float32)
+            timesteps = torch.cat([timesteps, tp], dim=1).to(dtype=torch.long)
+            attention_mask = torch.cat([attention_mask, mp], dim=1).to(dtype=torch.long)
         else:
             attention_mask = None
 

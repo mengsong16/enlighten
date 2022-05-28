@@ -20,7 +20,7 @@ class BehaviorDataset:
             exit()
         self.obs_width = int(self.config.get("image_width")) 
         self.obs_height = int(self.config.get("image_height"))
-        self.goal_input = self.config.get("goal_input")
+        self.goal_form = self.config.get("goal_form")
 
         self.load_trajectories()
 
@@ -77,16 +77,16 @@ class BehaviorDataset:
             # mask = 1 (attend to not paddding part) until tlen
             mask.append(np.ones((1, tlen)))
 
-            # left padding current segment to self.context_length if shorter than self.context_length
+            # right padding current segment to self.context_length if shorter than self.context_length
             op, ap, gp, dp, dtgp, tp, mp = self.get_padding(self.context_length - tlen)
              
-            o[-1] = np.concatenate([op, o[-1]], axis=1)
-            a[-1] = np.concatenate([ap, a[-1]], axis=1)
-            g[-1] = np.concatenate([gp, g[-1]], axis=1)
-            d[-1] = np.concatenate([dp, d[-1]], axis=1)
-            dtg[-1] = np.concatenate([dtgp, dtg[-1]], axis=1)
-            timesteps[-1] = np.concatenate([tp, timesteps[-1]], axis=1)
-            mask[-1] = np.concatenate([mp, mask[-1]], axis=1)
+            o[-1] = np.concatenate([o[-1], op],  axis=1)
+            a[-1] = np.concatenate([a[-1], ap],  axis=1)
+            g[-1] = np.concatenate([g[-1], gp], axis=1)
+            d[-1] = np.concatenate([d[-1], dp],  axis=1)
+            dtg[-1] = np.concatenate([dtg[-1], dtgp], axis=1)
+            timesteps[-1] = np.concatenate([timesteps[-1], tp], axis=1)
+            mask[-1] = np.concatenate([mask[-1], mp], axis=1)
 
         # numpy to torch tensor
         o = torch.from_numpy(np.concatenate(o, axis=0)).to(dtype=torch.float32, device=self.device)
@@ -97,17 +97,20 @@ class BehaviorDataset:
         timesteps = torch.from_numpy(np.concatenate(timesteps, axis=0)).to(dtype=torch.long, device=self.device)
         mask = torch.from_numpy(np.concatenate(mask, axis=0)).to(device=self.device)
 
-        if self.goal_input:
+        if self.goal_form == "rel_goal":
             return o, a, g, timesteps, mask
+        elif self.goal_form == "distance_to_goal":
+            return o, a, dtg, timesteps, mask
         else:
-            return o, a, dtg, timesteps, mask  
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit()  
 
     # get padding as numpy array
     def get_padding(self, padding_length):
         # pad observation with 0
         op = np.zeros((1, padding_length, self.obs_channel, self.obs_height, self.obs_width))
         # pad action with 0 (stop)
-        ap = np.ones((1, padding_length))
+        ap = np.zeros((1, padding_length))
         # pad goal with 0 
         gp = np.zeros((1, padding_length, self.goal_dim))
         # pad dones with 2

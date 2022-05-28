@@ -73,7 +73,7 @@ class DTTrainer:
         model = DecisionTransformer(
             state_dim=self.env.observation_space,
             goal_dim=int(self.config.get("goal_dimension")),
-            goal_input=self.config.get("goal_input"),
+            goal_form=self.config.get("goal_form"),
             act_num=int(self.config.get("action_number")),
             context_length=int(self.config.get('K')),
             max_ep_len=int(self.config.get("max_ep_len")),  

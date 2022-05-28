@@ -149,31 +149,38 @@ class ObservationEncoder(nn.Module):
 
         return self.visual_encoder(vision_inputs)
 
+# adapt from dt for gym
 class TimestepEncoder(nn.Module):
     def __init__(self, max_len_episode, output_size):
         super().__init__()
+        # a lookup table for the embeddings by index
         self.model = nn.Embedding(max_len_episode, output_size)
 
     def forward(self, timesteps):
         super().__init__()
         return self.model(timesteps)
 
-class ReturnToGoEncoder(nn.Module):
+# adapt from return to go encoder from dt for gym
+class DistanceToGoalEncoder(nn.Module):
     def __init__(self, output_size):
         super().__init__()
+        
         self.model = torch.nn.Linear(1, output_size)
 
     def forward(self, RtGs):
         return self.model(RtGs)
 
-class ActionEncoder(nn.Module):
-    def __init__(self, action_dim, output_size):
+# adapt from action encoder in ppo
+class DiscreteActionEncoder(nn.Module):
+    def __init__(self, num_actions, output_size):
         super().__init__()
-        self.model = torch.nn.Linear(action_dim, output_size)
+        # a lookup table for the embeddings by index
+        self.model = nn.Embedding(num_actions, output_size)
 
     def forward(self, actions):
         return self.model(actions)
 
+# relative goal, adapt from goal encoder in ppo
 class GoalEncoder(nn.Module):
     def __init__(self, goal_dim, output_size):
         super().__init__()
@@ -182,11 +189,12 @@ class GoalEncoder(nn.Module):
     def forward(self, goals):
         return self.model(goals)
 
+# adapt from action decoder from dt for atari
 class DiscreteActionDecoder(nn.Module):
-    def __init__(self, input_size, action_dim):
+    def __init__(self, input_size, action_number):
         super().__init__()
         # no bias
-        self.model = torch.nn.Linear(input_size, action_dim, bias=False)
+        self.model = torch.nn.Linear(input_size, action_number, bias=False)
 
     def forward(self, hidden_states):
         return self.model(hidden_states)  # logits

@@ -5,7 +5,7 @@ import torch.nn as nn
 import transformers
 
 from enlighten.agents.models.gpt2 import GPT2Model
-from enlighten.agents.models.dt_encoder import ObservationEncoder, ReturnToGoEncoder, GoalEncoder, ActionEncoder, TimestepEncoder, DiscreteActionDecoder
+from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoalEncoder, GoalEncoder, DiscreteActionEncoder, TimestepEncoder, DiscreteActionDecoder
 
 # based on GPT2
 class DecisionTransformer(nn.Module):
@@ -17,17 +17,21 @@ class DecisionTransformer(nn.Module):
     def __init__(
             self,
             state_dim,
-            act_dim,
+            goal_dim,
+            act_num,
             hidden_size,
-            max_length=None,
+            goal_input, # True when use goal vector, False when use distance to goal
+            context_length=None,
             max_ep_len=4096,
             **kwargs
     ):
         super().__init__()
         
         self.state_dim = state_dim
-        self.act_dim = act_dim
-        self.max_length = max_length  # context length
+        self.goal_dim = goal_dim
+        self.act_num = act_num
+        self.context_length = context_length  # context length
+        self.goal_input = goal_input
 
         self.hidden_size = hidden_size
         config = transformers.GPT2Config(
@@ -40,53 +44,62 @@ class DecisionTransformer(nn.Module):
         # is that the positional embeddings are removed (since we'll add those ourselves)
         self.transformer = GPT2Model(config)
 
-        # four heads for input (training)
-        # timestep is used as positional embedding
+        # four heads for input (training): o,a,g,t
+        # timestep is used for positional embedding
         self.timestep_encoder = TimestepEncoder(max_ep_len, hidden_size)
-        self.return_to_go_encoder = ReturnToGoEncoder(hidden_size)
+        
+        if self.goal_input:
+            self.goal_encoder = GoalEncoder(self.goal_dim, hidden_size)
+        else:
+            self.distance_to_goal_encoder = DistanceToGoalEncoder(hidden_size)
+    
         self.obs_encoder = ObservationEncoder(self.observation_space, hidden_size)
-        self.action_decoder = ActionEncoder(self.act_dim, hidden_size)
+        self.action_encoder = DiscreteActionEncoder(self.act_num, hidden_size)
         
         # used to embed the concatenated input
         self.concat_embed_ln = nn.LayerNorm(hidden_size)
 
         # one heads for output (training)
-        self.action_decoder = DiscreteActionDecoder(hidden_size, self.act_dim)
+        self.action_decoder = DiscreteActionDecoder(hidden_size, self.act_num)
 
         # acton logits --> action prob
         self.softmax = nn.Softmax(dim=-1)
 
-    # input: a sequence of (s,a,r,t) of length max_length
-    # output: a sequence of predicted (s,a,r) of length max_length
+    # input: a sequence of (o,a,g,t) of length context_length
+    # output: a sequence of predicted (o,a,g) of length context_length
     # for training
-    def forward(self, states, actions, returns_to_go, timesteps, attention_mask=None):
+    def forward(self, observations, actions, goals, timesteps, attention_mask=None):
 
-        batch_size, seq_length = states.shape[0], states.shape[1]
+        batch_size, seq_length = observations.shape[0], observations.shape[1]
 
         if attention_mask is None:
             # attention mask for GPT: 1 if can be attended to, 0 if not
             attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
 
         # embed each input modality with a different head
-        state_embeddings = self.obs_encoder(states)
+        observation_embeddings = self.obs_encoder(observations)
         action_embeddings = self.action_encoder(actions)
-        returns_embeddings = self.return_to_go_encoder(returns_to_go)
+        if self.goal_input:
+            goal_embeddings = self.goal_encoder(goals)
+        else:
+            goal_embeddings = self.distance_to_goal_encoder(goals)
+
         time_embeddings = self.timestep_encoder(timesteps)
 
         # time embeddings are treated similar to positional embeddings
         # append positional embedding to each input modality
-        state_embeddings = state_embeddings + time_embeddings
+        observation_embeddings = observation_embeddings + time_embeddings
         action_embeddings = action_embeddings + time_embeddings
-        returns_embeddings = returns_embeddings + time_embeddings
+        goal_embeddings = goal_embeddings + time_embeddings
 
-        # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
-        # which works nice in an autoregressive sense since states predict actions
-        # stack (r,s,a) for each step
+        # this makes the sequence look like (g_1, o_1, a_1, g_2, o_2, a_2, ...)
+        # which works nice in an autoregressive sense since observations predict actions
+        # stack (g,o,a) for each step
         # before permutation: [batch_size, 3, seq_length, hidden_size] (dim 1 is a new dim)
         # after permutation: [batch_size, seq_length, 3, hidden_size]
         # after reshape: sequence length becomes 3*seq_length
         stacked_inputs = torch.stack(
-            (returns_embeddings, state_embeddings, action_embeddings), dim=1
+            (goal_embeddings, observation_embeddings, action_embeddings), dim=1
         ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size)
         
         # embed the concatenated input
@@ -120,52 +133,57 @@ class DecisionTransformer(nn.Module):
 
         return pred_action_logits
 
-    # input a sequence of (r,s,t) of length max_length
+    # get padding as numpy array
+    def get_padding(self, batch_size, padding_length, device):
+        # pad observation with 0
+        op = torch.zeros((batch_size, padding_length, self.obs_channel, self.obs_height, self.obs_width), device=device)
+        # pad action with 0 (stop)
+        ap = torch.ones((batch_size, padding_length), device=device)
+        # pad goal with 0
+        gp = torch.zeros((batch_size, padding_length, self.goal_dim), device=device)
+        # pad timestep with 0
+        tp = torch.zeros((batch_size, padding_length), device=device)
+        # pad mask with 0 (not attend to)
+        mp = torch.zeros((1, padding_length), device=device)
+
+        return op, ap, gp, tp, mp
+
+
+    # input a sequence of (g,s,t) of length context_length
     # only return the last action
     # for evaluation
-    def get_action(self, states, actions, returns_to_go, timesteps, sample, **kwargs):
-
-        states = states.reshape(1, -1, self.state_dim)
-        actions = actions.reshape(1, -1, self.act_dim)
-        returns_to_go = returns_to_go.reshape(1, -1, 1)
+    def get_action(self, observations, actions, goals, timesteps, sample, **kwargs):
+        observations = observations.reshape(1, -1, self.state_dim)
+        actions = actions.reshape(1, -1)
+        goals = goals.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)
 
-        if self.max_length is not None:
-            states = states[:,-self.max_length:]
-            actions = actions[:,-self.max_length:]
-            returns_to_go = returns_to_go[:,-self.max_length:]
-            timesteps = timesteps[:,-self.max_length:]
+        if self.context_length is not None:
+            observations = observations[:,-self.context_length:]
+            actions = actions[:,-self.context_length:]
+            goals = goals[:,-self.context_length:]
+            timesteps = timesteps[:,-self.context_length:]
+
+            batch_size = observations.shape[0]
+            seq_length = observations.shape[1]
 
             # only attend to the valid part (non padding part)
             # 0 - not attend, 1 - attend
-            attention_mask = torch.cat([torch.zeros(self.max_length-states.shape[1]), torch.ones(states.shape[1])])
-            attention_mask = attention_mask.to(dtype=torch.long, device=states.device).reshape(1, -1)
-            # pre-pad all tokens to sequence length
-            # pad state with 0 if shorter than max_length
-            states = torch.cat(
-                [torch.zeros((states.shape[0], self.max_length-states.shape[1], self.state_dim), device=states.device), states],
-                dim=1).to(dtype=torch.float32)
-            # pad action with 0 if shorter than max_length    
-            actions = torch.cat(
-                [torch.zeros((actions.shape[0], self.max_length - actions.shape[1], self.act_dim),
-                             device=actions.device), actions],
-                dim=1).to(dtype=torch.float32)
-            # pad rtg with 0 if shorter than max_length    
-            returns_to_go = torch.cat(
-                [torch.zeros((returns_to_go.shape[0], self.max_length-returns_to_go.shape[1], 1), device=returns_to_go.device), returns_to_go],
-                dim=1).to(dtype=torch.float32)
-            # pad timestep with 0 if shorter than max_length
-            timesteps = torch.cat(
-                [torch.zeros((timesteps.shape[0], self.max_length-timesteps.shape[1]), device=timesteps.device), timesteps],
-                dim=1
-            ).to(dtype=torch.long)
+            attention_mask = torch.ones(1, seq_length)
+            # left pad all tokens to context length
+            op, ap, gp, tp, mp = self.get_padding(batch_size, self.context_length-seq_length, observations.device)
+            observations = torch.cat([op, observations], dim=1).to(dtype=torch.float32)  
+            actions = torch.cat([ap, actions], dim=1).to(dtype=torch.float32) 
+            goals = torch.cat([gp, goals], dim=1).to(dtype=torch.float32)
+            timesteps = torch.cat([tp, timesteps], dim=1).to(dtype=torch.long)
+            attention_mask = torch.cat([mp, attention_mask], dim=1).to(dtype=torch.long)
         else:
             attention_mask = None
 
         # forward the sequence with no grad
         with torch.no_grad():
             pred_action_seq_logits = self.forward(
-                states, actions, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
+                observations, actions, goals, timesteps, attention_mask=attention_mask, **kwargs)
             
             # pluck the logits at the final step and scale by temperature 1.0
             pred_last_action_logit = pred_action_seq_logits[0,-1] 

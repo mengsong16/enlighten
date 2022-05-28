@@ -10,7 +10,6 @@ class BehaviorDataset:
     """
     def __init__(self, config, device):
         self.config = config  # config is a dictionary
-        self.load_trajectories()
         self.device = device
         self.context_length = int(self.config.get("K"))
         self.max_ep_len = int(self.config.get("max_ep_len")) 
@@ -21,10 +20,14 @@ class BehaviorDataset:
             exit()
         self.obs_width = int(self.config.get("image_width")) 
         self.obs_height = int(self.config.get("image_height"))
+        self.goal_input = self.config.get("goal_input")
+
+        self.load_trajectories()
 
     def load_trajectories(self):
         # load all trajectories from a specific dataset
         dataset_path = self.config.get("behavior_dataset_path")
+        print("Loading trajectories from "%(dataset_path))
         with open(dataset_path, 'rb') as f:
             self.trajectories = pickle.load(f)
 
@@ -34,7 +37,7 @@ class BehaviorDataset:
         
         
     # sample a batch
-    def get_batch(self, batch_size=256):
+    def get_batch(self, batch_size):
         # sample batch_size trajectories from the trajectory pool with no replacement
         batch_inds = np.random.choice(
             np.arange(self.num_trajectories),
@@ -53,7 +56,7 @@ class BehaviorDataset:
             # Note that if si+self.context_length exceed current traj length, only get elements until the episode ends
             o.append(traj['observations'][si:si + self.context_length].reshape(1, -1, self.obs_obs_channel, self.obs_height, self.obs_width))
             a.append(traj['actions'][si:si + self.context_length].reshape(1, -1))
-            g.append(traj['goals'][si:si + self.context_length].reshape(1, -1, self.goal_dim))
+            g.append(traj['rel_goals'][si:si + self.context_length].reshape(1, -1, self.goal_dim))
             d.append(traj['dones'][si:si + self.context_length].reshape(1, -1))
             dtg.append(traj['distance_to_goals'][si:si + self.context_length].reshape(1, -1))
 
@@ -86,7 +89,7 @@ class BehaviorDataset:
             mask[-1] = np.concatenate([mp, mask[-1]], axis=1)
 
         # numpy to torch tensor
-        s = torch.from_numpy(np.concatenate(s, axis=0)).to(dtype=torch.float32, device=self.device)
+        o = torch.from_numpy(np.concatenate(o, axis=0)).to(dtype=torch.float32, device=self.device)
         a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.float32, device=self.device)
         g = torch.from_numpy(np.concatenate(g, axis=0)).to(dtype=torch.float32, device=self.device)
         d = torch.from_numpy(np.concatenate(d, axis=0)).to(dtype=torch.long, device=self.device)
@@ -94,7 +97,10 @@ class BehaviorDataset:
         timesteps = torch.from_numpy(np.concatenate(timesteps, axis=0)).to(dtype=torch.long, device=self.device)
         mask = torch.from_numpy(np.concatenate(mask, axis=0)).to(device=self.device)
 
-        return o, a, g, d, dtg, timesteps, mask
+        if self.goal_input:
+            return o, a, g, timesteps, mask
+        else:
+            return o, a, dtg, timesteps, mask  
 
     # get padding as numpy array
     def get_padding(self, padding_length):

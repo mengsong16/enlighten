@@ -6,14 +6,16 @@ from torch.nn import functional as F
 
 # train seq2seq imitation learning
 class SequenceTrainer():
-    def __init__(self, model, optimizer, batch_size, scheduler=None, eval_fns=None):
+    def __init__(self, model, optimizer, batch_size, get_batch_fn, scheduler=None, eval_fns=None):
         self.model = model
         self.optimizer = optimizer
         self.batch_size = batch_size
         
+        
         self.scheduler = scheduler
         self.eval_fns = [] if eval_fns is None else eval_fns
         self.diagnostics = dict()
+        self.get_batch = get_batch_fn
 
         self.start_time = time.time()
 
@@ -41,6 +43,7 @@ class SequenceTrainer():
 
         # switch model to evaluation mode
         self.model.eval()
+        
         # evaluate by each evaluation function
         for eval_fn in self.eval_fns:
             outputs = eval_fn(self.model)
@@ -65,11 +68,11 @@ class SequenceTrainer():
 
     # train for one step
     def train_one_step(self):
-        states, actions, rewards, dones, rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
+        observations, actions, goals, timesteps, attention_mask = self.get_batch(self.batch_size)
         action_target = torch.clone(actions)
 
         action_preds = self.model.forward(
-            states, actions, rewards, rtg[:,:-1], timesteps, attention_mask=attention_mask,
+            observations, actions, goals, timesteps, attention_mask=attention_mask,
         )
 
         act_dim = action_preds.shape[2]

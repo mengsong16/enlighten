@@ -76,7 +76,9 @@ n_layer: 3
 n_head: 1
 activation_function: 'relu'
 dropout: 0.1
-max_ep_len: 128
+max_ep_len: 128 # 4096
+goal_input: true # true when using goal vector, false when using distance to goal
+
 
 
 # training

@@ -31,7 +31,7 @@ class DTTrainer:
         self.seed = int(self.config.get("seed"))
         set_seed_except_env_seed(self.seed)
 
-        # create env
+        # create env, for evaluation, not for training
         self.env = MultiNavEnv(config_file=config_filename) 
 
         # set device
@@ -64,25 +64,18 @@ class DTTrainer:
             dir=os.path.join(root_path)
         )
 
-    
-
     # self.config.get: config of wandb
     def train(self):
-        
-        # print basic info of experiment run
-        print('=' * 50)
-        print(f'Starting new experiment: {env_name} {dataset}')
-        print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')
-        print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
-        print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
-        print('=' * 50)
+        # load training data
+        train_dataset = BehaviorDataset(self.config, self.device)
 
-        
         # create model and move it to the correct device
         model = DecisionTransformer(
-            state_dim=env.observation_space,
-            act_dim=int(self.config.get("action_number")),
-            max_length=int(self.config.get('K')),
+            state_dim=self.env.observation_space,
+            goal_dim=int(self.config.get("goal_dimension")),
+            goal_input=self.config.get("goal_input"),
+            act_num=int(self.config.get("action_number")),
+            context_length=int(self.config.get('K')),
             max_ep_len=int(self.config.get("max_ep_len")),  
             hidden_size=int(self.config.get('embed_dim')), # parameters starting from here will be passed to gpt2
             n_layer=int(self.config.get('n_layer')),
@@ -112,8 +105,9 @@ class DTTrainer:
             model=model,
             optimizer=optimizer,
             batch_size=int(self.config.get('batch_size')),
+            get_batch_fn=train_dataset.get_batch(),
             scheduler=scheduler,
-            eval_fns=[eval_episodes(tar) for tar in env_targets],
+            eval_fns=[eval_episodes()],
         )
 
         # train for max_iters iterations

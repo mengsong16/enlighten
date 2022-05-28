@@ -19,10 +19,10 @@ class DecisionTransformer(nn.Module):
             state_dim,
             goal_dim,
             act_num,
+            goal_input, # True when using goal vector, False when using distance to goal (goal_dim=1)
             hidden_size,
-            goal_input, # True when use goal vector, False when use distance to goal
+            max_ep_len,
             context_length=None,
-            max_ep_len=4096,
             **kwargs
     ):
         super().__init__()

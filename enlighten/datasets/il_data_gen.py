@@ -86,30 +86,6 @@ def shortest_path_follower(yaml_name):
             assert env.is_success() == True, "success should be true after following the shortest path"
         print("===============================")
 
-
-        # dirname = os.path.join(
-        #     IMAGE_DIR, "shortest_path_example", "%02d" % episode
-        # )
-        # if os.path.exists(dirname):
-        #     shutil.rmtree(dirname)
-        # os.makedirs(dirname)
-        # print("Agent stepping around inside environment.")
-        # images = []
-        # while not env.habitat_env.episode_over:
-        #     best_action = follower.get_next_action(
-        #         env.habitat_env.current_episode.goals[0].position
-        #     )
-        #     if best_action is None:
-        #         break
-
-        #     observations, reward, done, info = env.step(best_action)
-        #     im = observations["rgb"]
-        #     top_down_map = draw_top_down_map(info, im.shape[0])
-        #     output_im = np.concatenate((im, top_down_map), axis=1)
-        #     images.append(output_im)
-        # images_to_video(images, dirname, "trajectory")
-        #print("Episode finished")
-
 # pointgoal dataset split: {'train', 'val', 'val_mini'}
 def generate_pointgoal_dataset_meta(yaml_name, split):
     episode_dataset = load_pointgoal_dataset(yaml_name, split)
@@ -160,66 +136,309 @@ def load_pointgoal_dataset_meta(config, split):
 
     return pointgoal_meta, scene_num, episode_num
 
-# pointgoal dataset split: {'train', 'val', 'val_mini'}
-def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split, behavior_dataset_split,
-    sample_scene_num, sample_epidode_num):
-    config_file=os.path.join(config_path, yaml_name)
-    config = parse_config(config_file)
+# make sure num_episode is divisible by num_scene
+def check_episode_per_scene(train_scene_num, train_episode_num, 
+    across_scene_val_scene_num, across_scene_val_episode_num,
+    same_scene_val_episode_num,
+    across_scene_test_scene_num, across_scene_test_episode_num,
+    same_scene_test_episode_num):
+    assert train_episode_num % train_scene_num == 0, "Error: train: episode num is not divisible by scene num"
+    assert across_scene_val_episode_num % across_scene_val_scene_num == 0, "Error: Across scene val: episode num is not divisible by scene num"
+    assert across_scene_test_episode_num % across_scene_test_scene_num == 0, "Error: Across scene test: episode num is not divisible by scene num"
+    assert same_scene_val_episode_num % train_scene_num == 0, "Error: Same scene val: episode num is not divisible by train scene num"
+    assert same_scene_test_episode_num % train_scene_num == 0, "Error: Same scene test: episode num is not divisible by train scene num"
 
-    pointgoal_meta, scene_num, episode_num = load_pointgoal_dataset_meta(config, pointgoal_dataset_split)
-
-    behavior_dataset_path = config.get("behavior_dataset_path")
-    behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")
-
-    # sample scenes
-    if sample_scene_num <= scene_num:
-        scene_list = pointgoal_meta.keys()
-        selected_scenes = random.sample(scene_list, sample_scene_num)
-        print("Selected scenes: %s"%(selected_scenes))
-    else:
-        print("Error: want to sample %d from %d scenes"%(sample_scene_num, scene_num))  
-        exit()
-    
-    if sample_epidode_num > episode_num:
-        print("Error: want to sample %d from %d episodes"%(sample_epidode_num, episode_num))  
-        exit()
-
-    sampled_episode_num = 0
-    sampled_episodes = []
-    for i, scene_id in enumerate(selected_scenes):
-        # not last batch
-        if i < sample_scene_num - 1:
-            batch_size = sample_epidode_num // sample_scene_num
-        # last batch
-        else:
-            batch_size = sample_epidode_num - sampled_episode_num
-        
-        #print(batch_size)
-        sampled_episode_num += batch_size
-
-        # sample episode in each scene
-        cur_scene_data = pointgoal_meta[scene_id]
-        #print(cur_scene_episodes)
-        exit()
-    
-    assert sampled_episode_num == sample_epidode_num, "Sampled episdoe num %d, desired episdoe num %d"%(sampled_episode_num, sample_epidode_num)
-        #pointgoal_meta[scene]  
-
+# save a list of episodes to pickle file
+def save_behavior_dataset_meta(sampled_episodes, behavior_dataset_meta_data_path, split_name):
     # save meta data
     if not os.path.exists(behavior_dataset_meta_data_path):
         os.makedirs(behavior_dataset_meta_data_path)
 
-    with open(os.path.join(behavior_dataset_meta_data_path, '%s.pickle'%(behavior_dataset_split)), 'wb') as handle:
+    with open(os.path.join(behavior_dataset_meta_data_path, '%s.pickle'%(split_name)), 'wb') as handle:
         pickle.dump(sampled_episodes, handle)
 
-    print("Split %s: Done."%(behavior_dataset_split))
+    print("Behavior dataset meta generation Done: %s"%(split_name))
+
+
+def sample_train_episodes(train_scenes, train_episode_num, 
+    same_scene_val_episode_num, same_scene_test_episode_num,
+    behavior_dataset_meta_data_path, pointgoal_meta):
+
+    train_scene_num = len(train_scenes)
+    
+    train_episode_per_scene = train_episode_num // train_scene_num
+    val_episode_per_scene = same_scene_val_episode_num // train_scene_num
+    test_episode_per_scene = same_scene_test_episode_num // train_scene_num
+    batch_size = train_episode_per_scene + val_episode_per_scene + test_episode_per_scene
+
+    sampled_episode_num = 0
+    sampled_train_episodes = []
+    sampled_val_episodes = []
+    sampled_test_episodes = []
+
+    for scene_id in train_scenes:
+        # collect all episodes from current scene
+        episodes = []
+        for data in pointgoal_meta[scene_id]:
+            episodes.append(data["episode"])
+        # sample episodes from current scene
+        selected_episodes = random.sample(episodes, batch_size)
+        # split into train, val, test scenes
+        train_episodes = selected_episodes[0:train_episode_per_scene]
+        val_episodes = selected_episodes[train_episode_per_scene:train_episode_per_scene+val_episode_per_scene]
+        test_episodes = selected_episodes[-test_episode_per_scene:]
+        
+        sampled_episode_num += (len(train_episodes)+len(val_episodes)+len(test_episodes))
+        sampled_train_episodes.extend(train_episodes)
+        sampled_val_episodes.extend(val_episodes)
+        sampled_test_episodes.extend(test_episodes)
+
+
+    # check sampled episode number
+    desired_episode_num = train_episode_num + same_scene_val_episode_num + same_scene_test_episode_num
+    assert sampled_episode_num == desired_episode_num, "Sampled episdoe num %d, desired episdoe num %d"%(sampled_episode_num, desired_episode_num)
+    
+    # save 
+    save_behavior_dataset_meta(sampled_train_episodes, 
+        behavior_dataset_meta_data_path, "train")
+    save_behavior_dataset_meta(sampled_val_episodes, 
+        behavior_dataset_meta_data_path, "same_scene_val")
+    save_behavior_dataset_meta(sampled_test_episodes, 
+        behavior_dataset_meta_data_path, "same_scene_test")
+
+def sample_across_scene_episodes(scenes, episode_num, 
+    behavior_dataset_meta_data_path, pointgoal_meta, split_name):
+
+    scene_num = len(scenes)
+    
+    batch_size = episode_num // scene_num
+
+    sampled_episode_num = 0
+    sampled_episodes = []
+
+    for scene_id in scenes:
+        # collect all episodes from current scene
+        episodes = []
+        for data in pointgoal_meta[scene_id]:
+            episodes.append(data["episode"])
+        # sample episodes from current scene
+        cur_scene_selected_episodes = random.sample(episodes, batch_size)
+        
+        sampled_episode_num += len(cur_scene_selected_episodes)
+        sampled_episodes.extend(cur_scene_selected_episodes)
+
+    # check sampled episode number
+    assert sampled_episode_num == episode_num, "Sampled episdoe num %d, desired episdoe num %d"%(sampled_episode_num, episode_num)
+    
+    # save 
+    save_behavior_dataset_meta(sampled_episodes, 
+        behavior_dataset_meta_data_path, split_name)
+
+
+# pointgoal dataset split: {'train', 'val', 'val_mini'}
+def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split, 
+    train_scene_num, train_episode_num, 
+    across_scene_val_scene_num, across_scene_val_episode_num,
+    same_scene_val_episode_num,
+    across_scene_test_scene_num, across_scene_test_episode_num,
+    same_scene_test_episode_num):
+    config_file=os.path.join(config_path, yaml_name)
+    config = parse_config(config_file)
+
+    pointgoal_meta, total_scene_num, total_episode_num = load_pointgoal_dataset_meta(config, pointgoal_dataset_split)
+
+    behavior_dataset_path = config.get("behavior_dataset_path")
+    behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")
+
+    # check divisible
+    check_episode_per_scene(train_scene_num, train_episode_num, 
+    across_scene_val_scene_num, across_scene_val_episode_num,
+    same_scene_val_episode_num,
+    across_scene_test_scene_num, across_scene_test_episode_num,
+    same_scene_test_episode_num)
+
+    # sample scenes
+    sample_scene_num = train_scene_num + across_scene_val_scene_num + across_scene_test_scene_num
+    if sample_scene_num <= total_scene_num:
+        scene_list = pointgoal_meta.keys()
+        selected_scenes = random.sample(scene_list, sample_scene_num)
+        # split into train, val, test scenes
+        train_scenes = selected_scenes[0:train_scene_num]
+        val_scenes = selected_scenes[train_scene_num:train_scene_num+across_scene_val_scene_num]
+        test_scenes = selected_scenes[-across_scene_test_scene_num:]
+        print("Sampled scenes:")
+        print("train scenes: %s"%(train_scenes))
+        print("val scenes: %s"%(val_scenes))
+        print("test scenes: %s"%(test_scenes))
+    else:
+        print("Error: want to sample %d from %d scenes"%(sample_scene_num, total_scene_num))  
+        exit()
+    
+    # sample train episodes
+    sample_train_episodes(train_scenes, train_episode_num, 
+    same_scene_val_episode_num, same_scene_test_episode_num,
+    behavior_dataset_meta_data_path, pointgoal_meta) 
+
+    # sample across scene val episodes
+    sample_across_scene_episodes(val_scenes, across_scene_val_episode_num, 
+    behavior_dataset_meta_data_path, pointgoal_meta, "across_scene_val")
+
+    # sample across scene test episodes
+    sample_across_scene_episodes(test_scenes, across_scene_test_episode_num, 
+    behavior_dataset_meta_data_path, pointgoal_meta, "across_scene_test")
+
+def load_behavior_dataset_meta(yaml_name, split_name):
+    config_file=os.path.join(config_path, yaml_name)
+    config = parse_config(config_file)
+
+    behavior_dataset_path = config.get("behavior_dataset_path")
+    behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")
+    behavior_dataset_meta_split_path = os.path.join(behavior_dataset_meta_data_path, '%s.pickle'%(split_name))
+
+    if not os.path.exists(behavior_dataset_meta_split_path):
+        print("Error: path does not exist: %s"%(behavior_dataset_meta_split_path))
+        exit()
+    
+    episode_list = pickle.load(open(behavior_dataset_meta_split_path, "rb" ))
+
+    print("Behavior data split: %s"%split_name)
+    print("Loaded %d episodes"%(len(episode_list)))
+    
+    return episode_list
+
+# [CHANNEL x HEIGHT X WIDTH]
+# CHANNEL = {1,3,4}
+# output numpy array
+def extract_observation(obs, observation_spaces):
+    n_channel = 0
+    obs_array = None
+    if "color_sensor" in observation_spaces:
+        rgb_obs = obs["color_sensor"]
+        # permute tensor from [HEIGHT X WIDTH x CHANNEL] to [CHANNEL x HEIGHT X WIDTH]
+        rgb_obs = np.transpose(rgb_obs, (2, 0, 1))
+
+        obs_array = rgb_obs
+        n_channel += 3
+
+    if "depth_sensor" in observation_spaces:
+        depth_obs = obs["depth_sensor"]
+        # permute tensor from [HEIGHT X WIDTH x CHANNEL] to [CHANNEL x HEIGHT X WIDTH]
+        depth_obs = np.transpose(depth_obs, (2, 0, 1))
+        
+        if obs_array is not None:
+            obs_array = np.concatenate((obs_array, depth_obs), axis=0)
+        else:
+            obs_array = depth_obs
+        n_channel += 1
+
+    # check if observation is valid
+    if n_channel == 0:
+        print("Error: channel of observation input is 0")
+        exit()
+    
+    return obs_array
+
+def generate_one_episode(env, episode):
+    observatons = []
+    actions = []
+    rel_goals = []
+    distance_to_goals = []
+    goal_positions = []
+    state_positions = []
+
+    traj = {}
+
+    # handle s0
+    obs = env.reset(episode=episode, plan_shortest_path=True)
+            
+    for action in env.optimal_action_seq:
+        obs, reward, done, info = env.step(action)
+        obs_array = extract_observation(obs, env.observation_space.spaces)
+        observatons.append(obs_array) # (channel, height, width)
+        actions.append(action) # integer
+        rel_goal = np.expand_dims(np.array(obs["pointgoal"], dtype="float32"), axis=0)
+        rel_goals.append(rel_goal) # (1,goal_dim)
+        distance_to_goals.append(env.get_current_distance()) # float
+        goal_position = np.expand_dims(np.array(env.goal_position, dtype="float32"), axis=0)
+        goal_positions.append(goal_position) # (1,3)
+        state_position = np.expand_dims(np.array(env.agent.get_state().position, dtype="float32"), axis=0)
+        state_positions.append(state_position) # (1,3)
+
+        # print(rel_goal.shape)
+        # print(goal_position.shape)
+        # print(state_position.shape)
+        
+
+    # check validity at the end of the trajectory
+    if env.optimal_action_seq:
+        if done == False:
+            print("Error: done should be true after following the shortest path")
+            print("Distance to goal at the end of the trajectory: %f"%(env.get_current_distance()))
+            valid_episode = False
+        else:
+            if env.is_success() == False:
+                print("Error: success should be true after following the shortest path")
+                print("Distance to goal at the end of the trajectory: %f"%(env.get_current_distance()))
+                valid_episode = False
+            else:
+                valid_episode = True
+                traj["observatons"] = observatons
+                traj["actions"] = actions
+                traj["rel_goals"] = rel_goals
+                traj["distance_to_goals"] = distance_to_goals
+                traj["goal_positions"] = goal_positions
+                traj["state_positions"] = state_positions
+    else:
+        print("Error: shortest path not found")
+        valid_episode = False
+    
+    return valid_episode, traj, env.optimal_action_seq
+        
+
+def generate_train_behavior_data(yaml_name):
+    env = MultiNavEnv(config_file=yaml_name)
+    train_episodes = load_behavior_dataset_meta(yaml_name, "train")
+
+    #train_episodes = train_episodes[:10]
+    
+    trajectories = [] # real observation sequence
+    action_sequences = [] # optimal action sequences generated by path planner
+    for episode in tqdm(train_episodes):
+        # generate one episode
+        valid_episode, traj, act_seq = generate_one_episode(env, episode)
+        if valid_episode == False:
+            print("Errror: invalid episode, need to resample train episodes!")
+            exit()
+        else:
+            trajectories.append(traj)
+            action_sequences.append(act_seq)
+    
+    print("Generated %d training trajectories"%(len(trajectories)))
+    
+    # save
+    config_file=os.path.join(config_path, yaml_name)
+    config = parse_config(config_file)
+    behavior_dataset_path = config.get("behavior_dataset_path")
+    with open(os.path.join(behavior_dataset_path, 'train_data.pickle'), 'wb') as handle:
+        pickle.dump(trajectories, handle)
+    
+    with open(os.path.join(behavior_dataset_path, 'train_action_sequences.pickle'), 'wb') as handle:
+        pickle.dump(action_sequences, handle)
+
+    print("Behavior training dataset generation Done")
+
+    
 
 if __name__ == "__main__":
     #load_pointgoal_dataset("imitation_learning.yaml")  
     #test_get_scene_names("imitation_learning.yaml")
     #shortest_path_follower("imitation_learning.yaml")
     #generate_pointgoal_dataset_meta(yaml_name="imitation_learning.yaml", split="train")
-    generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
-        pointgoal_dataset_split="val_mini", 
-        behavior_dataset_split="across_scene_test_mini", 
-        sample_scene_num=2, sample_epidode_num=20)
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
+    #     pointgoal_dataset_split="train", 
+    #     train_scene_num=4, train_episode_num=4000, 
+    #     across_scene_val_scene_num=2, across_scene_val_episode_num=200,
+    #     same_scene_val_episode_num=200,
+    #     across_scene_test_scene_num=2, across_scene_test_episode_num=200,
+    #     same_scene_test_episode_num=200)
+    generate_train_behavior_data("imitation_learning.yaml")

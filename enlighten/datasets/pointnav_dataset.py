@@ -77,14 +77,14 @@ class PointNavDatasetV1(Dataset):
     content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
 
     @staticmethod
-    def check_config_paths_exist(config) -> bool:
+    def check_config_paths_exist(config, split) -> bool:
         return os.path.exists(
-            config.get("dataset_path").format(split=config.get("split"))
+            config.get("dataset_path").format(split=split)
         ) and os.path.exists(config.get("scenes_dir"))
 
-    def has_individual_scene_files(self, config):
+    def has_individual_scene_files(self, config, split):
         
-        datasetfile_path = config.get("dataset_path").format(split=config.get("split"))
+        datasetfile_path = config.get("dataset_path").format(split=split)
         
         # read train/val/val_mini.json.gz
         with gzip.open(datasetfile_path, "rt") as f:
@@ -124,13 +124,13 @@ class PointNavDatasetV1(Dataset):
         """
         return os.path.splitext(os.path.basename(scene_path))[0]
 
-    def get_scene_names_to_load(self, config) -> List[str]:
+    def get_scene_names_to_load(self, config, split) -> List[str]:
         r"""Return list of scene ids for which dataset has separate files with
         episodes.
         """
-        assert self.check_config_paths_exist(config)
+        assert self.check_config_paths_exist(config, split)
 
-        has_individual_scene_files, dataset_dir = self.has_individual_scene_files(config)
+        has_individual_scene_files, dataset_dir = self.has_individual_scene_files(config, split)
         # if each scene has an individual file, load the specific scenes or all scene names from the folder
         if has_individual_scene_files:
             return self.get_scene_names(config, dataset_dir)
@@ -161,13 +161,18 @@ class PointNavDatasetV1(Dataset):
         return scenes
 
 
-    def __init__(self, config = None) -> None:
+    def __init__(self, split = None, config = None) -> None:
         self.episodes = []
 
         if config is None:
             return
+
+        if split is None:
+            split = config.get("split")    
+
+        self.split = split    
         
-        has_individual_scene_files, dataset_dir = self.has_individual_scene_files(config)
+        has_individual_scene_files, dataset_dir = self.has_individual_scene_files(config, self.split)
         # if each scene has a separate file
         
         if has_individual_scene_files:
@@ -241,7 +246,7 @@ class PointNavDatasetV1(Dataset):
 def make_dataset(id_dataset, **kwargs):
     logger.info("Initializing dataset: %s"%(id_dataset))
     if id_dataset == "PointNav":
-        _dataset = PointNavDatasetV1()
+        _dataset = PointNavDatasetV1(**kwargs) 
+        
     assert _dataset is not None, "Could not find dataset %s"%(id_dataset)
-
     return _dataset(**kwargs)  # type: ignore

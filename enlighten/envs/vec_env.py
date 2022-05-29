@@ -756,12 +756,12 @@ def construct_envs_based_on_dataset(
     num_environments = int(config.get("num_environments"))
     
     # make dataset object
-    dataset = make_dataset(config.get("dataset_type"))
+    dataset = make_dataset(id_dataset=config.get("dataset_type"), config=config)
     scenes = config.get("content_scenes")
     # load all scenes in the dataset
     if "*" in config.get("content_scenes"):
         #scenes = dataset.get_scenes_to_load(config)
-        scenes = dataset.get_scene_names_to_load(config)
+        scenes = dataset.get_scene_names_to_load(config, config.get("split"))
 
     # shuffle scenes
     if num_environments > 1:

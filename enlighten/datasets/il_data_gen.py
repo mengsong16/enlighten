@@ -18,11 +18,16 @@ from habitat.utils.visualizations.utils import images_to_video
 
 cv2 = try_cv2_import()
 
-def load_pointgoal_dataset(yaml_name):
+def load_pointgoal_dataset(yaml_name, split=None):
     config_file=os.path.join(config_path, yaml_name)
     config = parse_config(config_file)
 
-    dataset = PointNavDatasetV1(config)
+    if split is None:
+        split = config.get("split")
+
+    print("Split: %s"%(split))    
+
+    dataset = PointNavDatasetV1(split=split, config=config)
     
     print("Loaded %d episodes"%len(dataset.episodes))
 
@@ -36,12 +41,12 @@ def test_get_scene_names(yaml_name):
     config_file=os.path.join(config_path, yaml_name)
     config = parse_config(config_file)
 
-    dataset = PointNavDatasetV1()
-    scenes = dataset.get_scene_names_to_load(config)
+    dataset = PointNavDatasetV1() # dummy
+    scenes = dataset.get_scene_names_to_load(config, config.get("split"))
     
     print("Loaded scene names.")
     print(scenes)
-    print(len(scenes))
+    print("Number of scenes: %d"%len(scenes))
 
 def shortest_path_follower(yaml_name):
     env = MultiNavEnv(config_file=yaml_name)
@@ -51,14 +56,23 @@ def shortest_path_follower(yaml_name):
         obs = env.reset(episode=episode, plan_shortest_path=True)
         print('Episode: {}'.format(i+1))
         print("Goal position: %s"%(env.goal_position))
+        #print(env.goal_position)
         #env.print_agent_state()
         print("Start position: %s"%(env.start_position))
+        #print(env.agent.get_state().position)
         print("Optimal action sequence: %s"%env.optimal_action_seq)
+
 
         for action in env.optimal_action_seq:
             #action = env.action_space.sample()
             obs, reward, done, info = env.step(action)
             #env.render()
+            #print(obs["pointgoal"])
+            #print(env.goal_position)
+            #print(obs["state_sensor"])
+            #print(env.agent.get_state().position)
+            print(env.get_current_distance())
+            print("---------------------")
 
         # not empty
         if env.optimal_action_seq:
@@ -91,6 +105,7 @@ def shortest_path_follower(yaml_name):
         # images_to_video(images, dirname, "trajectory")
         #print("Episode finished")
 
+#def sample_episodes():
 
 if __name__ == "__main__":
     #load_pointgoal_dataset("imitation_learning.yaml")  

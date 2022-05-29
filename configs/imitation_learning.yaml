@@ -1,10 +1,10 @@
 # dataset
 dataset_type: PointNav-v1
-split: train  #[train, val, val_mini]
+split: val_mini  #[train, val, val_mini]
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode data store
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson/{split}.pkl"
+behavior_dataset_path: "/dataset/behavior_dataset_gibson/{split}.pkl" # where imitation learning dataset store
 
 # experiments
 experiment_name: "test"
@@ -80,10 +80,8 @@ max_ep_len: 128 # 4096
 goal_form: "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
 
 
-
 # training
 batch_size: 64
-#pct_traj: 1.0
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 warmup_steps: 10000
@@ -98,7 +96,6 @@ checkpoint_interval: -1
 checkpoint_folder: "checkpoints"  
 
 
-
 # evaluation
 num_eval_episodes: 100
 # save images and video to disk under video_path
@@ -111,7 +108,6 @@ eval_checkpoint_file: "ckpt.9.pth"
 eval_use_ckpt_config: false
 video_dir: "video"
 
-# Evaluate on all episodes
 test_episode_count: 50 #-1: test on all episodes in dataset
 eval_metrics: ['success', 'spl', 'softspl', 'return']
 

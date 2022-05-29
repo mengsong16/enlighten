@@ -1,10 +1,11 @@
 # dataset
 dataset_type: PointNav-v1
 split: val_mini  #[train, val, val_mini]
-dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode data store
+dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode split data store
+pointgoal_dataset_path: "/dataset/pointnav_gibson_v1"
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson/{split}.pkl" # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson" # where imitation learning dataset store
 
 # experiments
 experiment_name: "test"

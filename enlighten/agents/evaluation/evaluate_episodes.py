@@ -93,21 +93,21 @@ def eval_episodes(target_rew, num_eval_episodes):
     # collect returns and lengths for num_eval_episodes episodes
     
     returns, lengths = [], []
-    for _ in range(num_eval_episodes):
-        with torch.no_grad():
-            ret, length = evaluate_episode_dt(
-                env,
-                state_dim,
-                act_dim,
-                model,
-                sample=sample,
-                target_return,
-                max_ep_len,
-                device=device,
-            )
+    # for _ in range(num_eval_episodes):
+    #     with torch.no_grad():
+    #         ret, length = evaluate_episode_dt(
+    #             env,
+    #             state_dim,
+    #             act_dim,
+    #             model,
+    #             sample=sample,
+    #             target_return,
+    #             max_ep_len,
+    #             device=device,
+    #         )
             
-        returns.append(ret)
-        lengths.append(length)
+    #     returns.append(ret)
+    #     lengths.append(length)
     return {
         f'target_{target_rew}_return_mean': np.mean(returns),
         f'target_{target_rew}_return_std': np.std(returns),

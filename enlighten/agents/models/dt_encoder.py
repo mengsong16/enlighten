@@ -16,32 +16,17 @@ from enlighten.agents.models import resnet18  # restnet backbone
 
 class ObservationEncoder(nn.Module):
     def __init__(self, 
-        observation_space: spaces.Dict,
+        channel_num: int,
         output_size: int,  # fc output size
         baseplanes: int = 32,
         ngroups: int = 32):
 
         super().__init__()
 
-        if "color_sensor" in observation_space.spaces:
-            self._n_input_rgb = observation_space.spaces["color_sensor"].shape[2]
-        else:
-            self._n_input_rgb = 0
-
-        
-        if "depth_sensor" in observation_space.spaces:
-            self._n_input_depth = observation_space.spaces["depth_sensor"].shape[2]
-        else:
-            self._n_input_depth = 0
-
-        # check if observation is valid
-        if self._n_input_depth + self._n_input_rgb == 0:
-            print("Error: channel of observation input to the encoder is 0")
-            exit()
-
+        self.channel_num = channel_num
         # for group norm
         self.running_mean_and_var: nn.Module = RunningMeanAndVar(
-            self._n_input_depth + self._n_input_rgb
+            self.channel_num
         )
         
 
@@ -89,7 +74,7 @@ class ObservationEncoder(nn.Module):
         ngroups,
         make_backbone):  
 
-        input_channels = self._n_input_depth + self._n_input_rgb
+        input_channels = self.channel_num
         self.backbone = make_backbone(input_channels, baseplanes, ngroups)
 
         output_shape = (256, 7, 7)
@@ -108,8 +93,7 @@ class ObservationEncoder(nn.Module):
             self.fc
         )
         
-        print(type(self.visual_encoder))
-        summary(self.visual_encoder, (3,224,224), device="cpu")
+        #summary(self.visual_encoder, (16,3,224,224), device="cpu")
         
     
     # initialize layers in visual_encoder
@@ -122,32 +106,19 @@ class ObservationEncoder(nn.Module):
                 if layer.bias is not None:
                     nn.init.constant_(layer.bias, val=0)
 
-    def get_vision_inputs(self, observations):
-        vision_inputs = []
-        if self._n_input_rgb > 0:
-            rgb_observations = observations["color_sensor"]
-            # permute tensor from [BATCH x HEIGHT X WIDTH x CHANNEL] to dimension [BATCH x CHANNEL x HEIGHT X WIDTH]
-            rgb_observations = rgb_observations.permute(0, 3, 1, 2)
-            rgb_observations = (
-                rgb_observations.float() / 255.0
-            )  # normalize RGB to [0,1]
-            vision_inputs.append(rgb_observations)
-
-        if self._n_input_depth > 0:
-            depth_observations = observations["depth_sensor"]
-            # permute tensor from [BATCH x HEIGHT X WIDTH x CHANNEL] to dimension [BATCH x CHANNEL x HEIGHT X WIDTH]
-            depth_observations = depth_observations.permute(0, 3, 1, 2)
-            vision_inputs.append(depth_observations)
+    # (B,C,H,W)
+    def normalize_vision_inputs(self, observations):
+        channel_n = observations.size()[1]
+        # normalize RGB to [0,1]
+        if channel_n >= 3:
+            observations[:,0:3,:,:] = observations[:,0:3,:,:] / 255.0
         
-        # concat all channels
-        vision_inputs = torch.cat(vision_inputs, dim=1)
-
-        return vision_inputs
+        return observations
 
     def forward(self, observations) -> torch.Tensor:
-        vision_inputs = self.get_vision_inputs(observations)
+        observations = self.normalize_vision_inputs(observations)
 
-        return self.visual_encoder(vision_inputs)
+        return self.visual_encoder(observations)
 
 # adapt from dt for gym
 class TimestepEncoder(nn.Module):
@@ -200,16 +171,5 @@ class DiscreteActionDecoder(nn.Module):
         return self.model(hidden_states)  # logits
 
 if __name__ == "__main__":
-    rgb_space = gym.spaces.Box(
-            low=0,
-            high=255,
-            shape=(
-                224, 
-                224,
-                3,
-            ),
-            dtype=np.uint8,
-        )
-    oe = ObservationEncoder(observation_space=Dict({"color_sensor": rgb_space}),
-                                output_size=512)
+    oe = ObservationEncoder(channel_num=3, output_size=512)
     print('Done')    

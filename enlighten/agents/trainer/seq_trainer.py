@@ -6,7 +6,7 @@ from torch.nn import functional as F
 
 # train seq2seq imitation learning
 class SequenceTrainer():
-    def __init__(self, model, optimizer, batch_size, get_batch_fn, scheduler=None, eval_fns=None):
+    def __init__(self, model, optimizer, batch_size, train_dataset, scheduler=None, eval_fns=None):
         self.model = model
         self.optimizer = optimizer
         self.batch_size = batch_size
@@ -15,7 +15,7 @@ class SequenceTrainer():
         self.scheduler = scheduler
         self.eval_fns = [] if eval_fns is None else eval_fns
         self.diagnostics = dict()
-        self.get_batch = get_batch_fn
+        self.train_dataset = train_dataset
 
         self.start_time = time.time()
 
@@ -68,7 +68,7 @@ class SequenceTrainer():
 
     # train for one step
     def train_one_step(self):
-        observations, actions, goals, timesteps, attention_mask = self.get_batch(self.batch_size)
+        observations, actions, goals, timesteps, attention_mask = self.train_dataset.get_batch(self.batch_size)
         action_target = torch.clone(actions)
 
         action_preds = self.model.forward(

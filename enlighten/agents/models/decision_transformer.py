@@ -16,10 +16,12 @@ class DecisionTransformer(nn.Module):
 
     def __init__(
             self,
-            state_dim,
+            obs_channel,
+            obs_width,
+            obs_height,
             goal_dim,
-            act_num,
             goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
+            act_num,
             hidden_size,
             max_ep_len,
             context_length=None,
@@ -27,7 +29,9 @@ class DecisionTransformer(nn.Module):
     ):
         super().__init__()
         
-        self.state_dim = state_dim
+        self.obs_channel = obs_channel
+        self.obs_width = obs_width
+        self.obs_height = obs_height
         self.goal_dim = goal_dim
         self.act_num = act_num
         self.context_length = context_length  # context length
@@ -56,7 +60,7 @@ class DecisionTransformer(nn.Module):
             print("Undefined goal form: %s"%(self.goal_form))
             exit()    
     
-        self.obs_encoder = ObservationEncoder(self.observation_space, hidden_size)
+        self.obs_encoder = ObservationEncoder(obs_channel, hidden_size)
         self.action_encoder = DiscreteActionEncoder(self.act_num, hidden_size)
         
         # used to embed the concatenated input
@@ -159,7 +163,7 @@ class DecisionTransformer(nn.Module):
     # only return the last action
     # for evaluation
     def get_action(self, observations, actions, goals, timesteps, sample, **kwargs):
-        observations = observations.reshape(1, -1, self.state_dim)
+        observations = observations.reshape(1, -1, self.obs_channel, self.obs_height, self.obs_width)
         actions = actions.reshape(1, -1)
         goals = goals.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)

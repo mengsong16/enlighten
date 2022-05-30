@@ -357,14 +357,14 @@ def generate_one_episode(env, episode):
     # add (s0, g0)
     obs = env.reset(episode=episode, plan_shortest_path=True)
     obs_array = extract_observation(obs, env.observation_space.spaces)
-    observations.append(obs_array)
-    rel_goal = np.expand_dims(np.array(obs["pointgoal"], dtype="float32"), axis=0)
-    rel_goals.append(rel_goal)
-    distance_to_goals.append(env.get_current_distance()) 
-    goal_position = np.expand_dims(np.array(env.goal_position, dtype="float32"), axis=0)
-    goal_positions.append(goal_position) 
-    state_position = np.expand_dims(np.array(env.agent.get_state().position, dtype="float32"), axis=0)
-    state_positions.append(state_position) 
+    observations.append(obs_array) # (channel, height, width)
+    rel_goal = np.array(obs["pointgoal"], dtype="float32")
+    rel_goals.append(rel_goal) # (goal_dim,)
+    distance_to_goals.append(env.get_current_distance())  # float
+    goal_position = np.array(env.goal_position, dtype="float32")
+    goal_positions.append(goal_position) # (3,)
+    state_position = np.array(env.agent.get_state().position, dtype="float32")
+    state_positions.append(state_position)  # (3,)
             
     for action in env.optimal_action_seq:
         obs, reward, done, info = env.step(action)
@@ -372,17 +372,18 @@ def generate_one_episode(env, episode):
         obs_array = extract_observation(obs, env.observation_space.spaces)
         observations.append(obs_array) # (channel, height, width)
         actions.append(action) # integer
-        rel_goal = np.expand_dims(np.array(obs["pointgoal"], dtype="float32"), axis=0)
-        rel_goals.append(rel_goal) # (1,goal_dim)
+        rel_goal = np.array(obs["pointgoal"], dtype="float32")
+        rel_goals.append(rel_goal) # (goal_dim,)
         distance_to_goals.append(env.get_current_distance()) # float
-        goal_position = np.expand_dims(np.array(env.goal_position, dtype="float32"), axis=0)
-        goal_positions.append(goal_position) # (1,3)
-        state_position = np.expand_dims(np.array(env.agent.get_state().position, dtype="float32"), axis=0)
-        state_positions.append(state_position) # (1,3)
+        goal_position = np.array(env.goal_position, dtype="float32")
+        goal_positions.append(goal_position) # (3,)
+        state_position = np.array(env.agent.get_state().position, dtype="float32")
+        state_positions.append(state_position) # (3,)
 
         # print(rel_goal.shape)
         # print(goal_position.shape)
         # print(state_position.shape)
+    
     # pad last action as STOP
     actions.append(0)
 

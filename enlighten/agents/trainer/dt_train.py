@@ -19,6 +19,7 @@ from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.agents.common.other import get_device
 from enlighten.datasets.behavior_dataset import BehaviorDataset
 from enlighten.envs.multi_nav_env import MultiNavEnv
+from enlighten.agents.common.other import get_obs_channel_num
 
 class DTTrainer:
     def __init__(self, config_filename="imitation_learning.yaml"):
@@ -68,10 +69,12 @@ class DTTrainer:
     def train(self):
         # load training data
         train_dataset = BehaviorDataset(self.config, self.device)
-
+        
         # create model and move it to the correct device
         model = DecisionTransformer(
-            state_dim=self.env.observation_space,
+            obs_channel = get_obs_channel_num(self.config),
+            obs_width = int(self.config.get("image_width")), 
+            obs_height = int(self.config.get("image_height")),
             goal_dim=int(self.config.get("goal_dimension")),
             goal_form=self.config.get("goal_form"),
             act_num=int(self.config.get("action_number")),
@@ -101,13 +104,14 @@ class DTTrainer:
         )
         
         # create trainer
+        batch_size = int(self.config.get('batch_size'))
         trainer = SequenceTrainer(
             model=model,
             optimizer=optimizer,
-            batch_size=int(self.config.get('batch_size')),
-            get_batch_fn=train_dataset.get_batch(),
+            batch_size=batch_size,
+            train_dataset=train_dataset,
             scheduler=scheduler,
-            eval_fns=[eval_episodes()],
+            #eval_fns=[eval_episodes()],
         )
 
         # train for max_iters iterations

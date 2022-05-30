@@ -345,7 +345,7 @@ def extract_observation(obs, observation_spaces):
     return obs_array
 
 def generate_one_episode(env, episode):
-    observatons = []
+    observations = []
     actions = []
     rel_goals = []
     distance_to_goals = []
@@ -357,7 +357,7 @@ def generate_one_episode(env, episode):
     # add (s0, g0)
     obs = env.reset(episode=episode, plan_shortest_path=True)
     obs_array = extract_observation(obs, env.observation_space.spaces)
-    observatons.append(obs_array)
+    observations.append(obs_array)
     rel_goal = np.expand_dims(np.array(obs["pointgoal"], dtype="float32"), axis=0)
     rel_goals.append(rel_goal)
     distance_to_goals.append(env.get_current_distance()) 
@@ -370,7 +370,7 @@ def generate_one_episode(env, episode):
         obs, reward, done, info = env.step(action)
         # add (s_i, a_{i-1}, g_i)
         obs_array = extract_observation(obs, env.observation_space.spaces)
-        observatons.append(obs_array) # (channel, height, width)
+        observations.append(obs_array) # (channel, height, width)
         actions.append(action) # integer
         rel_goal = np.expand_dims(np.array(obs["pointgoal"], dtype="float32"), axis=0)
         rel_goals.append(rel_goal) # (1,goal_dim)
@@ -386,7 +386,7 @@ def generate_one_episode(env, episode):
     # pad last action as STOP
     actions.append(0)
 
-    # print(len(observatons)) # n+1
+    # print(len(observations)) # n+1
     # print(len(actions)) # n+1
     # print(len(rel_goals)) # n+1
     # print(len(distance_to_goals)) # n+1
@@ -415,7 +415,7 @@ def generate_one_episode(env, episode):
                 valid_episode = False
             else:
                 valid_episode = True
-                traj["observatons"] = observatons
+                traj["observations"] = observations
                 traj["actions"] = actions
                 traj["rel_goals"] = rel_goals
                 traj["distance_to_goals"] = distance_to_goals
@@ -478,11 +478,18 @@ if __name__ == "__main__":
     #test_get_scene_names("imitation_learning.yaml")
     #shortest_path_follower("imitation_learning.yaml")
     #generate_pointgoal_dataset_meta(yaml_name="imitation_learning.yaml", split="train")
-    generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
-        pointgoal_dataset_split="train", 
-        train_scene_num=4, train_episode_num=2000, 
-        across_scene_val_scene_num=2, across_scene_val_episode_num=100,
-        same_scene_val_episode_num=200,
-        across_scene_test_scene_num=2, across_scene_test_episode_num=100,
-        same_scene_test_episode_num=200)
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
+    #     pointgoal_dataset_split="train", 
+    #     train_scene_num=4, train_episode_num=2000, 
+    #     across_scene_val_scene_num=2, across_scene_val_episode_num=100,
+    #     same_scene_val_episode_num=200,
+    #     across_scene_test_scene_num=2, across_scene_test_episode_num=100,
+    #     same_scene_test_episode_num=200)
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
+    #     pointgoal_dataset_split="train", 
+    #     train_scene_num=4, train_episode_num=100, 
+    #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
+    #     same_scene_val_episode_num=20,
+    #     across_scene_test_scene_num=2, across_scene_test_episode_num=10,
+    #     same_scene_test_episode_num=20)
     generate_train_behavior_data("imitation_learning.yaml")

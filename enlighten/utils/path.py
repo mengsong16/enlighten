@@ -10,6 +10,7 @@ package_path = os.path.join(root_path, "enlighten")
 config_path = os.path.join(root_path, "configs")
 #video_path = os.path.join(root_path, "video")	
 output_path = os.path.join(root_path, "output")
+checkpoints_path = os.path.join(root_path, "checkpoints")
 
 home_path = os.path.expanduser('~')
 data_path = os.path.join(home_path, "habitat-sim", "data")

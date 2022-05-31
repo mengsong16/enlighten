@@ -45,6 +45,9 @@ class DTTrainer:
         self.log_to_wandb = self.config.get("log_to_wandb")
         if self.log_to_wandb:
             self.init_wandb()
+        
+        # set save checkpoint parameters
+        self.save_every_iterations = int(self.config.get("save_every_iterations"))
     
     def set_experiment_name(self):
         self.project_name = 'dt'.lower()
@@ -120,6 +123,24 @@ class DTTrainer:
             outputs = trainer.train_one_iteration(num_steps=int(self.config.get('num_steps_per_iter')), iter_num=iter+1, print_logs=True)
             if self.log_to_wandb:
                 wandb.log(outputs)
+            
+             # save checkpoint
+            if (iter+1) % self.save_every_iterations == 0:
+                self.save_checkpoint(trainer.model, checkpoint_number = int((iter+1) // self.save_every_iterations))
+        
+    # Save checkpoint
+    def save_checkpoint(self, model, checkpoint_number):
+        # only save agent weights
+        checkpoint = model.state_dict()
+        folder_name = self.project_name + "-" + self.group_name + "-" + self.experiment_name
+        folder_path = os.path.join(checkpoints_path, folder_name)
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+        checkpoint_path = os.path.join(folder_path, f"ckpt_{checkpoint_number}.pth")
+        torch.save(checkpoint, checkpoint_path)
+
+        print(f"Checkpoint {checkpoint_number} saved.")
 
 
 if __name__ == '__main__':

@@ -68,21 +68,32 @@ class SequenceTrainer():
 
     # train for one step
     def train_one_step(self):
+        # observation # (B,K,C,H,W)
+        # action # (B,K)
+        # goal # (B,K,goal_dim)
+        # dtg # (B,K,1)
+        # timestep # (B,K)
+        # mask # (B,K)
         observations, actions, goals, timesteps, attention_mask = self.train_dataset.get_batch(self.batch_size)
         action_target = torch.clone(actions)
 
-        
+        # [B,K, action_num]
         action_preds = self.model.forward(
             observations, actions, goals, timesteps, attention_mask=attention_mask,
         )
 
         act_dim = action_preds.shape[2]
         action_preds = action_preds.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
-        action_target = action_target.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
+        action_target = action_target.reshape(-1)[attention_mask.reshape(-1) > 0]
 
+        #print(action_preds.size())  #[sum of seq_len, act_num]
+        #print(action_target.size()) #[sum seq_len]
+        
         # loss is evaluated only on actions
         # action_target are ground truth action indices (not one-hot vectors)
         loss =  F.cross_entropy(action_preds, action_target)
+
+        #print(loss) # a float number
 
         self.optimizer.zero_grad()
         # compute weight gradients
@@ -91,10 +102,6 @@ class SequenceTrainer():
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), .25)
         # optimize for one step
         self.optimizer.step()
-
-        # compute action prediction error
-        with torch.no_grad():
-            self.diagnostics['training/action_error'] = torch.mean((action_preds-action_target)**2).detach().cpu().item()
 
         return loss.detach().cpu().item()
     

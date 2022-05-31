@@ -71,6 +71,7 @@ class SequenceTrainer():
         observations, actions, goals, timesteps, attention_mask = self.train_dataset.get_batch(self.batch_size)
         action_target = torch.clone(actions)
 
+        
         action_preds = self.model.forward(
             observations, actions, goals, timesteps, attention_mask=attention_mask,
         )

@@ -117,11 +117,12 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
            
         rnn_hidden_states, distribution, value = self.get_net_output(observations, rnn_hidden_states, prev_actions, masks)
 
-        if deterministic:
+        if deterministic:  # greedy
             action = distribution.mode()
-        else:
+        else:  # sample
             action = distribution.sample()
 
+        # get probs
         action_log_probs = distribution.log_probs(action)
 
         return value, action, action_log_probs, rnn_hidden_states

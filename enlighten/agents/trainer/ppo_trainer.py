@@ -538,7 +538,7 @@ class PPOTrainer(BaseRLTrainer):
                 step_batch["recurrent_hidden_states"],
                 step_batch["prev_actions"],
                 step_batch["masks"],
-            )
+            ) # here deterministic = False
 
         # NB: Move actions to CPU.  If CUDA tensors are
         # sent in to env.step(), that will create CUDA contexts

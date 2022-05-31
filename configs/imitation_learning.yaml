@@ -5,7 +5,7 @@ dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where epis
 pointgoal_dataset_path: "/dataset/pointnav_gibson_v1"
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_mini" #"/dataset/behavior_dataset_gibson" # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_mini" #"/dataset/behavior_dataset_gibson"  # where imitation learning dataset store
 
 # experiments
 experiment_name: "test"
@@ -74,15 +74,15 @@ gpu_id: 0
 K: 20 # context length
 embed_dim: 128
 n_layer: 3
-n_head: 4
+n_head: 2
 activation_function: 'relu'
 dropout: 0.1
 max_ep_len: 128 # 4096
-goal_form: "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
+goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
 
 
 # training
-batch_size: 128
+batch_size: 16
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 warmup_steps: 10000

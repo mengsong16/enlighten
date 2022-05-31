@@ -128,7 +128,6 @@ class TimestepEncoder(nn.Module):
         self.model = nn.Embedding(max_len_episode, output_size)
 
     def forward(self, timesteps):
-        super().__init__()
         return self.model(timesteps)
 
 # adapt from return to go encoder from dt for gym

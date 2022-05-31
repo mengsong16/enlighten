@@ -62,7 +62,7 @@ class DecisionTransformer(nn.Module):
     
         self.obs_encoder = ObservationEncoder(obs_channel, hidden_size)
         self.action_encoder = DiscreteActionEncoder(self.act_num, hidden_size)
-        
+       
         # used to embed the concatenated input
         self.concat_embed_ln = nn.LayerNorm(hidden_size)
 
@@ -77,15 +77,31 @@ class DecisionTransformer(nn.Module):
     # for training
     def forward(self, observations, actions, goals, timesteps, attention_mask=None):
 
+        # print(observations.size()) # (B,K,C,H,W)
+        # print(actions.size()) # (B,K)
+        # print(goals.size()) # (B,K,goal_dim)
+        # print(timesteps.size()) # (B,K)
+        # print(attention_mask.size()) # (B,K)
+
         batch_size, seq_length = observations.shape[0], observations.shape[1]
 
         if attention_mask is None:
             # attention mask for GPT: 1 if can be attended to, 0 if not
             attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
 
+        #print("===========================")
         # embed each input modality with a different head
-        observation_embeddings = self.obs_encoder(observations)
+
+        # (B,K,C,H,W) ==> (B,K*C,H,W)
+        observation_embeddings = self.obs_encoder(observations.reshape(-1, self.obs_channel, self.obs_height, self.obs_width).type(torch.float32).contiguous())
+        # (B,K*C,H,W) ==> (B,K,C,H,W)
+        observation_embeddings = observation_embeddings.reshape(batch_size, seq_length, self.hidden_size) 
+        
+        #print(observation_embeddings.size())
         action_embeddings = self.action_encoder(actions)
+        #print(action_embeddings.size())
+        
+
         if self.goal_form == "rel_goal":
             goal_embeddings = self.goal_encoder(goals)
         elif self.goal_form == "distance_to_goal":
@@ -94,7 +110,11 @@ class DecisionTransformer(nn.Module):
             print("Undefined goal form: %s"%(self.goal_form))
             exit()    
 
+        #print(goal_embeddings.size())
+        
         time_embeddings = self.timestep_encoder(timesteps)
+
+        #print(time_embeddings.size())
 
         # time embeddings are treated similar to positional embeddings
         # append positional embedding to each input modality
@@ -126,20 +146,27 @@ class DecisionTransformer(nn.Module):
             attention_mask=stacked_attention_mask,
         )
 
-        # note that for a general transformer, input has shape [batch_size, seq_length, input_size], output has shape [batch_size, seq_length, hidden_size]
+        # note that for a general transformer, input has shape [batch_size, seq_length, input_size]
+        # output has shape [batch_size, seq_length, hidden_size]
         # x is the output of the transformer
         # x has shape [batch_size, 3*seq_length, hidden_size]
         x = transformer_outputs['last_hidden_state']
 
-        # reshape x so that the second dimension corresponds to the original tuple (r,s,a)
-        # returns (0), states (1), or actions (2); i.e. x[:,1,t] is the token for s_t
+        # reshape x so that the second dimension corresponds to the original tuple (g,o,a)
+        # after reshape: [batch_size, 3, seq_length, hidden_size]
+        # returns goals (0), observations (1) and actions (2)
         # before permutation: [batch_size, seq_length, 3, hidden_size]
         # after permutation: [batch_size, 3, seq_length, hidden_size]
         x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
-        # get prediction logits
-        # x[:,1] = x[:,1,:,:]
+        #print(x.shape)
+
+        # get prediction logits from observations
+        # x[:,1] = x[:,1,:,:] = sequence of observations
+        # i.e. x[:,1,t] is the embedding for o_t
         pred_action_logits = self.action_decoder(x[:,1])  # predict next action given state (policy)
+        
+        #print(pred_action_logits.size()) # [batch_size, seq_length, action_num]
 
         return pred_action_logits
 
@@ -150,7 +177,13 @@ class DecisionTransformer(nn.Module):
         # pad action with 0 (stop)
         ap = torch.zeros((batch_size, padding_length), device=device)
         # pad goal with 0
-        gp = torch.zeros((batch_size, padding_length, self.goal_dim), device=device)
+        if self.goal_form == "rel_goal":
+            gp = torch.zeros((batch_size, padding_length, self.goal_dim), device=device)
+        elif self.goal_form == "distance_to_goal":
+            gp = torch.zeros((batch_size, padding_length, 1), device=device)
+        else:
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit()    
         # pad timestep with 0
         tp = torch.zeros((batch_size, padding_length), device=device)
         # pad mask with 0 (not attend to)
@@ -167,6 +200,8 @@ class DecisionTransformer(nn.Module):
         actions = actions.reshape(1, -1)
         goals = goals.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)
+
+        print("============================")
 
         if self.context_length is not None:
             observations = observations[:,-self.context_length:]
@@ -196,7 +231,11 @@ class DecisionTransformer(nn.Module):
                 observations, actions, goals, timesteps, attention_mask=attention_mask, **kwargs)
             
             # pluck the logits at the final step and scale by temperature 1.0
-            pred_last_action_logit = pred_action_seq_logits[0,-1] 
+            pred_last_action_logit = pred_action_seq_logits[:,0,:] 
+
+            print("============================")
+            print(pred_last_action_logit.size())
+            exit()
             # apply softmax to convert to probabilities
             probs = self.softmax(pred_last_action_logit)
             # greedily pick the action

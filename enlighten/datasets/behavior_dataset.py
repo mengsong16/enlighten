@@ -65,7 +65,7 @@ class BehaviorDataset:
 
             # add batch dimension
             obs_seg = np.expand_dims(np.stack(traj['observations'][si:si + self.context_length]), axis=0)
-            act_seg = np.expand_dims(np.stack(traj['actions'][si:si + self.context_length]), axis=(0,2))
+            act_seg = np.expand_dims(np.stack(traj['actions'][si:si + self.context_length]), axis=0)
             # print("==============")
             # a = traj['rel_goals'][si:si + self.context_length]
             # for item in a:
@@ -76,7 +76,7 @@ class BehaviorDataset:
             dist_to_goal_seg = np.expand_dims(np.stack(traj['distance_to_goals'][si:si + self.context_length]), axis=(0,2))
 
             # print(obs_seg.shape) # (1,tlen,C,H,W)
-            # print(act_seg.shape) # (1,tlen,1)
+            # print(act_seg.shape) # (1,tlen)
             # print(rel_goal_seg.shape) # (1,tlen,goal_dim)
             # print(dist_to_goal_seg.shape) # (1,tlen,1)
             
@@ -106,7 +106,7 @@ class BehaviorDataset:
             op, ap, gp, dtgp, tp, mp = self.get_padding(self.context_length - tlen)
 
             # print(op.shape) # (1,K-tlen,C,H,W)
-            # print(ap.shape) # (1,K-tlen,1)
+            # print(ap.shape) # (1,K-tlen)
             # print(gp.shape) # (1,K-tlen,goal_dim)
             # print(dtgp.shape) # (1,K-tlen,1)
             # print(tp.shape) # (1,K-tlen)
@@ -121,7 +121,7 @@ class BehaviorDataset:
             mask[-1] = np.concatenate([mask[-1], mp], axis=1)
 
             # print(o[-1].shape) # (1,K,C,H,W)
-            # print(a[-1].shape) # (1,K,1)
+            # print(a[-1].shape) # (1,K)
             # print(g[-1].shape) # (1,K,goal_dim)
             # print(dtg[-1].shape) # (1,K,1)
             # print(timesteps[-1].shape) # (1,K)
@@ -133,14 +133,14 @@ class BehaviorDataset:
 
         # numpy to torch tensor
         o = torch.from_numpy(np.concatenate(o, axis=0)).to(dtype=torch.float32, device=self.device)
-        a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.float32, device=self.device)
+        a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.long, device=self.device)
         g = torch.from_numpy(np.concatenate(g, axis=0)).to(dtype=torch.float32, device=self.device)
         dtg = torch.from_numpy(np.concatenate(dtg, axis=0)).to(dtype=torch.float32, device=self.device)
         timesteps = torch.from_numpy(np.concatenate(timesteps, axis=0)).to(dtype=torch.long, device=self.device)
         mask = torch.from_numpy(np.concatenate(mask, axis=0)).to(device=self.device)
 
         # print(o.size()) # (B,K,C,H,W)
-        # print(a.size()) # (B,K,1)
+        # print(a.size()) # (B,K)
         # print(g.size()) # (B,K,goal_dim)
         # print(dtg.size()) # (B,K,1)
         # print(timesteps.size()) # (B,K)
@@ -160,7 +160,7 @@ class BehaviorDataset:
         # pad observation with 0
         op = np.zeros((1, padding_length, self.obs_channel, self.obs_height, self.obs_width))
         # pad action with 0 (stop)
-        ap = np.zeros((1, padding_length, 1))
+        ap = np.zeros((1, padding_length))
         # pad goal with 0 
         gp = np.zeros((1, padding_length, self.goal_dim))
         # pad dtg with 0
@@ -179,4 +179,6 @@ if __name__ == "__main__":
     dataset = BehaviorDataset(config)
     for i in range(10):
         dataset.get_batch(batch_size=64)
+
+        #break
         print("Batch %d Done"%(i+1))

@@ -1,7 +1,7 @@
 # dataset
-dataset_type: PointNav-v1
-split: val_mini  #[train, val, val_mini]
-dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where episode split data store
+dataset_type: PointNav-v1 # for pointgoal dataset
+split: val_mini  #[train, val, val_mini] # for pointgoal dataset
+dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where pointgoal episode split data store
 pointgoal_dataset_path: "/dataset/pointnav_gibson_v1"
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
@@ -9,7 +9,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_mini" #"/dataset/behavi
 
 # experiments
 experiment_name: "test"
-log_to_wandb: true  # log
+log_to_wandb: false #true  # log
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -65,10 +65,10 @@ max_steps_per_episode: 500
 max_collisions_per_episode: 200
 
 # seed
-seed: 1
+seed: 0
 
 # gpu
-gpu_id: 0
+gpu_id: 0 #1
 
 # dt
 K: 20 # context length
@@ -85,19 +85,15 @@ batch_size: 16
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 warmup_steps: 10000
-max_iters: 30 #10
+max_iters: 30 #500 #30 #10
 num_steps_per_iter: 100 #10000
 
 # save checkpoint
-save_every_iterations: 10 
+save_every_iterations: 10 #50 #10 
 
 # evaluation
 num_eval_episodes: 100
-# save images and video to disk under video_path
-eval_video_option: [] #["disk", "tensorboard"]
 eval_checkpoint_folder: "checkpoints"
-# if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
-# otherwise, eval all checkpoints in eval_checkpoint_folder
 eval_checkpoint_file: "ckpt.9.pth"
 # use checkpoint config file
 eval_use_ckpt_config: false

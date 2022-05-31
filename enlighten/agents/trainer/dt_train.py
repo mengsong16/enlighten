@@ -56,8 +56,9 @@ class DTTrainer:
 
         # experiment_name: seed-YearMonthDay-HourMiniteSecond
         now = datetime.datetime.now()
+        #self.experiment_name = "s%d-"%(self.seed)+"-%s-"%(self.config.get("goal_form"))+now.strftime("%Y%m%d-%H%M%S").lower() 
         self.experiment_name = "s%d-"%(self.seed)+now.strftime("%Y%m%d-%H%M%S").lower() 
-
+        
     def init_wandb(self):
         # initialize this run under project xxx
         wandb.init(
@@ -93,6 +94,9 @@ class DTTrainer:
             attn_pdrop=float(self.config.get('dropout')),
         )
         model = model.to(device=self.device)
+
+        # print goal form
+        print("==========> %s"%(self.config.get("goal_form")))
 
         # create optimizer: AdamW
         warmup_steps = int(self.config.get('warmup_steps'))

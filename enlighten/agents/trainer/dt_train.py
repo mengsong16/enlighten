@@ -55,6 +55,7 @@ class DTTrainer:
         self.group_name = self.config.get("experiment_name").lower()
 
         # experiment_name: seed-YearMonthDay-HourMiniteSecond
+        # experiment name should be the same config run with different stochasticity
         now = datetime.datetime.now()
         #self.experiment_name = "s%d-"%(self.seed)+"-%s-"%(self.config.get("goal_form"))+now.strftime("%Y%m%d-%H%M%S").lower() 
         self.experiment_name = "s%d-"%(self.seed)+now.strftime("%Y%m%d-%H%M%S").lower() 

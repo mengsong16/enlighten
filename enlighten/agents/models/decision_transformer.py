@@ -171,6 +171,9 @@ class DecisionTransformer(nn.Module):
         return pred_action_logits
 
     # get padding as numpy array
+    # called by get_action
+    # padding_length >= 0
+    # if padding_length = 0, return 0 size tensor
     def get_padding(self, batch_size, padding_length, device):
         # pad observation with 0
         op = torch.zeros((batch_size, padding_length, self.obs_channel, self.obs_height, self.obs_width), device=device)
@@ -196,21 +199,33 @@ class DecisionTransformer(nn.Module):
     # only return the last action
     # for evaluation
     def get_action(self, observations, actions, goals, timesteps, sample, **kwargs):
+        # print(observations.size()) # (B,K,C,H,W)
+        # print(actions.size()) # (B,K)
+        # print(goals.size()) # (B,K,goal_dim) or (B,K,1)
+        # print(timesteps.size()) # (B,K)
+        # print(attention_mask.size()) # (B,K)
+        
+        # B = 1
         observations = observations.reshape(1, -1, self.obs_channel, self.obs_height, self.obs_width)
         actions = actions.reshape(1, -1)
-        goals = goals.reshape(1, -1, 1)
+        if self.goal_form == "rel_goal":
+            goals = goals.reshape(1, -1, self.goal_dim)
+        else:    
+            goals = goals.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)
 
         print("============================")
 
+        # create attention mask according to the input
         if self.context_length is not None:
+            # crop context_length sequence starting from the rightmost
             observations = observations[:,-self.context_length:]
             actions = actions[:,-self.context_length:]
             goals = goals[:,-self.context_length:]
             timesteps = timesteps[:,-self.context_length:]
 
             batch_size = observations.shape[0]
-            seq_length = observations.shape[1]
+            seq_length = observations.shape[1] # already <=K
 
             # only attend to the valid part (non padding part)
             # 0 - not attend, 1 - attend
@@ -218,7 +233,7 @@ class DecisionTransformer(nn.Module):
             # right pad all tokens to context length
             op, ap, gp, tp, mp = self.get_padding(batch_size, self.context_length-seq_length, observations.device)
             observations = torch.cat([observations, op], dim=1).to(dtype=torch.float32)  
-            actions = torch.cat([actions, ap], dim=1).to(dtype=torch.float32) 
+            actions = torch.cat([actions, ap], dim=1).to(dtype=torch.long) 
             goals = torch.cat([goals, gp], dim=1).to(dtype=torch.float32)
             timesteps = torch.cat([timesteps, tp], dim=1).to(dtype=torch.long)
             attention_mask = torch.cat([attention_mask, mp], dim=1).to(dtype=torch.long)
@@ -230,14 +245,15 @@ class DecisionTransformer(nn.Module):
             pred_action_seq_logits = self.forward(
                 observations, actions, goals, timesteps, attention_mask=attention_mask, **kwargs)
             
-            # pluck the logits at the final step and scale by temperature 1.0
-            pred_last_action_logit = pred_action_seq_logits[:,0,:] 
+            # pluck the logits at the final step (rightmost)
+            # [B,K,act_num]
+            pred_last_action_logits = pred_action_seq_logits[:,-1,:] 
 
-            print("============================")
-            print(pred_last_action_logit.size())
-            exit()
+            #print("============================")
+            #print(pred_last_action_logit.size())
+            
             # apply softmax to convert to probabilities
-            probs = self.softmax(pred_last_action_logit)
+            probs = self.softmax(pred_last_action_logits)
             # greedily pick the action
             #return torch.argmax(probs, dim=1)
 

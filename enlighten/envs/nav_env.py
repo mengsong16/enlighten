@@ -1076,9 +1076,11 @@ class NavEnv(gym.Env):
         return bool(self.measurements.measures["success"].get_metric()) 
 
     def get_spl(self):
-        return self.measurements.measures["spl"].get_metric()    
+        return self.measurements.measures["spl"].get_metric() 
 
-    #def number_of_episodes(self):
+    def get_softspl(self):
+        return self.measurements.measures["softspl"].get_metric()    
+
 
     def get_current_episode(self):
         return self.current_episode

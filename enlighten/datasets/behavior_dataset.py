@@ -156,6 +156,7 @@ class BehaviorDataset:
             exit()  
 
     # get padding as numpy array
+    # padding_length >= 0
     def get_padding(self, padding_length):
         # pad observation with 0
         op = np.zeros((1, padding_length, self.obs_channel, self.obs_height, self.obs_width))

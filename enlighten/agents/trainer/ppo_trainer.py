@@ -1047,6 +1047,7 @@ class PPOTrainer(BaseRLTrainer):
         else:
             self._eval_checkpoint_dataset(checkpoint_path, writer, checkpoint_index)    
 
+    # sum up
     def update_avg_measurements(self, step_measurements):
         for k,v in self.avg_measurements.measures.items():
             if k not in step_measurements.measures:

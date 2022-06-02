@@ -61,7 +61,7 @@ goal_reward: true # false
 stop_depend_success: true
 
 # episode termination condition
-max_steps_per_episode: 500
+max_steps_per_episode: 500  # should be equal to max_ep_len
 max_collisions_per_episode: 200
 
 # seed
@@ -100,7 +100,7 @@ eval_use_ckpt_config: false
 video_dir: "video"
 
 test_episode_count: 50 #-1: test on all episodes in dataset
-eval_metrics: ['success', 'spl', 'softspl', 'return']
+eval_metrics: ['success', 'spl', 'softspl', 'return'] # must be a subset of measurements
 
 
 

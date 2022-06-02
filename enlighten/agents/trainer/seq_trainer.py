@@ -82,6 +82,7 @@ class SequenceTrainer():
             observations, actions, goals, timesteps, attention_mask=attention_mask,
         )
 
+        # loss is computed over the whole sequence (K action tokens)
         act_dim = action_preds.shape[2]
         action_preds = action_preds.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
         action_target = action_target.reshape(-1)[attention_mask.reshape(-1) > 0]

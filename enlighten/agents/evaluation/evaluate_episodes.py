@@ -8,6 +8,7 @@ from enlighten.agents.common.other import get_device
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
+from enlighten.agents.models.decision_transformer import DecisionTransformer
 
 class MeasureHistory:
     def __init__(self, id):
@@ -48,8 +49,9 @@ class MeasureHistory:
 
 
 # evaluate decision transformer for one episode
-def evaluate_one_episode_dt(self,
+def evaluate_one_episode_dt(
         episode,
+        env,
         model,
         goal_form,
         sample,
@@ -57,28 +59,35 @@ def evaluate_one_episode_dt(self,
         device
     ):
 
-    # turn model into eval mode
+    # turn model into eval mode and move to desired device
     model.eval()
     model.to(device=device)
 
     # reset env
-    obs = self.env.reset(episode=episode, plan_shortest_path=False)
-    obs_array = extract_observation(obs, self.env.observation_space.spaces)
-    rel_goal = np.array(obs["pointgoal"], dtype="float32")
+    obs = env.reset(episode=episode, plan_shortest_path=False)
+    obs_array = extract_observation(obs, env.observation_space.spaces)
+    if goal_form == "rel_goal":
+        goal = np.array(obs["pointgoal"], dtype="float32")
+    elif goal_form == "distance_to_goal":
+        goal = env.get_current_distance()
     # a0 is 0, shape (1,1)
     actions = torch.zeros((1, 1), device=device, dtype=torch.long)
 
     print("Scene id: %s"%(episode.scene_id))
-    print("Goal position: %s"%(self.env.goal_position))
-    print("Start position: %s"%(self.env.start_position))
+    print("Goal position: %s"%(env.goal_position))
+    print("Start position: %s"%(env.start_position))
 
     # change shape and convert to torch tensor
     # (C,H,W) --> (1,1,C,H,W)
     obs_array = np.expand_dims(np.expand_dims(obs_array, axis=0), axis=0)
     observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
     # (goal_dim,) --> (1,1,goal_dim)
-    rel_goal = np.expand_dims(np.expand_dims(rel_goal, axis=0), axis=0)
-    goals = torch.from_numpy(rel_goal).to(device=device, dtype=torch.float32)
+    if goal_form == "rel_goal":
+        goal = np.expand_dims(np.expand_dims(goal, axis=0), axis=0)
+        goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
+    # float --> (1,1,1)
+    elif goal_form == "distance_to_goal":
+        goals = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1, 1)
 
     # t0 is 0, shape (1,1)
     timesteps = torch.tensor(0, device=device, dtype=torch.long).reshape(1, 1)
@@ -97,23 +106,30 @@ def evaluate_one_episode_dt(self,
         )
         
         # append new action
+        action = action.detach().cpu().item()
         new_action = torch.tensor(action, device=device, dtype=torch.long).reshape(1, 1)
         actions = torch.cat([actions, new_action], dim=1)
 
         # step the env according to the action, get new observation and goal
-        action = action.detach().cpu().numpy()
-        obs, _, done, _ = self.env.step(action)
-        obs_array = extract_observation(obs, self.env.observation_space.spaces)
-        rel_goal = np.array(obs["pointgoal"], dtype="float32")
+        obs, _, done, _ = env.step(action)
+        obs_array = extract_observation(obs, env.observation_space.spaces)
+        if goal_form == "rel_goal":
+            goal = np.array(obs["pointgoal"], dtype="float32")
+        elif goal_form == "distance_to_goal":
+            goal = env.get_current_distance()
 
         # change shape and convert to torch tensor
         # (C,H,W) --> (1,1,C,H,W)
         obs_array = np.expand_dims(np.expand_dims(obs_array, axis=0), axis=0)
         new_obs = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
         # (goal_dim,) --> (1,1,goal_dim)
-        rel_goal = np.expand_dims(np.expand_dims(rel_goal, axis=0), axis=0)
-        new_goal = torch.from_numpy(rel_goal).to(device=device, dtype=torch.float32)
-        
+        if goal_form == "rel_goal":
+            goal = np.expand_dims(np.expand_dims(goal, axis=0), axis=0)
+            new_goal = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
+        # float --> (1,1,1)
+        elif goal_form == "distance_to_goal":
+            new_goal = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1, 1)
+            
         # append new observation and goal
         observations = torch.cat([observations, new_obs], dim=1)
         goals = torch.cat([goals, new_goal], dim=1)
@@ -127,17 +143,17 @@ def evaluate_one_episode_dt(self,
             break
 
     # collect measures
-    episode_length = self.env.get_current_step()
-    success = self.env.is_success()
-    spl = self.env.get_spl()
-    softspl = self.env.get_softspl()
+    episode_length = env.get_current_step()
+    success = env.is_success()
+    spl = env.get_spl()
+    softspl = env.get_softspl()
 
     return episode_length, success, spl, softspl
 
 
 # evaluate an agent in across scene env
 class MultiEnvEvaluator:
-    # eval_split: [val, test]
+    # eval_split: ["across_scene_test", "same_scene_test", "across_scene_val", "same_scene_val"]
     def __init__(self, eval_split, config_filename="imitation_learning.yaml", 
         env: MultiNavEnv = None, device=None):
 
@@ -167,22 +183,41 @@ class MultiEnvEvaluator:
 
         # goal_form
         self.goal_form = self.config.get("goal_form") 
+        if self.goal_form not in ["rel_goal", "distance_to_goal"]:
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit()
 
-        # get names
-        self.project_name = 'dt'.lower()
-        self.group_name = self.config.get("experiment_name").lower()
+        # get name of evaluation folder
         self.experiment_name_to_load = self.config.get("eval_experiment_folder")
           
-
         # load episodes of behavior dataset for evaluation
         self.eval_episodes = load_behavior_dataset_meta(yaml_name=config_filename, 
             split_name=eval_split)
 
-    # load the agent model to be evaluated
-    def load_model(self):
+    # load dt model to be evaluated
+    def load_dt_model(self):
+        # create model
+        model = DecisionTransformer(
+            obs_channel = get_obs_channel_num(self.config),
+            obs_width = int(self.config.get("image_width")), 
+            obs_height = int(self.config.get("image_height")),
+            goal_dim=int(self.config.get("goal_dimension")),
+            goal_form=self.config.get("goal_form"),
+            act_num=int(self.config.get("action_number")),
+            context_length=int(self.config.get('K')),
+            max_ep_len=int(self.config.get("max_ep_len")),  
+            hidden_size=int(self.config.get('embed_dim')), # parameters starting from here will be passed to gpt2
+            n_layer=int(self.config.get('n_layer')),
+            n_head=int(self.config.get('n_head')),
+            n_inner=int(4*self.config.get('embed_dim')),
+            activation_function=self.config.get('activation_function'),
+            n_positions=1024,
+            resid_pdrop=float(self.config.get('dropout')),
+            attn_pdrop=float(self.config.get('dropout')),
+        )
+        
         # get checkpoint path
-        folder_name = self.project_name + "-" + self.group_name + "-" + self.experiment_name_to_load
-        checkpoint_path = os.path.join(checkpoints_path, folder_name, self.config.get("eval_checkpoint_file"))
+        checkpoint_path = os.path.join(checkpoints_path, self.experiment_name_to_load, self.config.get("eval_checkpoint_file"))
         if os.path.exists(checkpoint_path):
             print("Loading checkpoint at: "+str(checkpoint_path))
         else:
@@ -190,13 +225,13 @@ class MultiEnvEvaluator:
             exit()  
         
         # load checkpoint
-        model = torch.load(checkpoint_path, map_location="cpu")
+        model.load_state_dict(torch.load(checkpoint_path))
 
         return model
 
     def evaluate_over_dataset(self, model=None, sample=True):
         if model is None:
-            model = self.load_model()
+            model = self.load_dt_model()
         
         episode_length_array = MeasureHistory("episode_length")
         success_array = MeasureHistory("success")
@@ -205,8 +240,9 @@ class MultiEnvEvaluator:
 
         for i, episode in enumerate(self.eval_episodes):
             print('Episode: {}'.format(i+1))
-            episode_length, success, spl, softspl = self.evaluate_one_episode_dt(
+            episode_length, success, spl, softspl = evaluate_one_episode_dt(
                 episode,
+                self.env,
                 model,
                 self.goal_form,
                 sample,
@@ -226,7 +262,7 @@ class MultiEnvEvaluator:
         print("==============================================")
 
 if __name__ == "__main__":
-    evaluator = MultiEnvEvaluator(eval_split="test")
+    evaluator = MultiEnvEvaluator(eval_split="same_scene_test") # across_scene_test
     evaluator.evaluate_over_dataset()
 
         

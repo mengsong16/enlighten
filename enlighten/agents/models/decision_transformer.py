@@ -214,7 +214,6 @@ class DecisionTransformer(nn.Module):
             goals = goals.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)
 
-        print("============================")
 
         # create attention mask according to the input
         if self.context_length is not None:
@@ -229,13 +228,14 @@ class DecisionTransformer(nn.Module):
 
             # only attend to the valid part (non padding part)
             # 0 - not attend, 1 - attend
-            attention_mask = torch.ones(1, seq_length)
+            attention_mask = torch.ones((1, seq_length), device=observations.device)
             # right pad all tokens to context length
             op, ap, gp, tp, mp = self.get_padding(batch_size, self.context_length-seq_length, observations.device)
             observations = torch.cat([observations, op], dim=1).to(dtype=torch.float32)  
             actions = torch.cat([actions, ap], dim=1).to(dtype=torch.long) 
             goals = torch.cat([goals, gp], dim=1).to(dtype=torch.float32)
             timesteps = torch.cat([timesteps, tp], dim=1).to(dtype=torch.long)
+            
             attention_mask = torch.cat([attention_mask, mp], dim=1).to(dtype=torch.long)
         else:
             attention_mask = None

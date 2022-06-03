@@ -9,10 +9,136 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
 
+class MeasureHistory:
+    def __init__(self, id):
+        self.id = id
+        self.data = []
+    
+    def add(self, a):
+        self.data.append(a)
+    
+    def len(self):
+        return len(self.data)
+
+    def mean(self): 
+        data = np.array(self.data, dtype=np.float32) 
+        return np.mean(data, axis=0)
+
+    def max(self):
+        data = np.array(self.data, dtype=np.float32)
+        return np.max(data, axis=0)
+    
+    def min(self):
+        data = np.array(self.data, dtype=np.float32)
+        return np.min(data, axis=0)
+
+    def std(self):
+        data = np.array(self.data, dtype=np.float32)
+        return np.std(data, axis=0)
+    
+    def print_full_summary(self):
+        print("================  %s  ======================"%(self.id))
+        print("Num: %f"%self.len())
+        print("Min: %f"%self.min())
+        print("Mean: %f"%self.mean())
+        print("Max: %f"%self.max())
+        print("Std: %f"%self.std())
+        print("==============================================")
+
+
+
+# evaluate decision transformer for one episode
+def evaluate_one_episode_dt(self,
+        episode,
+        model,
+        goal_form,
+        sample,
+        max_ep_len,
+        device
+    ):
+
+    # turn model into eval mode
+    model.eval()
+    model.to(device=device)
+
+    # reset env
+    obs = self.env.reset(episode=episode, plan_shortest_path=False)
+    obs_array = extract_observation(obs, self.env.observation_space.spaces)
+    rel_goal = np.array(obs["pointgoal"], dtype="float32")
+    # a0 is 0, shape (1,1)
+    actions = torch.zeros((1, 1), device=device, dtype=torch.long)
+
+    print("Scene id: %s"%(episode.scene_id))
+    print("Goal position: %s"%(self.env.goal_position))
+    print("Start position: %s"%(self.env.start_position))
+
+    # change shape and convert to torch tensor
+    # (C,H,W) --> (1,1,C,H,W)
+    obs_array = np.expand_dims(np.expand_dims(obs_array, axis=0), axis=0)
+    observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
+    # (goal_dim,) --> (1,1,goal_dim)
+    rel_goal = np.expand_dims(np.expand_dims(rel_goal, axis=0), axis=0)
+    goals = torch.from_numpy(rel_goal).to(device=device, dtype=torch.float32)
+
+    # t0 is 0, shape (1,1)
+    timesteps = torch.tensor(0, device=device, dtype=torch.long).reshape(1, 1)
+
+    # run under policy for max_ep_len step
+    # keep all history steps, but only use context length to predict current action
+    for t in range(max_ep_len):
+        # predict according to the sequence from (s0,a0,r0) up to now (context)
+        # need to input timesteps as positional embedding
+        action = model.get_action(
+            observations.to(dtype=torch.float32),
+            actions.to(dtype=torch.float32),
+            goals.to(dtype=torch.float32),
+            timesteps.to(dtype=torch.long),
+            sample=sample,
+        )
+        
+        # append new action
+        new_action = torch.tensor(action, device=device, dtype=torch.long).reshape(1, 1)
+        actions = torch.cat([actions, new_action], dim=1)
+
+        # step the env according to the action, get new observation and goal
+        action = action.detach().cpu().numpy()
+        obs, _, done, _ = self.env.step(action)
+        obs_array = extract_observation(obs, self.env.observation_space.spaces)
+        rel_goal = np.array(obs["pointgoal"], dtype="float32")
+
+        # change shape and convert to torch tensor
+        # (C,H,W) --> (1,1,C,H,W)
+        obs_array = np.expand_dims(np.expand_dims(obs_array, axis=0), axis=0)
+        new_obs = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
+        # (goal_dim,) --> (1,1,goal_dim)
+        rel_goal = np.expand_dims(np.expand_dims(rel_goal, axis=0), axis=0)
+        new_goal = torch.from_numpy(rel_goal).to(device=device, dtype=torch.float32)
+        
+        # append new observation and goal
+        observations = torch.cat([observations, new_obs], dim=1)
+        goals = torch.cat([goals, new_goal], dim=1)
+
+        # append new timestep
+        timesteps = torch.cat(
+            [timesteps,
+            torch.ones((1, 1), device=device, dtype=torch.long) * (t+1)], dim=1)
+
+        if done:
+            break
+
+    # collect measures
+    episode_length = self.env.get_current_step()
+    success = self.env.is_success()
+    spl = self.env.get_spl()
+    softspl = self.env.get_softspl()
+
+    return episode_length, success, spl, softspl
+
 
 # evaluate an agent in across scene env
-class MultiEnvEvaluator():
-    def __init__(self, model, eval_split, config_filename="imitation_learning.yaml", 
+class MultiEnvEvaluator:
+    # eval_split: [val, test]
+    def __init__(self, eval_split, config_filename="imitation_learning.yaml", 
         env: MultiNavEnv = None, device=None):
 
         assert config_filename is not None, "needs config file to initialize trainer"
@@ -29,9 +155,6 @@ class MultiEnvEvaluator():
             self.env = MultiNavEnv(config_file=config_filename) 
         else:
             self.env = env
-        
-        # the agent model to be evaluated
-        self.model = model
 
         # device
         if device is None:
@@ -40,110 +163,72 @@ class MultiEnvEvaluator():
             self.device = device 
 
         # max episode length
-        self.max_ep_len = int(self.config.get("max_ep_len"))     
+        self.max_ep_len = int(self.config.get("max_ep_len"))  
+
+        # goal_form
+        self.goal_form = self.config.get("goal_form") 
+
+        # get names
+        self.project_name = 'dt'.lower()
+        self.group_name = self.config.get("experiment_name").lower()
+        self.experiment_name_to_load = self.config.get("eval_experiment_folder")
+          
 
         # load episodes of behavior dataset for evaluation
         self.eval_episodes = load_behavior_dataset_meta(yaml_name=config_filename, 
             split_name=eval_split)
 
-    def evaluate_over_dataset(self):
+    # load the agent model to be evaluated
+    def load_model(self):
+        # get checkpoint path
+        folder_name = self.project_name + "-" + self.group_name + "-" + self.experiment_name_to_load
+        checkpoint_path = os.path.join(checkpoints_path, folder_name, self.config.get("eval_checkpoint_file"))
+        if os.path.exists(checkpoint_path):
+            print("Loading checkpoint at: "+str(checkpoint_path))
+        else:
+            print("Error: checkpoint path does not exist: %s"%(checkpoint_path))
+            exit()  
+        
+        # load checkpoint
+        model = torch.load(checkpoint_path, map_location="cpu")
+
+        return model
+
+    def evaluate_over_dataset(self, model=None, sample=True):
+        if model is None:
+            model = self.load_model()
+        
+        episode_length_array = MeasureHistory("episode_length")
+        success_array = MeasureHistory("success")
+        spl_array = MeasureHistory("soft_spl")
+        soft_spl_array = MeasureHistory("soft_spl")
+
         for i, episode in enumerate(self.eval_episodes):
             print('Episode: {}'.format(i+1))
             episode_length, success, spl, softspl = self.evaluate_one_episode_dt(
                 episode,
-                state_dim,
-                act_dim,
                 model,
+                self.goal_form,
                 sample,
-                max_ep_len,
-                device)
-
-    # evaluate decision transformer for one episode
-    def evaluate_one_episode_dt(self,
-            episode,
-            state_dim,
-            act_dim,
-            model,
-            sample,
-            max_ep_len,
-            device
-        ):
-
-        # turn model into eval mode
-        model.eval()
-        model.to(device=device)
-
-        # reset env
-        obs = self.env.reset(episode=episode, plan_shortest_path=False)
-        obs_array = extract_observation(obs, self.env.observation_space.spaces)
-        rel_goal = np.array(obs["pointgoal"], dtype="float32")
-
-        print("Scene id: %s"%(episode.scene_id))
-        print("Goal position: %s"%(self.env.goal_position))
-        print("Start position: %s"%(self.env.start_position))
-
-        # note that the latest action and reward will be "padding"
-        observations = torch.from_numpy(obs_array).reshape(1, state_dim).to(device=device, dtype=torch.float32)
-        # place-holder
-        actions = torch.zeros((1, act_dim), device=device, dtype=torch.float32)
-        goals = torch.zeros(0, device=device, dtype=torch.float32)
-
-        ep_return = target_return
-        target_return = torch.tensor(ep_return, device=device, dtype=torch.float32).reshape(1, 1)
-        timesteps = torch.tensor(0, device=device, dtype=torch.long).reshape(1, 1)
-
-        # run under policy for max_ep_len step
-        for t in range(max_ep_len):
-
-            # post pad a 0 to action sequence and reward sequence
-            actions = torch.cat([actions, torch.zeros((1, act_dim), device=device)], dim=0)
-
-            # predict according to the sequence from (s0,a0,r0) up to now (context)
-            # need to input timesteps as positional embedding
-            action = model.get_action(
-                observations.to(dtype=torch.float32),
-                actions.to(dtype=torch.float32),
-                goals.to(dtype=torch.float32),
-                timesteps.to(dtype=torch.long),
-                sample=sample,
-            )
+                self.max_ep_len,
+                self.device)
             
-            # append new action
-            actions[-1] = action
-            
-            # step the env according to action, get new observation and goal
-            action = action.detach().cpu().numpy()
-            obs, _, done, _ = self.env.step(action)
-            obs_array = extract_observation(obs, self.env.observation_space.spaces)
-            rel_goal = np.array(obs["pointgoal"], dtype="float32")
-
-            # change shape and convert to torch tensor
-            # (C,H,W) --> (1,C,H,W)
-            obs_array = np.expand_dims(obs_array, axis=0)
-            obs = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
-            
-            # append new observation and goal
-            observations = torch.cat([observations, obs], dim=0)
-            goals[-1] = rel_goal
-
-            # append target return
-            target_return = torch.cat(
-                [target_return, pred_return.reshape(1, 1)], dim=1)
+            episode_length_array.add(episode_length)
+            success_array.add(float(success))
+            spl_array.add(spl)
+            soft_spl_array.add(softspl)
         
-            # append new timestep
-            timesteps = torch.cat(
-                [timesteps,
-                torch.ones((1, 1), device=device, dtype=torch.long) * (t+1)], dim=1)
+        print("==============================================")
+        print("Episodes in total: %d"%(success_array.len()))
+        print("Success rate: %d"%(success_array.mean()))
+        print("SPL mean: %d"%(spl_array.mean()))
+        print("Soft SPL mean: %d"%(soft_spl_array.mean()))
+        print("==============================================")
 
+if __name__ == "__main__":
+    evaluator = MultiEnvEvaluator(eval_split="test")
+    evaluator.evaluate_over_dataset()
 
-            if done:
-                break
+        
 
-        # collect measurs
-        episode_length = self.env.get_current_step()
-        success = self.env.is_success()
-        spl = self.env.get_spl()
-        softspl = self.env.get_softspl()
-
-        return episode_length, success, spl, softspl
-
+    

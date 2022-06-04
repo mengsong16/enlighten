@@ -5,7 +5,7 @@ dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where poin
 pointgoal_dataset_path: "/dataset/pointnav_gibson_v1"
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_mini" #"/dataset/behavior_dataset_gibson"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_mini" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
 experiment_name: "test"

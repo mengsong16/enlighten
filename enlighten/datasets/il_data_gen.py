@@ -146,13 +146,18 @@ def load_pointgoal_dataset_meta(config, split):
 def check_episode_per_scene(train_scene_num, train_episode_num, 
     across_scene_val_scene_num, across_scene_val_episode_num,
     same_scene_val_episode_num,
+    same_start_goal_val_episode_num,
     across_scene_test_scene_num, across_scene_test_episode_num,
-    same_scene_test_episode_num):
+    same_scene_test_episode_num,
+    same_start_goal_test_episode_num):
+
     assert train_episode_num % train_scene_num == 0, "Error: train: episode num is not divisible by scene num"
     assert across_scene_val_episode_num % across_scene_val_scene_num == 0, "Error: Across scene val: episode num is not divisible by scene num"
     assert across_scene_test_episode_num % across_scene_test_scene_num == 0, "Error: Across scene test: episode num is not divisible by scene num"
     assert same_scene_val_episode_num % train_scene_num == 0, "Error: Same scene val: episode num is not divisible by train scene num"
     assert same_scene_test_episode_num % train_scene_num == 0, "Error: Same scene test: episode num is not divisible by train scene num"
+    assert same_start_goal_val_episode_num % train_scene_num == 0, "Error: same start goal val: episode num is not divisible by train scene num"
+    assert same_start_goal_test_episode_num % train_scene_num == 0, "Error: same start goal test: episode num is not divisible by train scene num"
 
 # save a list of episodes to pickle file
 def save_behavior_dataset_meta(sampled_episodes, behavior_dataset_meta_data_path, split_name):
@@ -168,6 +173,7 @@ def save_behavior_dataset_meta(sampled_episodes, behavior_dataset_meta_data_path
 
 def sample_train_episodes(train_scenes, train_episode_num, 
     same_scene_val_episode_num, same_scene_test_episode_num,
+    same_start_goal_val_episode_num, same_start_goal_test_episode_num,
     behavior_dataset_meta_data_path, pointgoal_meta):
 
     train_scene_num = len(train_scenes)
@@ -177,10 +183,16 @@ def sample_train_episodes(train_scenes, train_episode_num,
     test_episode_per_scene = same_scene_test_episode_num // train_scene_num
     batch_size = train_episode_per_scene + val_episode_per_scene + test_episode_per_scene
 
+    same_start_goal_val_per_scene = same_start_goal_val_episode_num // train_scene_num
+    same_start_goal_test_per_scene = same_start_goal_test_episode_num // train_scene_num
+    sub_batch_size = same_start_goal_val_per_scene + same_start_goal_test_per_scene
+
     sampled_episode_num = 0
     sampled_train_episodes = []
     sampled_val_episodes = []
     sampled_test_episodes = []
+    sampled_same_start_goal_val_episodes = []
+    sampled_same_start_goal_test_episodes = []
 
     for scene_id in train_scenes:
         # collect all episodes from current scene
@@ -199,10 +211,16 @@ def sample_train_episodes(train_scenes, train_episode_num,
         sampled_val_episodes.extend(val_episodes)
         sampled_test_episodes.extend(test_episodes)
 
+        # sample same start and goal val and test episodes from training set of current scene
+        sampled_sub_episodes = random.sample(train_episodes, sub_batch_size)
+        # split into val and test
+        sampled_same_start_goal_val_episodes.extend(sampled_sub_episodes[0:same_start_goal_val_per_scene])
+        sampled_same_start_goal_test_episodes.extend(sampled_sub_episodes[-same_start_goal_test_per_scene:])
 
     # check sampled episode number
     desired_episode_num = train_episode_num + same_scene_val_episode_num + same_scene_test_episode_num
     assert sampled_episode_num == desired_episode_num, "Sampled episdoe num %d, desired episdoe num %d"%(sampled_episode_num, desired_episode_num)
+
     
     # save 
     save_behavior_dataset_meta(sampled_train_episodes, 
@@ -211,6 +229,10 @@ def sample_train_episodes(train_scenes, train_episode_num,
         behavior_dataset_meta_data_path, "same_scene_val")
     save_behavior_dataset_meta(sampled_test_episodes, 
         behavior_dataset_meta_data_path, "same_scene_test")
+    save_behavior_dataset_meta(sampled_same_start_goal_val_episodes, 
+        behavior_dataset_meta_data_path, "same_start_goal_val")
+    save_behavior_dataset_meta(sampled_same_start_goal_test_episodes, 
+        behavior_dataset_meta_data_path, "same_start_goal_test")
 
 def sample_across_scene_episodes(scenes, episode_num, 
     behavior_dataset_meta_data_path, pointgoal_meta, split_name):
@@ -246,8 +268,10 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
     train_scene_num, train_episode_num, 
     across_scene_val_scene_num, across_scene_val_episode_num,
     same_scene_val_episode_num,
+    same_start_goal_val_episode_num,
     across_scene_test_scene_num, across_scene_test_episode_num,
-    same_scene_test_episode_num):
+    same_scene_test_episode_num,
+    same_start_goal_test_episode_num):
     config_file=os.path.join(config_path, yaml_name)
     config = parse_config(config_file)
 
@@ -260,8 +284,10 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
     check_episode_per_scene(train_scene_num, train_episode_num, 
     across_scene_val_scene_num, across_scene_val_episode_num,
     same_scene_val_episode_num,
+    same_start_goal_val_episode_num,
     across_scene_test_scene_num, across_scene_test_episode_num,
-    same_scene_test_episode_num)
+    same_scene_test_episode_num,
+    same_start_goal_test_episode_num)
 
     # sample scenes
     sample_scene_num = train_scene_num + across_scene_val_scene_num + across_scene_test_scene_num
@@ -283,6 +309,7 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
     # sample train episodes
     sample_train_episodes(train_scenes, train_episode_num, 
     same_scene_val_episode_num, same_scene_test_episode_num,
+    same_start_goal_val_episode_num, same_start_goal_test_episode_num,
     behavior_dataset_meta_data_path, pointgoal_meta) 
 
     # sample across scene val episodes
@@ -292,6 +319,8 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
     # sample across scene test episodes
     sample_across_scene_episodes(test_scenes, across_scene_test_episode_num, 
     behavior_dataset_meta_data_path, pointgoal_meta, "across_scene_test")
+
+    
 
 def load_behavior_dataset_meta(yaml_name, split_name):
     config_file=os.path.join(config_path, yaml_name)
@@ -479,18 +508,22 @@ if __name__ == "__main__":
     #test_get_scene_names("imitation_learning.yaml")
     #shortest_path_follower("imitation_learning.yaml")
     #generate_pointgoal_dataset_meta(yaml_name="imitation_learning.yaml", split="train")
-    # generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
-    #     pointgoal_dataset_split="train", 
-    #     train_scene_num=4, train_episode_num=2000, 
-    #     across_scene_val_scene_num=2, across_scene_val_episode_num=100,
-    #     same_scene_val_episode_num=200,
-    #     across_scene_test_scene_num=2, across_scene_test_episode_num=100,
-    #     same_scene_test_episode_num=200)
+    generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
+        pointgoal_dataset_split="train", 
+        train_scene_num=4, train_episode_num=2000, 
+        across_scene_val_scene_num=2, across_scene_val_episode_num=10,
+        same_scene_val_episode_num=20,
+        same_start_goal_val_episode_num=20,
+        across_scene_test_scene_num=2, across_scene_test_episode_num=50,
+        same_scene_test_episode_num=100,
+        same_start_goal_test_episode_num=100)
     # generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
     #     pointgoal_dataset_split="train", 
     #     train_scene_num=4, train_episode_num=100, 
     #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
-    #     same_scene_val_episode_num=20,
+    #     same_scene_val_episode_num=12,
+    #     same_start_goal_val_episode_num=12,
     #     across_scene_test_scene_num=2, across_scene_test_episode_num=10,
-    #     same_scene_test_episode_num=20)
+    #     same_scene_test_episode_num=12,
+    #     same_start_goal_test_episode_num=12)
     generate_train_behavior_data("imitation_learning.yaml")

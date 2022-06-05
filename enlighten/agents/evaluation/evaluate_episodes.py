@@ -153,8 +153,8 @@ def evaluate_one_episode_dt(
 
 # evaluate an agent in across scene env
 class MultiEnvEvaluator:
-    # eval_split: ["across_scene_test", "same_scene_test", "across_scene_val", "same_scene_val"]
-    def __init__(self, eval_split, config_filename="imitation_learning.yaml", 
+    # eval_splits: ["across_scene_test", "same_scene_test", "across_scene_val", "same_scene_val", "same_start_goal_test", "same_start_goal_val"]
+    def __init__(self, eval_splits, config_filename="imitation_learning.yaml", 
         env: MultiNavEnv = None, device=None):
 
         assert config_filename is not None, "needs config file to initialize trainer"
@@ -190,9 +190,13 @@ class MultiEnvEvaluator:
         # get name of evaluation folder
         self.experiment_name_to_load = self.config.get("eval_experiment_folder")
           
-        # load episodes of behavior dataset for evaluation
-        self.eval_episodes = load_behavior_dataset_meta(yaml_name=config_filename, 
+        # load episodes of behavior datasets for evaluation
+        print("====> Evaluation splits during training: %s"%(eval_splits))
+        self.eval_dataset_episodes = {}
+        for eval_split in eval_splits:
+            episodes = load_behavior_dataset_meta(yaml_name=config_filename, 
             split_name=eval_split)
+            self.eval_dataset_episodes[eval_split] = episodes
 
     # load dt model to be evaluated
     def load_dt_model(self):
@@ -229,16 +233,23 @@ class MultiEnvEvaluator:
 
         return model
 
-    def evaluate_over_dataset(self, model=None, sample=True):
+    def evaluate_over_datasets(self, model=None, sample=True):
         if model is None:
             model = self.load_dt_model()
         
+        logs = {}
+        for split_name, episodes in self.eval_dataset_episodes.items():
+            logs = self.evaluate_over_one_dataset(episodes, model, sample, split_name, logs)
+        
+        return logs
+    
+    def evaluate_over_one_dataset(self, episodes, model, sample, split_name, logs):
         episode_length_array = MeasureHistory("episode_length")
         success_array = MeasureHistory("success")
         spl_array = MeasureHistory("soft_spl")
         soft_spl_array = MeasureHistory("soft_spl")
 
-        for i, episode in enumerate(self.eval_episodes):
+        for i, episode in enumerate(episodes):
             print('Episode: {}'.format(i+1))
             episode_length, success, spl, softspl = evaluate_one_episode_dt(
                 episode,
@@ -254,16 +265,29 @@ class MultiEnvEvaluator:
             spl_array.add(spl)
             soft_spl_array.add(softspl)
         
-        print("==============================================")
-        print("Episodes in total: %d"%(success_array.len()))
-        print("Success rate: %d"%(success_array.mean()))
-        print("SPL mean: %d"%(spl_array.mean()))
-        print("Soft SPL mean: %d"%(soft_spl_array.mean()))
-        print("==============================================")
+        
+        logs[f"{split_name}/total_episodes"] = success_array.len()
+        logs[f"{split_name}/success_rate"] = success_array.mean()
+        logs[f"{split_name}/mean_spl"] = spl_array.mean()
+        logs[f"{split_name}/mean_soft_spl"] = soft_spl_array.mean()
+        
+        return logs
+    
+    def print_metrics(self, logs, eval_splits):
+        for split_name in eval_splits:
+            print("================== %s ======================"%(split_name))
+            print("Episodes in total: %d"%(logs[f"{split_name}/total_episodes"]))
+            print("Success rate: %d"%(logs[f"{split_name}/success_rate"]))
+            print("SPL mean: %d"%(logs[f"{split_name}/mean_spl"]))
+            print("Soft SPL mean: %d"%(logs[f"{split_name}/mean_soft_spl"]))
+            print("==============================================")
+
 
 if __name__ == "__main__":
-    evaluator = MultiEnvEvaluator(eval_split="same_scene_test") # across_scene_test
-    evaluator.evaluate_over_dataset()
+    eval_splits = ["same_scene_val"]
+    evaluator = MultiEnvEvaluator(eval_splits=eval_splits) # across_scene_test
+    logs = evaluator.evaluate_over_datasets(sample=True)
+    evaluator.print_metrics(logs, eval_splits)
 
         
 

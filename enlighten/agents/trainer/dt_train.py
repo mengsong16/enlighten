@@ -9,10 +9,10 @@ import random
 import sys
 import os
 import datetime
+import time
 
 from enlighten.agents.models.decision_transformer import DecisionTransformer
 from enlighten.agents.trainer.seq_trainer import SequenceTrainer
-from enlighten.agents.evaluation.evaluate_episodes import eval_episodes
 from enlighten.utils.path import *
 from enlighten.utils.config_utils import parse_config
 from enlighten.agents.common.seed import set_seed_except_env_seed
@@ -20,6 +20,7 @@ from enlighten.agents.common.other import get_device
 from enlighten.datasets.behavior_dataset import BehaviorDataset
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
+from enlighten.agents.evaluation.evaluate_episodes import MultiEnvEvaluator
 
 class DTTrainer:
     def __init__(self, config_filename="imitation_learning.yaml"):
@@ -32,11 +33,13 @@ class DTTrainer:
         self.seed = int(self.config.get("seed"))
         set_seed_except_env_seed(self.seed)
 
-        # create env, for evaluation, not for training
-        self.env = MultiNavEnv(config_file=config_filename) 
-
         # set device
         self.device = get_device(self.config)
+
+        # create evaluator
+        self.evaluator = MultiEnvEvaluator(eval_splits=list(self.config.get("eval_during_training_splits")),  
+            config_filename=config_filename, device=self.device)
+
     
         # set experiment name
         self.set_experiment_name()
@@ -45,6 +48,9 @@ class DTTrainer:
         self.log_to_wandb = self.config.get("log_to_wandb")
         if self.log_to_wandb:
             self.init_wandb()
+        
+        # set evaluation 
+        self.eval_every_iterations = int(self.config.get("eval_every_iterations"))
         
         # set save checkpoint parameters
         self.save_every_iterations = int(self.config.get("save_every_iterations"))
@@ -119,17 +125,22 @@ class DTTrainer:
             batch_size=batch_size,
             train_dataset=train_dataset,
             scheduler=scheduler,
-            #eval_fns=[eval_episodes()],
         )
 
         # train for max_iters iterations
         # each iteration includes num_steps_per_iter steps
         for iter in range(int(self.config.get('max_iters'))):
-            outputs = trainer.train_one_iteration(num_steps=int(self.config.get('num_steps_per_iter')), iter_num=iter+1, print_logs=True)
-            if self.log_to_wandb:
-                wandb.log(outputs)
+            logs = trainer.train_one_iteration(num_steps=int(self.config.get('num_steps_per_iter')), iter_num=iter+1, print_logs=True)
             
-             # save checkpoint
+            # evaluate
+            if self.eval_every_iterations > 0:
+                if (iter+1) % self.eval_every_iterations == 0:
+                    self.eval_during_training(model=model, logs=logs, print_logs=True)
+                
+            if self.log_to_wandb:
+                wandb.log(logs)
+            
+            # save checkpoint
             if (iter+1) % self.save_every_iterations == 0:
                 self.save_checkpoint(trainer.model, checkpoint_number = int((iter+1) // self.save_every_iterations))
         
@@ -146,6 +157,26 @@ class DTTrainer:
         torch.save(checkpoint, checkpoint_path)
 
         print(f"Checkpoint {checkpoint_number} saved.")
+    
+    # evaluate during training
+    def eval_during_training(self, model, logs={}, print_logs=False):
+        eval_start = time.time()
+
+        # switch model to evaluation mode
+        model.eval()
+        
+        # evaluate
+        outputs = self.evaluator.evaluate_over_datasets(model=model, sample=self.config.get("eval_during_training_sample"))
+        for k, v in outputs.items():
+            logs[f'evaluation/{k}'] = v
+        
+        logs['time/evaluation'] = time.time() - eval_start
+        if print_logs:
+            for k, v in logs.items():
+                print(f'{k}: {v}')
+        
+        return logs
+
 
 
 if __name__ == '__main__':

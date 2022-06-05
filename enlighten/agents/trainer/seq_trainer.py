@@ -6,15 +6,13 @@ from torch.nn import functional as F
 
 # train seq2seq imitation learning
 class SequenceTrainer():
-    def __init__(self, model, optimizer, batch_size, train_dataset, scheduler=None, eval_fns=None):
+    def __init__(self, model, optimizer, batch_size, train_dataset, scheduler=None):
         self.model = model
         self.optimizer = optimizer
         self.batch_size = batch_size
         
         
         self.scheduler = scheduler
-        self.eval_fns = [] if eval_fns is None else eval_fns
-        self.diagnostics = dict()
         self.train_dataset = train_dataset
 
         self.start_time = time.time()
@@ -38,25 +36,9 @@ class SequenceTrainer():
                 self.scheduler.step()
 
         logs['time/training'] = time.time() - train_start
-
-        eval_start = time.time()
-
-        # switch model to evaluation mode
-        self.model.eval()
-        
-        # evaluate by each evaluation function
-        for eval_fn in self.eval_fns:
-            outputs = eval_fn(self.model)
-            for k, v in outputs.items():
-                logs[f'evaluation/{k}'] = v
-
         logs['time/total'] = time.time() - self.start_time
-        logs['time/evaluation'] = time.time() - eval_start
         logs['training/train_loss_mean'] = np.mean(train_losses)
         logs['training/train_loss_std'] = np.std(train_losses)
-
-        for k in self.diagnostics:
-            logs[k] = self.diagnostics[k]
 
         if print_logs:
             print('=' * 80)

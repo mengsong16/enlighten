@@ -277,9 +277,9 @@ class MultiEnvEvaluator:
         for split_name in eval_splits:
             print("================== %s ======================"%(split_name))
             print("Episodes in total: %d"%(logs[f"{split_name}/total_episodes"]))
-            print("Success rate: %d"%(logs[f"{split_name}/success_rate"]))
-            print("SPL mean: %d"%(logs[f"{split_name}/mean_spl"]))
-            print("Soft SPL mean: %d"%(logs[f"{split_name}/mean_soft_spl"]))
+            print("Success rate: %f"%(logs[f"{split_name}/success_rate"]))
+            print("SPL mean: %f"%(logs[f"{split_name}/mean_spl"]))
+            print("Soft SPL mean: %f"%(logs[f"{split_name}/mean_soft_spl"]))
             print("==============================================")
 
 

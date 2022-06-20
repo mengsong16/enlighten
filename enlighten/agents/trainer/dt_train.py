@@ -37,6 +37,7 @@ class DTTrainer:
         self.device = get_device(self.config)
 
         # create evaluator
+        # Note that only evaluator needs environment, offline training does not need
         self.evaluator = MultiEnvEvaluator(eval_splits=list(self.config.get("eval_during_training_splits")),  
             config_filename=config_filename, device=self.device)
 

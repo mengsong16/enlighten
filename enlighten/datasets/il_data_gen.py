@@ -321,10 +321,13 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
     behavior_dataset_meta_data_path, pointgoal_meta, "across_scene_test")
 
     
-
+# yaml_name is config name or config list
 def load_behavior_dataset_meta(yaml_name, split_name):
-    config_file=os.path.join(config_path, yaml_name)
-    config = parse_config(config_file)
+    if isinstance(yaml_name, str):
+        config_file = os.path.join(config_path, yaml_name)
+        config = parse_config(config_file)
+    else:
+        config = yaml_name
 
     behavior_dataset_path = config.get("behavior_dataset_path")
     behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")

@@ -3,7 +3,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-
+from tqdm import tqdm
 import signal
 import warnings
 from multiprocessing.connection import Connection
@@ -40,7 +40,7 @@ from enlighten.utils.image_utils import tile_images
 from enlighten.utils.pickle5_multiprocessing import ConnectionWrapper
 
 import os
-from enlighten.envs import NavEnv
+from enlighten.envs import NavEnv, MultiNavEnv
 from enlighten.utils.path import *
 from enlighten.utils.config_utils import parse_config
 
@@ -52,6 +52,7 @@ import copy
 import random
 
 from enlighten.datasets.pointnav_dataset import make_dataset
+from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
 
 try:
     # Use torch.multiprocessing if we can.
@@ -163,7 +164,7 @@ class VectorEnv:
 
     def __init__(
         self,
-        make_env_fn: Callable[..., Union[NavEnv]],
+        make_env_fn: Callable[..., Union[NavEnv, MultiNavEnv]],
         env_fn_args: Sequence[Tuple] = None,
         auto_reset_done: bool = True,
         multiprocessing_start_method: str = "forkserver",
@@ -264,10 +265,11 @@ class VectorEnv:
                 if command == STEP_COMMAND:
                     # check wrapped env types
                     # different step methods for enlighten.NavEnv and garage.GymEnv
-                    if isinstance(env, (NavEnv, gym.Env)):
-                        # enlighten.NavEnv
+                    if isinstance(env, (NavEnv, MultiNavEnv, gym.Env)):
+                        # NavEnv or MultiNavEnv should have the same iterface for reset and step
                         observations, reward, done, info = env.step(**data)
                         if auto_reset_done and done:
+
                             observations = env.reset()
                         with profiling_utils.RangeContext(
                             "worker write after step"
@@ -311,8 +313,8 @@ class VectorEnv:
 
                     connection_write_fn(result)
 
-                elif command == COUNT_EPISODES_COMMAND:
-                    connection_write_fn(len(env.episodes))
+                # elif command == COUNT_EPISODES_COMMAND:
+                #     connection_write_fn(len(env.episodes))
 
                 else:
                     raise NotImplementedError(f"Unknown command {command}")
@@ -698,46 +700,21 @@ class ThreadedVectorEnv(VectorEnv):
         ]
         return read_fns, write_fns
 
-# make one environment
-# def _make_nav_env_fn(
-#     config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
-# ) -> NavEnv:
-#     """Constructor for default enlighten :ref:`enlighten.NavEnv`.
+def load_training_scenes_episodes(config):
+    episodes = load_behavior_dataset_meta(yaml_name=config, 
+        split_name="train")
 
-#     :param config_filename: configuration file name for environment.
-#     :param rank: rank for setting seed of environment
-#     :return: :ref:`enlighten.NavEnv` object
-#     """
-#     # get configuration
-#     config_file=os.path.join(config_path, config_filename)
-#     # create env
-#     env = NavEnv(config_file=config_file)
-#     # set seed
-#     env.seed(rank)
+    scene_episodes_dict = {}
+    for episode in tqdm(episodes):
+        
+        if episode.scene_id not in scene_episodes_dict:
+            scene_episodes_dict[episode.scene_id] = []
+            
+        scene_episodes_dict[episode.scene_id].append(episode)
+    
+    return scene_episodes_dict
 
-#     return env
-
-
-# make env and dataset
-def make_env_dataset_fn(config, seed, dataset_type):
-    r"""Creates an env of type env_class with specified config and rank.
-    This is to be passed in as an argument when creating VectorEnv.
-
-    Args:
-        config: root exp config that has core env config node as well as
-            env-specific config node.
-        env_class: class type of the env to be created.
-
-    Returns:
-        env object created according to specification.
-    """
-    dataset = make_dataset(id_dataset=dataset_type, config=config)
-    env = NavEnv(config_file=config, dataset=dataset)
-    env.seed(seed)
-    return env
-
-# construct vector envs from a dataset
-# TO DO: check whether seed, scene_contents are different for each env
+# construct vector envs from a training set
 def construct_envs_based_on_dataset(
     config,
     workers_ignore_signals: bool = False,
@@ -755,13 +732,10 @@ def construct_envs_based_on_dataset(
 
     num_environments = int(config.get("num_environments"))
     
-    # make dataset object
-    dataset = make_dataset(id_dataset=config.get("dataset_type"), config=config)
-    scenes = config.get("content_scenes")
-    # load all scenes in the dataset
-    if "*" in config.get("content_scenes"):
-        #scenes = dataset.get_scenes_to_load(config)
-        scenes = dataset.get_scene_names_to_load(config, config.get("split"))
+    
+    # get training scenes
+    scene_episodes_dict = load_training_scenes_episodes(config)
+    scenes = list(scene_episodes_dict.keys())
 
     # shuffle scenes
     if num_environments > 1:
@@ -779,58 +753,60 @@ def construct_envs_based_on_dataset(
                 )
             )
 
-        
         random.shuffle(scenes)
 
     # assign scenes to each env
+    # scene_splits is a list of scene list, len = num of environments
     scene_splits: List[List[str]] = [[] for _ in range(num_environments)]
     for idx, scene in enumerate(scenes):
         scene_splits[idx % len(scene_splits)].append(scene)
 
     assert sum(map(len, scene_splits)) == len(scenes)
 
+    # create episode list according to scene list
+    episode_splits = []
+    for scene_set in scene_splits:
+        episode_list = []
+        for sc in scene_set:
+            episode_list.extend(scene_episodes_dict[sc])
+        
+        episode_splits.append(episode_list)    
+
+
+    # copy configs and compute seeds
     configs = []
     seeds = []
-    dataset_types = []
     for i in range(num_environments):
-        #proc_config = config.clone()
-        #proc_config.defrost()
-
-        #task_config = proc_config.TASK_CONFIG
         seed = int(config.get("seed") + i)
         seeds.append(seed)
-
         cur_config = copy.deepcopy(config)
-        if len(scenes) > 0:
-            #task_config.DATASET.CONTENT_SCENES = scene_splits[i]
-            cur_config["content_scenes"] = scene_splits[i]
-
-        #task_config.SIMULATOR.HABITAT_SIM_V0.GPU_DEVICE_ID = (
-        #    config.get("simulator_gpu_id")
-        #)
-
-        #task_config.SIMULATOR.AGENT_0.SENSORS = config.SENSORS
-
-        #proc_config.freeze()
         configs.append(cur_config)
-
-    env_fn_args = tuple(zip(configs, seeds, dataset_types))
+        
+    env_fn_args = tuple(zip(configs, seeds, episode_splits))
 
     envs = VectorEnv(
-        make_env_fn=make_env_dataset_fn,
+        make_env_fn=_make_multi_nav_fn,
         env_fn_args=env_fn_args,
         workers_ignore_signals=workers_ignore_signals,
     ) 
 
-    # envs = VectorEnv(
-    #     make_env_fn=_make_env_fn,
-    #     env_fn_args=tuple(zip(configs, env_classes)),
-    #     workers_ignore_signals=workers_ignore_signals,
-    # )
     return envs
 
-def _make_nav_env_fn(config: str="navigate_with_flashlight.yaml", seed: int = 0) -> NavEnv:
+# make one multi scene nav environment 
+def _make_multi_nav_fn(config, seed, episode_split):
+    r"""Creates an env of type env_class with specified config and rank.
+    This is to be passed in as an argument when creating VectorEnv.
+    Returns:
+        env object created according to specification.
+    """
     
+    env = MultiNavEnv(config_file=config)
+    env.seed(seed)
+    env.set_episode_dataset(episodes=episode_split)
+    return env
+
+# make one single scene nav environment
+def _make_nav_env_fn(config: str="navigate_with_flashlight.yaml", seed: int = 0) -> NavEnv:
     # create env
     env = NavEnv(config_file=config)
     # set seed

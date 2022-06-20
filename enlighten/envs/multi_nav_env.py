@@ -28,7 +28,8 @@ class MultiNavEnv(NavEnv):
     # config_file could be a string or a parsed config dict
     def __init__(self, config_file="imitation_learning.yaml"):
         # get config
-        config_file = os.path.join(config_path, config_file)
+        if isinstance(config_file, str):
+            config_file = os.path.join(config_path, config_file)
         self.config = parse_config(config_file)
     
         # create simulator configuration and sensors
@@ -65,8 +66,15 @@ class MultiNavEnv(NavEnv):
 
         # seed action and observation space
         self.seed_action_obs_space()
+
+        # automatically replay episode if not None
+        self.episode_iterator = None 
+        self.current_episode = None
         
-    
+    def set_episode_dataset(self, episodes):
+        self.episode_iterator = EpisodeIterator(episodes=episodes, seed=int(self.config.get('seed')))
+        print("===> Set episode iterator over training set, shuffling the episodes")
+
     def create_sim_cfg(self, scene_id):
         # simulator configuration
         sim_config = habitat_sim.SimulatorConfiguration()
@@ -182,7 +190,11 @@ class MultiNavEnv(NavEnv):
     def reset(self, episode=None, plan_shortest_path=False):
         # reset scene, agent start and goal
         if episode is None:
-            self.set_agent_to_initial_state()
+            if self.episode_iterator is None:
+                self.set_agent_to_initial_state()
+            else:
+                self.current_episode = next(self.episode_iterator)
+                self.reconfigure(self.current_episode)
         else:    
             self.reconfigure(episode)
 
@@ -203,7 +215,7 @@ class MultiNavEnv(NavEnv):
         # if navmesh loaded, then pathfinder is loaded, then seed it
         if self.sim.pathfinder.is_loaded:
             self.sim.pathfinder.seed(int(self.config.get("seed")))
-            print("Path finder loaded and seeded.")
+            #print("Path finder loaded and seeded.")
 
         # plan shortest path
         # must be called after agent has been set to the start location, and goal has been reset

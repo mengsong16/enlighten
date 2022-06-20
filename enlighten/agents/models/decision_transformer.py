@@ -163,7 +163,7 @@ class DecisionTransformer(nn.Module):
 
         # get prediction logits from observations
         # x[:,1] = x[:,1,:,:] = sequence of observations
-        # i.e. x[:,1,t] is the embedding for o_t
+        # i.e. x[:,1,:,:] is the embedding for o_t
         pred_action_logits = self.action_decoder(x[:,1])  # predict next action given state (policy)
         
         #print(pred_action_logits.size()) # [batch_size, seq_length, action_num]

@@ -4,6 +4,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import contextlib
 import os
 import random
@@ -65,6 +66,7 @@ from enlighten.utils.path import *
 
 from enlighten.agents.algorithms.ppo_agent import PPOAgent
 from enlighten.envs.nav_env import NavEnv
+from enlighten.envs import MultiNavEnv
 from enlighten.utils.video_utils import generate_video, images_to_video, create_video, remove_jpg, BGR_mode
 from enlighten.tasks.measures import Measurements
 
@@ -259,7 +261,7 @@ class PPOTrainer(BaseRLTrainer):
         )
 
     # create vector envs and scene dataset
-    def _init_envs(self, config=None):
+    def _init_envs(self, split_name, config=None):
         if config is None:
             config = self.config
 
@@ -272,6 +274,7 @@ class PPOTrainer(BaseRLTrainer):
             self.envs = construct_envs_based_on_dataset(
                 config,
                 workers_ignore_signals=is_slurm_batch_job(),
+                split_name=split_name,
             )
 
 
@@ -332,7 +335,7 @@ class PPOTrainer(BaseRLTrainer):
         )
 
         # create vector envs and dataset
-        self._init_envs()
+        self._init_envs(split_name="train")
 
         # use gpu or not
         if torch.cuda.is_available():
@@ -1045,7 +1048,7 @@ class PPOTrainer(BaseRLTrainer):
         if self.config.get("single_scene") == True:
             self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, rendering=False)
         else:
-            self._eval_checkpoint_dataset(checkpoint_path, writer, checkpoint_index)    
+            self._eval_checkpoint_all_datasets(checkpoint_idx=checkpoint_index)
 
     # sum up
     def update_avg_measurements(self, step_measurements):
@@ -1072,7 +1075,9 @@ class PPOTrainer(BaseRLTrainer):
         print("Eval single scene")
         random_agent = False
         env =  NavEnv(config_file=self.config, dataset=None)
-        agent = PPOAgent(env=env, config_file=self.config, random_agent=random_agent)
+        agent = PPOAgent(config_file=self.config, random_agent=random_agent, 
+        observation_space=env.observation_space, goal_observation_space=env.get_goal_observation_space(),
+        action_space=env.action_space)
         
         n_episodes = int(self.config.get("test_episode_count"))
 
@@ -1086,7 +1091,7 @@ class PPOTrainer(BaseRLTrainer):
             
             obs = env.reset() # reset agent state
             agent.reset() # initialize structures
-            done = False
+            done = None
             env.set_current_episode(episode_index)
 
             print('-----------------------------')
@@ -1103,7 +1108,7 @@ class PPOTrainer(BaseRLTrainer):
                     action, attention_image = agent.act(obs)
                     #print(attention_map.size())
                 else:
-                    action = agent.act(obs)
+                    action = agent.act(observations=obs, dones=done)
                 
                 obs, reward, done, info = env.step(action)
 
@@ -1183,101 +1188,12 @@ class PPOTrainer(BaseRLTrainer):
         
         print('Done.')
 
-    # evaluate checkpoint
-    # TO DO
-    def _eval_checkpoint_dataset(
-        self,
-        checkpoint_path: str,
-        writer: TensorboardWriter,
-        checkpoint_index: int = 0,
-    ) -> None:
-        r"""Evaluates a single checkpoint.
-
-        Args:
-            checkpoint_path: path of checkpoint
-            writer: tensorboard writer object for logging to tensorboard
-            checkpoint_index: index of cur checkpoint for logging
-
-        Returns:
-            None
-        """
-        if self._is_distributed:
-            raise RuntimeError("Evaluation does not support distributed mode")
-
-        # Map location CPU is almost always better than mapping to a CUDA device.
-        ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
-
-        # use checkpoint config or current config
-        if self.config.get("eval_use_ckpt_config"):
-            config = self._setup_eval_config(ckpt_dict["config"])
-        else:
-            #config = self.config.clone()
-            config = copy.deepcopy(self.config)
-
-
-        #config.defrost()
-        #config.TASK_CONFIG.DATASET.SPLIT = config.EVAL.SPLIT
-        config["split"] = "val"
-        #config.freeze()
-
-        # TO DO
-        # video needs top down map and collisions
-        #if len(self.config.get("eval_video_option")) > 0:
-            #config.defrost()
-            #config["measurements"].append("top_down_map") 
-            #config["measurements"].append("collisions") 
-            #config.freeze()
-
-        if config.get("verbose"):
-            logger.info(f"env config: {config}")
-
-        self._init_envs(config)
-        self._setup_actor_critic_agent()
-
-        self.agent.load_state_dict(ckpt_dict["state_dict"])
-        self.actor_critic = self.agent.actor_critic
-
-        observations = self.envs.reset()
-        batch = batch_obs(
-            observations, device=self.device, cache=self._obs_batching_cache
-        )
-        batch = apply_obs_transforms_batch(batch, self.obs_transforms)
-
-        current_episode_reward = torch.zeros(
-            self.envs.num_envs, 1, device="cpu"
-        )
-
-        test_recurrent_hidden_states = torch.zeros(
-            int(self.config.get("num_environments")),
-            self.actor_critic.net.num_recurrent_layers,
-            self.config.get("hidden_size"),
-            device=self.device,
-        )
-        prev_actions = torch.zeros(
-            int(self.config.get("num_environments")),
-            1,
-            device=self.device,
-            dtype=torch.long,
-        )
-        not_done_masks = torch.zeros(
-            int(self.config.get("num_environments")),
-            1,
-            device=self.device,
-            dtype=torch.bool,
-        )
-        stats_episodes: Dict[
-            Any, Any
-        ] = {}  # dict of dicts that stores stats per episode
-
-        rgb_frames = [
-            [] for _ in range(int(self.config.get("num_environments")))
-        ]  # type: List[List[np.ndarray]]
-        if len(self.config.get("eval_video_option")) > 0:
-            os.makedirs(os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name")), exist_ok=True)
+    def get_number_of_eval_episodes(self):
 
         number_of_eval_episodes = self.config.get("test_episode_count")
         # evaluate on all episodes in the dataset
         if number_of_eval_episodes == -1:
+            # sum over all envs
             number_of_eval_episodes = sum(self.envs.number_of_episodes)
         else:
             total_num_eps = sum(self.envs.number_of_episodes)
@@ -1289,60 +1205,113 @@ class PPOTrainer(BaseRLTrainer):
                 logger.warn(f"Evaluating with {total_num_eps} instead.")
                 number_of_eval_episodes = total_num_eps
 
+        print("===> Number of eval environments: %d"%(self.config.get("num_environments")))
+        print("===> Number of eval episodes: %d"%(number_of_eval_episodes))        
+    
+        return number_of_eval_episodes
+    
+    # evaluate a checkpoint on all datasets
+    def _eval_checkpoint_all_datasets(
+        self,
+        checkpoint_idx
+    ):
+        split_names = list(self.config.get("eval_splits"))
+        for split_name in split_names:
+            self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx)
+
+    # evaluate a checkpoint on one dataset
+    def _eval_checkpoint_one_dataset(
+        self,
+        split_name,
+        checkpoint_idx: int = 0,
+        save_text_results=True
+    ) -> None:
+        
+        if self._is_distributed:
+            raise RuntimeError("Evaluation does not support distributed mode")
+
+        # create vec envs
+        self._init_envs(split_name=split_name)
+        
+        # create ppo agent
+        agent = PPOAgent(config_file=self.config, random_agent=False, 
+            use_vec_env=True, observation_space=self.envs.observation_spaces[0],
+            goal_observation_space=self.envs.get_goal_observation_space(),
+            action_space=self.envs.action_spaces[0])
+        
+        
+        # init data structures
+        current_episode_reward = torch.zeros(
+            self.envs.num_envs, 1, device="cpu"
+        )
+        stats_episodes: Dict[
+            Any, Any
+        ] = {}  # dict of dicts that stores stats per episode, episode id is a combination of episode id and scene id
+
+        rgb_frames_placeholder = [
+            [] for _ in range(int(self.config.get("num_environments")))
+        ]  # type: List[List[np.ndarray]]
+        
+        # get number of eval episodes
+        number_of_eval_episodes = self.get_number_of_eval_episodes()
+        # get tqdm bar
         pbar = tqdm.tqdm(total=number_of_eval_episodes)
-        self.actor_critic.eval()
+
+        # reset envs and get initial observations
+        observations = self.envs.reset()
+        dones = None
+        
+        # reset agent
+        agent.reset()
+
+        # evaluate all episodes
         while (
             len(stats_episodes) < number_of_eval_episodes
             and self.envs.num_envs > 0
         ):
+            # get current episodes
             current_episodes = self.envs.current_episodes()
 
-            with torch.no_grad():
-                (
-                    _,
-                    actions,
-                    _,
-                    test_recurrent_hidden_states,
-                ) = self.actor_critic.act(
-                    batch,
-                    test_recurrent_hidden_states,
-                    prev_actions,
-                    not_done_masks,
-                    deterministic=False,
-                )
+            # act agent
+            actions, test_recurrent_hidden_states, prev_actions = agent.act(observations=observations, dones=dones, cache=self._obs_batching_cache)
 
-                prev_actions.copy_(actions)  # type: ignore
+            # Move actions to CPU.  If CUDA tensors are
+            # sent in to env.step(), that will create CUDA contexts in the subprocesses.
+            # For backwards compatibility, we also call .item() to convert to an int
+            step_data = [{"action": a.item()} for a in actions.to(device="cpu")]
+            #step_data = [a.item() for a in actions.to(device="cpu")]
 
-            # NB: Move actions to CPU.  If CUDA tensors are
-            # sent in to env.step(), that will create CUDA contexts
-            # in the subprocesses.
-            # For backwards compatibility, we also call .item() to convert to
-            # an int
-            step_data = [a.item() for a in actions.to(device="cpu")]
-
+            # step envs
             outputs = self.envs.step(step_data)
 
             observations, rewards_l, dones, infos = [
                 list(x) for x in zip(*outputs)
             ]
+
+            # get new observations (batch is used in pause env)
             batch = batch_obs(
                 observations,
                 device=self.device,
                 cache=self._obs_batching_cache,
             )
-            batch = apply_obs_transforms_batch(batch, self.obs_transforms)
-
+            # get new dones (used in pause env)
             not_done_masks = torch.tensor(
                 [[not done] for done in dones],
                 dtype=torch.bool,
                 device="cpu",
             )
-
+            # get new rewards (to compute episode return)
             rewards = torch.tensor(
                 rewards_l, dtype=torch.float, device="cpu"
             ).unsqueeze(1)
+
+            # compute return of current episode as a vector
             current_episode_reward += rewards
+
+            # get next episodes (to check envs to pause)
             next_episodes = self.envs.current_episodes()
+
+            # get envs to pause if the env has no more new episode 
             envs_to_pause = []
             n_envs = self.envs.num_envs
             for i in range(n_envs):
@@ -1352,15 +1321,19 @@ class PPOTrainer(BaseRLTrainer):
                 ) in stats_episodes:
                     envs_to_pause.append(i)
 
-                # episode ended
+                # episode ended (done=True)
                 if not not_done_masks[i].item():
                     pbar.update()
                     episode_stats = {}
-                    episode_stats["reward"] = current_episode_reward[i].item()
+                    # record return
+                    episode_stats["return"] = current_episode_reward[i].item()
+                    # extract and record other evaluation metrics from infos, succeed, spl
                     episode_stats.update(
                         self._extract_scalars_from_info(infos[i])
                     )
+                    # reset return as 0
                     current_episode_reward[i] = 0
+                    # record stats for current episode
                     # use scene_id + episode_id as unique id for storing stats
                     stats_episodes[
                         (
@@ -1369,77 +1342,71 @@ class PPOTrainer(BaseRLTrainer):
                         )
                     ] = episode_stats
 
-                    if len(self.config.get("eval_video_option")) > 0:
-                        generate_video(
-                            video_option=self.config.get("eval_video_option"),
-                            video_dir=os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name")),
-                            images=rgb_frames[i],
-                            episode_id=current_episodes[i].episode_id,
-                            checkpoint_idx=checkpoint_index,
-                            metrics=self._extract_scalars_from_info(infos[i]),
-                            tb_writer=writer,
-                        )
+            # pause envs and update agent's prev_actions, recurrent_hidden_states
+            # not_done_masks = not_done_masks.to(device=self.device)
+            # (
+            #     self.envs,
+            #     agent.recurrent_hidden_states,
+            #     not_done_masks,
+            #     current_episode_reward,
+            #     agent.prev_actions,
+            #     batch,
+            #     rgb_frames_placeholder,
+            # ) = self._pause_envs(
+            #     envs_to_pause,
+            #     self.envs,
+            #     test_recurrent_hidden_states,
+            #     not_done_masks,
+            #     current_episode_reward,
+            #     prev_actions,
+            #     batch,
+            #     rgb_frames_placeholder,
+            # )
 
-                        rgb_frames[i] = []
+            
 
-                # episode continues
-                elif len(self.config.get("eval_video_option")) > 0:
-                    # TODO move normalization / channel changing out of the policy and undo it here
-                    frame = observations_to_image(
-                        {k: v[i] for k, v in batch.items()}, infos[i]
-                    )
-                    rgb_frames[i].append(frame)
+        # evaluation has done, collect and record metrics
+        self.record_eval_metrics(stats_episodes=stats_episodes,
+                    checkpoint_idx = checkpoint_idx,
+                    split_name = split_name,
+                    save_text_results=save_text_results)
 
-            not_done_masks = not_done_masks.to(device=self.device)
-            (
-                self.envs,
-                test_recurrent_hidden_states,
-                not_done_masks,
-                current_episode_reward,
-                prev_actions,
-                batch,
-                rgb_frames,
-            ) = self._pause_envs(
-                envs_to_pause,
-                self.envs,
-                test_recurrent_hidden_states,
-                not_done_masks,
-                current_episode_reward,
-                prev_actions,
-                batch,
-                rgb_frames,
-            )
+        # close envs
+        self.envs.close()
 
+    def record_eval_metrics(self, stats_episodes, checkpoint_idx, split_name, save_text_results):
         num_episodes = len(stats_episodes)
+        string_n_episode = "Number of episodes: %d \n"%(num_episodes)
+
         aggregated_stats = {}
+        # average metrics
         for stat_key in next(iter(stats_episodes.values())).keys():
             aggregated_stats[stat_key] = (
                 sum(v[stat_key] for v in stats_episodes.values())
                 / num_episodes
             )
 
+        # print average metrics
+        metric_string = ""
         for k, v in aggregated_stats.items():
-            logger.info(f"Average episode {k}: {v:.4f}")
+            cur_string = f"Average episode {k}: {v:.4f}\n"
+            logger.info(cur_string)
+            metric_string += cur_string
+    
+        # save evaluation results to txt
+        if save_text_results:
+            video_path = os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))
+            if not os.path.exists(video_path):
+                os.mkdir(video_path)
 
-        step_id = checkpoint_index
-        if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
-            step_id = ckpt_dict["extra_state"]["step"]
-
-        writer.add_scalars(
-            "eval_reward",
-            {"average reward": aggregated_stats["reward"]},
-            step_id,
-        )
-
-        metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
-        if len(metrics) > 0:
-            writer.add_scalars("eval_metrics", metrics, step_id)
-
-        self.envs.close()
+            txt_name =  f"ckpt-{checkpoint_idx}-{split_name}-eval-results.txt"
+            with open(os.path.join(video_path, txt_name), 'w') as outfile:
+                outfile.write(string_n_episode)
+                outfile.write(metric_string)
+            print("Saved evaluation file: %s"%(txt_name)) 
 
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_multi_envs.yaml"), resume_training=False)
-   #trainer._init_train()
-   trainer.train()
-   #trainer.eval()
+   #trainer.train()
+   trainer.eval()

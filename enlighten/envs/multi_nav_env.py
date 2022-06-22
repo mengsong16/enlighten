@@ -74,6 +74,7 @@ class MultiNavEnv(NavEnv):
     def set_episode_dataset(self, episodes):
         self.episode_iterator = EpisodeIterator(episodes=episodes, seed=int(self.config.get('seed')))
         print("===> Set episode iterator over training set, shuffling the episodes")
+        self.number_of_episodes = len(episodes)
 
     def create_sim_cfg(self, scene_id):
         # simulator configuration
@@ -233,8 +234,9 @@ class MultiNavEnv(NavEnv):
 
         return obs
     
+    # action is an integer
     def step(self, action):
-        
+        # action index to action name
         action_name = self.action_mapping[action]
         
         if action_name == "stop":
@@ -261,7 +263,7 @@ class MultiNavEnv(NavEnv):
         
         done = self.is_done()
 
-        # add metrics (e.g, success) to info for tensorboard stats
+        # add metrics (e.g, success) to info for tensorboard and evaluation stats
         info = {"success": int(self.is_success()), "spl": self.get_spl()}
 
         return obs, reward, done, info 

@@ -11,7 +11,7 @@ scenes_dir: "/dataset"  # where mesh data store
 behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
-experiment_name: "pointgoal_baseline_multienv"
+experiment_name: "pointgoal_baseline_multienv_2m"
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -91,7 +91,7 @@ use_double_buffered_sampler: false
 num_steps: 128  # rollout buffer length
 
 # vector env
-num_environments: 4 #6
+num_environments: 2 #4 #6
 
 # training
 torch_gpu_id: 0
@@ -102,7 +102,7 @@ seed: 1
 # num of backprop inside each agent update = ppo_epoch * num_mini_batch
 num_updates: -1 #1000
 # total_num_steps: steps collected in all environments (num_environments)  
-total_num_steps: 300000 #500000 #300000   # 75e6
+total_num_steps: 2000000 #500000 #300000   # 75e6
 # checkpoint
 # only one of them can be used
 num_checkpoints: 10 #100
@@ -145,19 +145,18 @@ use_normalized_advantage: false
 
 # evaluation
 # save images and video to disk under video_path
-eval_video_option: [] #["disk", "tensorboard"]
 eval_checkpoint_folder: "checkpoints"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
 eval_checkpoint_file: "ckpt.9.pth"
 # use checkpoint config file
-eval_use_ckpt_config: true
+eval_use_ckpt_config: false
+# save evaluation results here
 video_dir: "video"
-
-# Evaluate on all episodes
-test_episode_count: 10 #50 #-1: test on all episodes in dataset
-eval_metrics: ['success', 'spl', 'softspl', 'return']
-
+test_episode_count: -1 # number of evaluation episodes #-1: test on all episodes in the dataset
+eval_splits: ["same_start_goal_test", "same_scene_test", "across_scene_test"]
+# dummy
+eval_video_option: [] #["disk", "tensorboard"]
 
 # distributed
 # use distributed computation (DDPPO) or not

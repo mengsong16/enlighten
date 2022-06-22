@@ -67,10 +67,10 @@ class Agent:
         raise NotImplementedError
 
 class PPOAgent(Agent):
-    def __init__(self,  env, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml"),
-    random_agent=False) -> None:
+    def __init__(self,  config_file, observation_space, 
+        goal_observation_space, action_space,
+        random_agent=False, use_vec_env=False) -> None:
         
-        self.env = env
         self.config = parse_config(config_file)
         self.device = (
             torch.device("cuda:{}".format(int(self.config.get("torch_gpu_id"))))
@@ -78,6 +78,13 @@ class PPOAgent(Agent):
             else torch.device("cpu")
         )
         #self.device = torch.device("cpu")
+
+        # number of envs
+        self.use_vec_env = use_vec_env
+        if use_vec_env:
+            self.num_envs = int(self.config.get("num_environments"))
+        else:
+            self.num_envs = 1    
 
         # load checkpoint
         checkpoint_path = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name"), self.config.get("eval_checkpoint_file"))
@@ -97,16 +104,13 @@ class PPOAgent(Agent):
                 print("=====> Loaded config from checkpoint")
                 
 
-        # set random seed
-        set_seed(seed=int(self.config.get("seed")), env=self.env)
-        
         # initialize model
         if self.config.get("goal_format") == "pointgoal" and self.config.get("goal_coord_system") == "polar":
             polar_point_goal = True
         else:
             polar_point_goal = False 
    
-        observation_space = env.observation_space
+        
         # if transform exists, apply it to observation space
         obs_transforms = get_active_obs_transforms(self.config)
         if len(obs_transforms) > 0:
@@ -123,9 +127,9 @@ class PPOAgent(Agent):
         if self.config.get("visual_encoder") == "CNN":
            
             self.actor_critic = CNNPolicy(observation_space=observation_space, 
-                goal_observation_space=env.get_goal_observation_space(), 
+                goal_observation_space=goal_observation_space, 
                 polar_point_goal=polar_point_goal,
-                action_space=env.action_space,
+                action_space=action_space,
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
                 goal_input_location=str(self.config.get("goal_input_location")),
@@ -142,14 +146,14 @@ class PPOAgent(Agent):
             # assume that
             
             self.actor_critic = ResNetPolicy(observation_space=observation_space, 
-                goal_observation_space=env.get_goal_observation_space(), 
+                goal_observation_space=goal_observation_space, 
                 polar_point_goal=polar_point_goal,
-                action_space=env.action_space,
+                action_space=action_space,
                 rnn_type=self.config.get("rnn_type"),
                 attention_type=str(self.config.get("attention_type")),
                 goal_input_location=str(self.config.get("goal_input_location")),
                 hidden_size=int(self.config.get("hidden_size")),
-                normalize_visual_inputs="color_sensor" in env.observation_space,
+                normalize_visual_inputs="color_sensor" in observation_space,
                 attention=self.config.get("attention"),
                 blind_agent = self.config.get("blind_agent"),
                 rnn_policy = self.config.get("rnn_policy"),
@@ -172,12 +176,12 @@ class PPOAgent(Agent):
                     if "actor_critic" in k
                 }
             )
-            logger.info("Checkpoint loaded")
+            logger.info("===> Checkpoint loaded")
             #print(ckpt["state_dict"].keys())
             
         else:
             logger.error(
-                "Model checkpoint wasn't loaded, evaluating " "a random model."
+                "===> Model checkpoint wasn't loaded, evaluating " "a random model."
             )
          
         # set to eval mode
@@ -194,58 +198,88 @@ class PPOAgent(Agent):
         # T=N=1
         # h0 = 0
         self.recurrent_hidden_states = torch.zeros(
-            1, # num of envs
+            self.num_envs, # num of envs
             self.actor_critic.net.num_recurrent_layers,
             self.config.get("hidden_size"),
             device=self.device,
         )
         self.not_done_masks = torch.zeros(
-            1, 1, device=self.device, dtype=torch.bool
+            self.num_envs, 1, device=self.device, dtype=torch.bool
         )
         self.prev_actions = torch.zeros(
-            1, 1, dtype=torch.long, device=self.device
+            self.num_envs, 1, dtype=torch.long, device=self.device
         )
 
     # o --> a
-    def act(self, observations) -> Dict[str, int]:
-        batch = batch_obs([observations], device=self.device)
+    def act(self, observations, dones=None, cache=None) -> Dict[str, int]:
+        if self.use_vec_env == False:
+            observations = [observations]
+          
+        batch = batch_obs(observations, device=self.device, cache=cache)
+        
+        if dones is not None:
+            self.not_done_masks = torch.tensor(
+                    [[not done] for done in dones],
+                    dtype=torch.bool,
+                    device=self.device,
+                )
+
+
+        #print("before act")
+        #print(self.recurrent_hidden_states.size())
+        #print(self.prev_actions.size())
+        #print(self.not_done_masks.size())
+
         # get h1,h2,h3,...
         with torch.no_grad():
             (
                 _,
-                actions,
+                actions, # [4,1]
                 _,
                 self.recurrent_hidden_states, # h_{t-1}
             ) = self.actor_critic.act(
                 batch,
-                self.recurrent_hidden_states, # h_{t}
-                self.prev_actions,
-                self.not_done_masks,
+                self.recurrent_hidden_states, # h_{t} # [4,1, 512]
+                self.prev_actions,  # [4,1]
+                self.not_done_masks, # [4,1]
                 deterministic=False,
             )
-            #  Make masks not done till reset (end of episode) will be called
-            self.not_done_masks.fill_(True)
+
+
+            
             self.prev_actions.copy_(actions) 
 
-        if self.config.get("attention"):
-            attention_image = self.actor_critic.get_resized_attention_map(
-                batch, self.recurrent_hidden_states, self.prev_actions, self.not_done_masks)    
-        #[1,224,224]
-        #print(attention_image.shape)
-        #return {"action": actions[0][0].item()}
-        # actions: ([[index]])
-        if self.config.get("attention"):
-            return actions[0][0].item(), attention_image.cpu().detach().numpy()
-        else:
-            return actions[0][0].item()
+            #  Make masks not done till reset (end of episode) will be called
+            #self.not_done_masks.fill_(True)
+
+
+        #print("after act")
+        #print(actions.size())
+        if self.use_vec_env: # on gpu
+            return actions, self.recurrent_hidden_states, self.prev_actions
+        else:   # on cpu    
+            #[1,224,224]
+            #print(attention_image.shape)
+            #return {"action": actions[0][0].item()}
+            # actions: ([[index]])
+            if self.config.get("attention"):
+                attention_image = self.actor_critic.get_resized_attention_map(
+                    batch, self.recurrent_hidden_states, self.prev_actions, self.not_done_masks)    
+        
+                return actions[0][0].item(), attention_image.cpu().detach().numpy()
+            else:
+                return actions[0][0].item()
 
 
 def test():
     env =  NavEnv(config_file=os.path.join(config_path, "replica_nav_state.yaml"))
-    agent = PPOAgent(env=env, config_file=os.path.join(config_path, "replica_nav_state.yaml"))
-    #print(env.get_goal_observation_space())
+    agent = PPOAgent(config_file=os.path.join(config_path, "replica_nav_state.yaml"), 
+    observation_space=env.observation_space, goal_observation_space=env.get_goal_observation_space(),
+    action_space=env.action_space)
+    
     step = 0
     obs = env.reset()
+    done = None
     agent.reset()
     print('-----------------------------')
     print('Reset')
@@ -254,7 +288,7 @@ def test():
     
     for i in range(50): 
         #action = env.action_space.sample()
-        action = agent.act(obs)
+        action = agent.act(observations=obs, dones=done)
         obs, reward, done, info = env.step(action)
 
         print("Step: %d, Action: %d"%(step, action))

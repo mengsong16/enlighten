@@ -651,9 +651,10 @@ class NavEnv(gym.Env):
         average_predicted_depth = np.mean(predicted_depth_map)
         return average_predicted_depth
 
+    # action is an integer
     def step(self, action):
-        # step simulator
-        # transit to s'
+        # step simulator, transit to s'
+        # action index to action name
         action_name = self.action_mapping[action]
         
         if action_name == "stop":
@@ -721,7 +722,7 @@ class NavEnv(gym.Env):
 
         done = self.is_done()
 
-        # add metrics (e.g, success) to info for tensorboard stats
+        # add metrics (e.g, success) to info for tensorboard and evaluation stats
         info = {"success": int(self.is_success()), "spl": self.get_spl()}
 
 

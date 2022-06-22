@@ -223,11 +223,12 @@ class VectorEnv:
             read_fn() for read_fn in self._connection_read_fns
         ]        
 
-        # for write_fn in self._connection_write_fns:
-        #     write_fn((CALL_COMMAND, (NUMBER_OF_EPISODE_NAME, None)))
-        # self.number_of_episodes = [
-        #     read_fn() for read_fn in self._connection_read_fns
-        # ]
+        # get number of episodes
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (NUMBER_OF_EPISODE_NAME, None)))
+        self.number_of_episodes = [
+            read_fn() for read_fn in self._connection_read_fns
+        ]
         
         self._paused: List[Tuple] = []
 
@@ -450,11 +451,31 @@ class VectorEnv:
         # Backward compatibility
         if isinstance(action, (int, np.integer, str)):
             #print("inside")
+            # never use this branch, normal format is {"action": action index}
             action = {"action": {"action": action}}
+            
 
         #print("outside")
+        #print(action)
+        #exit()
+        # if index_env < 0 or index_env > 3:
+        #     print(index_env)
+        #     print("===> env index out of range")
+        #     exit()
+
+        # if action["action"] < 0 or action["action"] > 3:
+        #     print(action["action"])
+        #     print("===> action index out of range")
+        #     exit()
+
         self._warn_cuda_tensors(action)
-        self._connection_write_fns[index_env]((STEP_COMMAND, action))
+        try:
+            self._connection_write_fns[index_env]((STEP_COMMAND, action))
+        except:
+            #print(index_env)
+            #print(action["action"])
+            print("Error: Env %d was incorrectly paused before step is called"%(index_env))
+            
 
     @profiling_utils.RangeContext("wait_step_at")
     def wait_step_at(self, index_env: int) -> Any:
@@ -491,6 +512,7 @@ class VectorEnv:
             self.wait_step_at(index_env) for index_env in range(self.num_envs)
         ]
 
+    # note that action must be in the format of {"action": int}
     def step(self, data: List[Union[int, str, Dict[str, Any]]]) -> List[Any]:
         r"""Perform actions in the vectorized environments.
 
@@ -499,10 +521,9 @@ class VectorEnv:
             :py:`[{"action": "TURN_LEFT", "action_args": {...}}, ...]`.
         :return: list of outputs from the step method of envs.
         """
-        # print("=========================")
-        # print(data)
-        # print("=========================")
+        
         self.async_step(data)
+        
         return self.wait_step()
 
     def close(self) -> None:
@@ -700,9 +721,9 @@ class ThreadedVectorEnv(VectorEnv):
         ]
         return read_fns, write_fns
 
-def load_training_scenes_episodes(config):
+def load_scenes_episodes(config, split_name):
     episodes = load_behavior_dataset_meta(yaml_name=config, 
-        split_name="train")
+        split_name=split_name)
 
     scene_episodes_dict = {}
     for episode in tqdm(episodes):
@@ -714,9 +735,10 @@ def load_training_scenes_episodes(config):
     
     return scene_episodes_dict
 
-# construct vector envs from a training set
+# construct vector envs from a data set
 def construct_envs_based_on_dataset(
     config,
+    split_name,
     workers_ignore_signals: bool = False,
 ) -> VectorEnv:
     r"""Create VectorEnv object with specified config and env class type.
@@ -733,8 +755,8 @@ def construct_envs_based_on_dataset(
     num_environments = int(config.get("num_environments"))
     
     
-    # get training scenes
-    scene_episodes_dict = load_training_scenes_episodes(config)
+    # get train/val/test scenes
+    scene_episodes_dict = load_scenes_episodes(config=config, split_name=split_name)
     scenes = list(scene_episodes_dict.keys())
 
     # shuffle scenes
@@ -745,13 +767,14 @@ def construct_envs_based_on_dataset(
             )
 
         if len(scenes) < num_environments:
-            raise RuntimeError(
+            print(
                 "reduce the number of environments as there "
                 "aren't enough number of scenes.\n"
                 "num_environments: {}\tnum_scenes: {}".format(
                     num_environments, len(scenes)
                 )
             )
+            num_environments = len(scenes)
 
         random.shuffle(scenes)
 

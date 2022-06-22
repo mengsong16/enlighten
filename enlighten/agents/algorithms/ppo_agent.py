@@ -211,25 +211,26 @@ class PPOAgent(Agent):
         )
 
     # o --> a
-    def act(self, observations, dones=None, cache=None) -> Dict[str, int]:
-        if self.use_vec_env == False:
-            observations = [observations]
-          
-        batch = batch_obs(observations, device=self.device, cache=cache)
-        
-        if dones is not None:
-            self.not_done_masks = torch.tensor(
-                    [[not done] for done in dones],
-                    dtype=torch.bool,
-                    device=self.device,
-                )
+    def act(self, observations, dones=None, cache=None, external_inputs=None) -> Dict[str, int]:
+        if external_inputs is None:
+            # get observation batch 
+            if self.use_vec_env == False:
+                observations = [observations]
 
-
-        #print("before act")
-        #print(self.recurrent_hidden_states.size())
-        #print(self.prev_actions.size())
-        #print(self.not_done_masks.size())
-
+            batch = batch_obs(observations, device=self.device, cache=cache)
+            
+            # update not_done_masks
+            if dones is not None:
+                self.not_done_masks = torch.tensor(
+                        [[not done] for done in dones],
+                        dtype=torch.bool,
+                        device=self.device,
+                    )
+        else:
+            batch = external_inputs["batch"]
+            self.not_done_masks = external_inputs["not_done_masks"]
+            self.prev_actions = external_inputs["prev_actions"]
+            self.recurrent_hidden_states = external_inputs["recurrent_hidden_states"]
         # get h1,h2,h3,...
         with torch.no_grad():
             (
@@ -245,24 +246,16 @@ class PPOAgent(Agent):
                 deterministic=False,
             )
 
-
-            
+            # update prev_actions
             self.prev_actions.copy_(actions) 
 
-            #  Make masks not done till reset (end of episode) will be called
-            #self.not_done_masks.fill_(True)
 
-
-        #print("after act")
-        #print(actions.size())
-        if self.use_vec_env: # on gpu
-            return actions, self.recurrent_hidden_states, self.prev_actions
-        else:   # on cpu    
-            #[1,224,224]
-            #print(attention_image.shape)
-            #return {"action": actions[0][0].item()}
+        if self.use_vec_env: # return a vector of actions on gpu
+            return actions
+        else:   # return a single action on cpu    
             # actions: ([[index]])
             if self.config.get("attention"):
+                #[1,224,224]
                 attention_image = self.actor_critic.get_resized_attention_map(
                     batch, self.recurrent_hidden_states, self.prev_actions, self.not_done_masks)    
         

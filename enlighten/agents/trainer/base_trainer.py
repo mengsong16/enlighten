@@ -326,6 +326,7 @@ class BaseRLTrainer(BaseTrainer):
                 state_index.pop(idx)
                 envs.pause_at(idx)
 
+            # only keep the indices of non-paused envs, i.e. state_index (a list of indices)
             # indexing along the batch dimensions
             test_recurrent_hidden_states = test_recurrent_hidden_states[
                 state_index
@@ -337,6 +338,7 @@ class BaseRLTrainer(BaseTrainer):
             for k, v in batch.items():
                 batch[k] = v[state_index]
 
+            # rgb frames are used for recording vidoes
             rgb_frames = [rgb_frames[i] for i in state_index]
 
         return (

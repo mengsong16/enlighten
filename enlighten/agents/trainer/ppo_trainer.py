@@ -1263,6 +1263,7 @@ class PPOTrainer(BaseRLTrainer):
         
         # reset agent
         agent.reset()
+        external_inputs = None
 
         # evaluate all episodes
         while (
@@ -1273,13 +1274,13 @@ class PPOTrainer(BaseRLTrainer):
             current_episodes = self.envs.current_episodes()
 
             # act agent
-            actions, test_recurrent_hidden_states, prev_actions = agent.act(observations=observations, dones=dones, cache=self._obs_batching_cache)
+            actions = agent.act(observations=observations, dones=dones, 
+                cache=self._obs_batching_cache, external_inputs=external_inputs)
 
             # Move actions to CPU.  If CUDA tensors are
             # sent in to env.step(), that will create CUDA contexts in the subprocesses.
             # For backwards compatibility, we also call .item() to convert to an int
             step_data = [{"action": a.item()} for a in actions.to(device="cpu")]
-            #step_data = [a.item() for a in actions.to(device="cpu")]
 
             # step envs
             outputs = self.envs.step(step_data)
@@ -1288,19 +1289,21 @@ class PPOTrainer(BaseRLTrainer):
                 list(x) for x in zip(*outputs)
             ]
 
-            # get new observations (batch is used in pause env)
+            # get new observations batch
             batch = batch_obs(
                 observations,
                 device=self.device,
                 cache=self._obs_batching_cache,
             )
-            # get new dones (used in pause env)
+
+            # get new done masks in cpu
             not_done_masks = torch.tensor(
                 [[not done] for done in dones],
                 dtype=torch.bool,
                 device="cpu",
             )
-            # get new rewards (to compute episode return)
+
+            # get new rewards
             rewards = torch.tensor(
                 rewards_l, dtype=torch.float, device="cpu"
             ).unsqueeze(1)
@@ -1311,7 +1314,8 @@ class PPOTrainer(BaseRLTrainer):
             # get next episodes (to check envs to pause)
             next_episodes = self.envs.current_episodes()
 
-            # get envs to pause if the env has no more new episode 
+            # get envs to pause if the episode assigned to the environment has ended
+            # if an env has paused, it won't be stepped 
             envs_to_pause = []
             n_envs = self.envs.num_envs
             for i in range(n_envs):
@@ -1322,6 +1326,7 @@ class PPOTrainer(BaseRLTrainer):
                     envs_to_pause.append(i)
 
                 # episode ended (done=True)
+                # only record an episode's metric when it ends
                 if not not_done_masks[i].item():
                     pbar.update()
                     episode_stats = {}
@@ -1342,26 +1347,31 @@ class PPOTrainer(BaseRLTrainer):
                         )
                     ] = episode_stats
 
-            # pause envs and update agent's prev_actions, recurrent_hidden_states
-            # not_done_masks = not_done_masks.to(device=self.device)
-            # (
-            #     self.envs,
-            #     agent.recurrent_hidden_states,
-            #     not_done_masks,
-            #     current_episode_reward,
-            #     agent.prev_actions,
-            #     batch,
-            #     rgb_frames_placeholder,
-            # ) = self._pause_envs(
-            #     envs_to_pause,
-            #     self.envs,
-            #     test_recurrent_hidden_states,
-            #     not_done_masks,
-            #     current_episode_reward,
-            #     prev_actions,
-            #     batch,
-            #     rgb_frames_placeholder,
-            # )
+            # pause envs 
+            # all returned values should be updated according to non-paused envs
+            not_done_masks = not_done_masks.to(device=self.device)
+            (
+                self.envs,
+                new_recurrent_hidden_states,
+                new_not_done_masks,
+                current_episode_reward,
+                new_prev_actions,
+                new_batch,
+                rgb_frames_placeholder,
+            ) = self._pause_envs(
+                envs_to_pause,
+                self.envs,
+                agent.recurrent_hidden_states,
+                not_done_masks,
+                current_episode_reward,
+                agent.prev_actions,
+                batch,
+                rgb_frames_placeholder,
+            )
+
+            # put together external_inputs
+            external_inputs = {"batch": new_batch, "not_done_masks": new_not_done_masks,
+                "prev_actions": new_prev_actions, "recurrent_hidden_states": new_recurrent_hidden_states}
 
             
 

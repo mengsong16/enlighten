@@ -148,7 +148,7 @@ class DecisionTransformer(nn.Module):
 
         # note that for a general transformer, input has shape [batch_size, seq_length, input_size]
         # output has shape [batch_size, seq_length, hidden_size]
-        # x is the output of the transformer
+        # x is the output of the transformer, hidden-states of the model at the output of the last layer 
         # x has shape [batch_size, 3*seq_length, hidden_size]
         x = transformer_outputs['last_hidden_state']
 

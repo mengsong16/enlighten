@@ -284,8 +284,8 @@ class MultiEnvEvaluator:
 
 
 if __name__ == "__main__":
-    eval_splits = ["same_scene_val"]
-    evaluator = MultiEnvEvaluator(eval_splits=eval_splits) # across_scene_test
+    eval_splits = ["same_start_goal_test"]
+    evaluator = MultiEnvEvaluator(eval_splits=eval_splits) 
     logs = evaluator.evaluate_over_datasets(sample=True)
     evaluator.print_metrics(logs, eval_splits)
 

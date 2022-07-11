@@ -26,7 +26,7 @@ from enlighten.datasets.dataset import EpisodeIterator
 # across scene environments
 class MultiNavEnv(NavEnv):
     # config_file could be a string or a parsed config dict
-    def __init__(self, config_file="imitation_learning.yaml"):
+    def __init__(self, config_file="imitation_learning_dt.yaml"):
         # get config
         if isinstance(config_file, str):
             config_file = os.path.join(config_path, config_file)
@@ -303,7 +303,7 @@ class MultiNavEnv(NavEnv):
         self.sim_config.sim_cfg.scene_id = new_scene
 
 def test_env():
-    env = MultiNavEnv(config_file="imitation_learning.yaml")
+    env = MultiNavEnv(config_file="imitation_learning_dt.yaml")
     for i in range(10):
         obs = env.reset(plan_shortest_path=True)
         print('Episode: {}'.format(i+1))

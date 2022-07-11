@@ -9,6 +9,7 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
 from enlighten.agents.models.decision_transformer import DecisionTransformer
+from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
 
 class MeasureHistory:
     def __init__(self, id):
@@ -92,20 +93,20 @@ def evaluate_one_episode_dt(
     # t0 is 0, shape (1,1)
     timesteps = torch.tensor(0, device=device, dtype=torch.long).reshape(1, 1)
 
-    # run under policy for max_ep_len step
+    # run under policy for max_ep_len step or done
     # keep all history steps, but only use context length to predict current action
     for t in range(max_ep_len):
         # predict according to the sequence from (s0,a0,r0) up to now (context)
         # need to input timesteps as positional embedding
         action = model.get_action(
-            observations.to(dtype=torch.float32),
-            actions.to(dtype=torch.float32),
-            goals.to(dtype=torch.float32),
-            timesteps.to(dtype=torch.long),
+            observations,
+            actions,
+            goals,
+            timesteps,
             sample=sample,
         )
         
-        # append new action
+        # right append new action
         action = action.detach().cpu().item()
         new_action = torch.tensor(action, device=device, dtype=torch.long).reshape(1, 1)
         actions = torch.cat([actions, new_action], dim=1)
@@ -130,11 +131,11 @@ def evaluate_one_episode_dt(
         elif goal_form == "distance_to_goal":
             new_goal = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1, 1)
             
-        # append new observation and goal
+        # right append new observation and goal
         observations = torch.cat([observations, new_obs], dim=1)
         goals = torch.cat([goals, new_goal], dim=1)
 
-        # append new timestep
+        # right append new timestep
         timesteps = torch.cat(
             [timesteps,
             torch.ones((1, 1), device=device, dtype=torch.long) * (t+1)], dim=1)
@@ -150,11 +151,104 @@ def evaluate_one_episode_dt(
 
     return episode_length, success, spl, softspl
 
+# evaluate rnn for one episode
+def evaluate_one_episode_rnn(
+        episode,
+        env,
+        model,
+        goal_form,
+        rnn_hidden_size,
+        sample,
+        max_ep_len,
+        device
+    ):
+
+    # turn model into eval mode and move to desired device
+    model.eval()
+    model.to(device=device)
+
+    # reset env
+    obs = env.reset(episode=episode, plan_shortest_path=False)
+    obs_array = extract_observation(obs, env.observation_space.spaces)
+    if goal_form == "rel_goal":
+        goal = np.array(obs["pointgoal"], dtype="float32")
+    elif goal_form == "distance_to_goal":
+        goal = env.get_current_distance()
+    # a0 is -1, shape (1)
+    actions = torch.ones((1), device=device, dtype=torch.long) * (-1)
+
+    print("Scene id: %s"%(episode.scene_id))
+    print("Goal position: %s"%(env.goal_position))
+    print("Start position: %s"%(env.start_position))
+
+    # change shape and convert to torch tensor
+    # o: (C,H,W) --> (1,C,H,W)
+    obs_array = np.expand_dims(obs_array, axis=0)
+    observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
+    # g: (goal_dim,) --> (1,goal_dim)
+    if goal_form == "rel_goal":
+        goal = np.expand_dims(goal, axis=0)
+        goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
+    # float --> (1,1)
+    elif goal_form == "distance_to_goal":
+        goals = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1)
+
+    # h0 is 0, shape [1, B, hidden_size]
+    h = torch.zeros(1, 1, rnn_hidden_size, dtype=torch.float32, device=device) 
+
+    # run under policy for max_ep_len step or done
+    # keep all history steps, but only use context length to predict current action
+    for t in range(max_ep_len):
+        # predict according to the sequence from (s0,a0,r0) up to now (context)
+        # need to input timesteps as positional embedding
+        actions, h = model.get_action(
+            observations,
+            actions,
+            goals,
+            h,
+            sample=sample,
+        )
+        # actions: [B,1] --> [B]
+        actions = torch.squeeze(actions, 1)
+
+        # get action on cpu
+        actions_cpu = actions.detach().cpu().item()
+        
+        # step the env according to the action, get new observation and goal
+        obs, _, done, _ = env.step(actions_cpu)
+        obs_array = extract_observation(obs, env.observation_space.spaces)
+        if goal_form == "rel_goal":
+            goal = np.array(obs["pointgoal"], dtype="float32")
+        elif goal_form == "distance_to_goal":
+            goal = env.get_current_distance()
+
+        # change shape and convert to torch tensor
+        # (C,H,W) --> (1,C,H,W)
+        obs_array = np.expand_dims(obs_array, axis=0)
+        observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
+        # (goal_dim,) --> (1,goal_dim)
+        if goal_form == "rel_goal":
+            goal = np.expand_dims(goal, axis=0)
+            goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
+        # float --> (1,1)
+        elif goal_form == "distance_to_goal":
+            goals = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1)
+
+        if done:
+            break
+
+    # collect measures
+    episode_length = env.get_current_step()
+    success = env.is_success()
+    spl = env.get_spl()
+    softspl = env.get_softspl()
+
+    return episode_length, success, spl, softspl
 
 # evaluate an agent in across scene env
 class MultiEnvEvaluator:
     # eval_splits: ["across_scene_test", "same_scene_test", "across_scene_val", "same_scene_val", "same_start_goal_test", "same_start_goal_val"]
-    def __init__(self, eval_splits, config_filename="imitation_learning.yaml", 
+    def __init__(self, eval_splits, config_filename="imitation_learning_dt.yaml", 
         env: MultiNavEnv = None, device=None):
 
         assert config_filename is not None, "needs config file to initialize trainer"
@@ -186,6 +280,9 @@ class MultiEnvEvaluator:
         if self.goal_form not in ["rel_goal", "distance_to_goal"]:
             print("Undefined goal form: %s"%(self.goal_form))
             exit()
+        
+        # algorithm
+        self.algorithm_name = self.config.get("algorithm_name")
 
         # get name of evaluation folder
         self.experiment_name_to_load = self.config.get("eval_experiment_folder")
@@ -199,26 +296,46 @@ class MultiEnvEvaluator:
             self.eval_dataset_episodes[eval_split] = episodes
 
     # load dt model to be evaluated
-    def load_dt_model(self):
+    def load_model(self):
         # create model
-        model = DecisionTransformer(
-            obs_channel = get_obs_channel_num(self.config),
-            obs_width = int(self.config.get("image_width")), 
-            obs_height = int(self.config.get("image_height")),
-            goal_dim=int(self.config.get("goal_dimension")),
-            goal_form=self.config.get("goal_form"),
-            act_num=int(self.config.get("action_number")),
-            context_length=int(self.config.get('K')),
-            max_ep_len=int(self.config.get("max_ep_len")),  
-            hidden_size=int(self.config.get('embed_dim')), # parameters starting from here will be passed to gpt2
-            n_layer=int(self.config.get('n_layer')),
-            n_head=int(self.config.get('n_head')),
-            n_inner=int(4*self.config.get('embed_dim')),
-            activation_function=self.config.get('activation_function'),
-            n_positions=1024,
-            resid_pdrop=float(self.config.get('dropout')),
-            attn_pdrop=float(self.config.get('dropout')),
-        )
+        if self.algorithm_name == "dt":
+            model = DecisionTransformer(
+                obs_channel = get_obs_channel_num(self.config),
+                obs_width = int(self.config.get("image_width")), 
+                obs_height = int(self.config.get("image_height")),
+                goal_dim=int(self.config.get("goal_dimension")),
+                goal_form=self.config.get("goal_form"),
+                act_num=int(self.config.get("action_number")),
+                context_length=int(self.config.get('K')),
+                max_ep_len=int(self.config.get("max_ep_len")),  
+                pad_mode = str(self.config.get("pad_mode")),
+                hidden_size=int(self.config.get('embed_dim')), # parameters starting from here will be passed to gpt2
+                n_layer=int(self.config.get('n_layer')),
+                n_head=int(self.config.get('n_head')),
+                n_inner=int(4*self.config.get('embed_dim')),
+                activation_function=self.config.get('activation_function'),
+                n_positions=1024,
+                resid_pdrop=float(self.config.get('dropout')),
+                attn_pdrop=float(self.config.get('dropout')),
+            )
+        elif self.algorithm_name == "rnn":
+            model = RNNSequenceModel(
+                obs_channel = get_obs_channel_num(self.config),
+                obs_width = int(self.config.get("image_width")), 
+                obs_height = int(self.config.get("image_height")),
+                goal_dim=int(self.config.get("goal_dimension")),
+                goal_form=self.config.get("goal_form"),
+                act_num=int(self.config.get("action_number")),
+                max_ep_len=int(self.config.get("max_ep_len")),  
+                rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
+                obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+                goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+                act_embedding_size=int(self.config.get('act_embedding_size')), #32
+                rnn_type=self.config.get('rnn_type')
+            )
+        else:
+            print("Error: undefined algorithm name: %s"%(self.algorithm_name))
+            exit()
         
         # get checkpoint path
         checkpoint_path = os.path.join(checkpoints_path, self.experiment_name_to_load, self.config.get("eval_checkpoint_file"))
@@ -235,7 +352,8 @@ class MultiEnvEvaluator:
 
     def evaluate_over_datasets(self, model=None, sample=True):
         if model is None:
-            model = self.load_dt_model()
+            model = self.load_model()
+            
         
         logs = {}
         for split_name, episodes in self.eval_dataset_episodes.items():
@@ -251,14 +369,30 @@ class MultiEnvEvaluator:
 
         for i, episode in enumerate(episodes):
             print('Episode: {}'.format(i+1))
-            episode_length, success, spl, softspl = evaluate_one_episode_dt(
+            
+            if self.algorithm_name == "dt":
+                episode_length, success, spl, softspl = evaluate_one_episode_dt(
+                    episode,
+                    self.env,
+                    model,
+                    self.goal_form,
+                    sample,
+                    self.max_ep_len,
+                    self.device)
+            elif self.algorithm_name == "rnn":
+                rnn_hidden_size = int(self.config.get("rnn_hidden_size"))
+                episode_length, success, spl, softspl = evaluate_one_episode_rnn(
                 episode,
                 self.env,
                 model,
                 self.goal_form,
+                rnn_hidden_size,
                 sample,
                 self.max_ep_len,
                 self.device)
+            else:
+                print("Error: undefined algorithm name: %s"%(self.algorithm_name))
+                exit()
             
             episode_length_array.add(episode_length)
             success_array.add(float(success))
@@ -284,8 +418,8 @@ class MultiEnvEvaluator:
 
 
 if __name__ == "__main__":
-    eval_splits = ["same_start_goal_test"]
-    evaluator = MultiEnvEvaluator(eval_splits=eval_splits) 
+    eval_splits = ["same_start_goal_test", "same_scene_test", "across_scene_test"]
+    evaluator = MultiEnvEvaluator(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
     logs = evaluator.evaluate_over_datasets(sample=True)
     evaluator.print_metrics(logs, eval_splits)
 

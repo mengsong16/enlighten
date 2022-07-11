@@ -416,7 +416,7 @@ def generate_one_episode(env, episode):
         # print(goal_position.shape)
         # print(state_position.shape)
     
-    # pad last action as STOP
+    # append an additional action STOP
     actions.append(0)
 
     # print(len(observations)) # n+1
@@ -427,26 +427,32 @@ def generate_one_episode(env, episode):
     # print(len(state_positions)) # n+1
     # print(len(env.optimal_action_seq)) # n
 
+    # print(actions)
+    # print(env.optimal_action_seq)
+
     # print(actions[-1])
     # print(actions[-2])
     # print(actions[-3])
     # print(env.optimal_action_seq[-1])
     # print(env.optimal_action_seq[-2])
     # exit()
-        
 
     # check validity at the end of the trajectory
     if env.optimal_action_seq:
-        if done == False:
+        if done == False:  # optimal policy did not done
             print("Error: done should be true after following the shortest path")
             print("Distance to goal at the end of the trajectory: %f"%(env.get_current_distance()))
             valid_episode = False
         else:
-            if env.is_success() == False:
+            if env.is_success() == False: # optimal policy did not succeed
                 print("Error: success should be true after following the shortest path")
                 print("Distance to goal at the end of the trajectory: %f"%(env.get_current_distance()))
                 valid_episode = False
             else:
+                # if env.optimal_action_seq[-1] != 0: # the last action of optimal action sequence is not STOP
+                #     print("Error: the last action of optimal action sequence is not STOP")
+                #     valid_episode = False
+                # else:    
                 valid_episode = True
                 traj["observations"] = observations
                 traj["actions"] = actions
@@ -454,6 +460,7 @@ def generate_one_episode(env, episode):
                 traj["distance_to_goals"] = distance_to_goals
                 traj["goal_positions"] = goal_positions
                 traj["state_positions"] = state_positions
+                
     else:
         print("Error: shortest path not found")
         valid_episode = False
@@ -507,20 +514,20 @@ def generate_train_behavior_data(yaml_name):
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
-    #load_pointgoal_dataset("imitation_learning.yaml")  
-    #test_get_scene_names("imitation_learning.yaml")
-    #shortest_path_follower("imitation_learning.yaml")
-    #generate_pointgoal_dataset_meta(yaml_name="imitation_learning.yaml", split="train")
-    generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
-        pointgoal_dataset_split="train", 
-        train_scene_num=4, train_episode_num=2000, 
-        across_scene_val_scene_num=2, across_scene_val_episode_num=10,
-        same_scene_val_episode_num=20,
-        same_start_goal_val_episode_num=20,
-        across_scene_test_scene_num=2, across_scene_test_episode_num=50,
-        same_scene_test_episode_num=100,
-        same_start_goal_test_episode_num=100)
-    # generate_behavior_dataset_meta(yaml_name="imitation_learning.yaml", 
+    #load_pointgoal_dataset("imitation_learning_dt.yaml")  
+    #test_get_scene_names("imitation_learning_dt.yaml")
+    #shortest_path_follower("imitation_learning_dt.yaml")
+    #generate_pointgoal_dataset_meta(yaml_name="imitation_learning_dt.yaml", split="train")
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_dt.yaml", 
+    #     pointgoal_dataset_split="train", 
+    #     train_scene_num=4, train_episode_num=2000, 
+    #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
+    #     same_scene_val_episode_num=20,
+    #     same_start_goal_val_episode_num=20,
+    #     across_scene_test_scene_num=2, across_scene_test_episode_num=50,
+    #     same_scene_test_episode_num=100,
+    #     same_start_goal_test_episode_num=100)
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_dt.yaml", 
     #     pointgoal_dataset_split="train", 
     #     train_scene_num=4, train_episode_num=100, 
     #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
@@ -529,4 +536,4 @@ if __name__ == "__main__":
     #     across_scene_test_scene_num=2, across_scene_test_episode_num=10,
     #     same_scene_test_episode_num=12,
     #     same_start_goal_test_episode_num=12)
-    generate_train_behavior_data("imitation_learning.yaml")
+    generate_train_behavior_data("imitation_learning_dt.yaml")

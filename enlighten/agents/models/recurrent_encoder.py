@@ -304,6 +304,7 @@ class RecurrentVisualEncoder(Net):
             # not done: action index, done: 0
             
             # input of nn.embedding should be long
+            # done=True: prev_action = 0, done=False: prev_action+1
             prev_action_embedding = self.prev_action_encoder(
                 (torch.where(masks.view(-1), prev_actions+1, start_token)).long()
             )

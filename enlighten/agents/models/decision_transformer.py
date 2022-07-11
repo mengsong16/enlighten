@@ -24,7 +24,8 @@ class DecisionTransformer(nn.Module):
             act_num,
             hidden_size,
             max_ep_len,
-            context_length=None,
+            pad_mode,
+            context_length,
             **kwargs
     ):
         super().__init__()
@@ -36,6 +37,7 @@ class DecisionTransformer(nn.Module):
         self.act_num = act_num
         self.context_length = context_length  # context length
         self.goal_form = goal_form
+        self.pad_mode = pad_mode # left or right
 
         self.hidden_size = hidden_size
         config = transformers.GPT2Config(
@@ -92,9 +94,9 @@ class DecisionTransformer(nn.Module):
         #print("===========================")
         # embed each input modality with a different head
 
-        # (B,K,C,H,W) ==> (B,K*C,H,W)
+        # (B,K,C,H,W) ==> (B*K,C,H,W)
         observation_embeddings = self.obs_encoder(observations.reshape(-1, self.obs_channel, self.obs_height, self.obs_width).type(torch.float32).contiguous())
-        # (B,K*C,H,W) ==> (B,K,C,H,W)
+        # (B*K,C,H,W) ==> (B,K,C,H,W)
         observation_embeddings = observation_embeddings.reshape(batch_size, seq_length, self.hidden_size) 
         
         #print(observation_embeddings.size())
@@ -195,7 +197,7 @@ class DecisionTransformer(nn.Module):
         return op, ap, gp, tp, mp
 
 
-    # input a sequence of (g,s,t) of length context_length
+    # input a sequence of (g,s,t) of length context_length K
     # only return the last action
     # for evaluation
     def get_action(self, observations, actions, goals, timesteps, sample, **kwargs):
@@ -229,14 +231,26 @@ class DecisionTransformer(nn.Module):
             # only attend to the valid part (non padding part)
             # 0 - not attend, 1 - attend
             attention_mask = torch.ones((1, seq_length), device=observations.device)
-            # right pad all tokens to context length
+            # pad all tokens to context length
             op, ap, gp, tp, mp = self.get_padding(batch_size, self.context_length-seq_length, observations.device)
-            observations = torch.cat([observations, op], dim=1).to(dtype=torch.float32)  
-            actions = torch.cat([actions, ap], dim=1).to(dtype=torch.long) 
-            goals = torch.cat([goals, gp], dim=1).to(dtype=torch.float32)
-            timesteps = torch.cat([timesteps, tp], dim=1).to(dtype=torch.long)
             
-            attention_mask = torch.cat([attention_mask, mp], dim=1).to(dtype=torch.long)
+            # left padding
+            if self.pad_mode == "left":
+                observations = torch.cat([op, observations], dim=1).to(dtype=torch.float32)  
+                actions = torch.cat([ap, actions], dim=1).to(dtype=torch.long) 
+                goals = torch.cat([gp, goals], dim=1).to(dtype=torch.float32)
+                timesteps = torch.cat([tp, timesteps], dim=1).to(dtype=torch.long)
+                attention_mask = torch.cat([mp, attention_mask], dim=1).to(dtype=torch.long)
+            # right padding
+            elif self.pad_mode == "right": 
+                observations = torch.cat([observations, op], dim=1).to(dtype=torch.float32)  
+                actions = torch.cat([actions, ap], dim=1).to(dtype=torch.long) 
+                goals = torch.cat([goals, gp], dim=1).to(dtype=torch.float32)
+                timesteps = torch.cat([timesteps, tp], dim=1).to(dtype=torch.long)
+                attention_mask = torch.cat([attention_mask, mp], dim=1).to(dtype=torch.long)
+            else:
+                print("Error: undefined padding mode: %s"%(self.pad_mode))
+                exit()
         else:
             attention_mask = None
 

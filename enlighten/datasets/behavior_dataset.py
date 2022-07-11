@@ -1,5 +1,6 @@
 import random
 import numpy as np
+import copy
 import torch
 from torch.utils.data import Dataset as TorchDataset
 from enlighten.agents.common.other import get_obs_channel_num
@@ -18,7 +19,7 @@ class BehaviorDataset:
             self.device = get_device(self.config)
         else:    
             self.device = device
-        self.context_length = int(self.config.get("K"))
+        
         self.max_ep_len = int(self.config.get("max_ep_len")) 
         self.goal_dim = int(self.config.get("goal_dimension")) 
         self.obs_channel = get_obs_channel_num(self.config)
@@ -28,7 +29,12 @@ class BehaviorDataset:
         self.obs_width = int(self.config.get("image_width")) 
         self.obs_height = int(self.config.get("image_height"))
         self.goal_form = self.config.get("goal_form")
+        self.batch_mode = self.config.get("batch_mode")
 
+        if self.config.get("algorithm_name") == "dt":
+            self.pad_mode = self.config.get("pad_mode")
+            self.context_length = int(self.config.get("K"))
+        
         self.load_trajectories()
 
     def load_trajectories(self):
@@ -42,10 +48,136 @@ class BehaviorDataset:
         self.num_trajectories = len(self.trajectories)
 
         print("Loaded %d training trajectories"%(self.num_trajectories))
-        
-        
-    # sample a batch
+
+    # sample a batch  
     def get_batch(self, batch_size):
+        if self.batch_mode == "random_segment": 
+            return self.get_batch_random_segment(batch_size=batch_size)
+        elif self.batch_mode == "whole_trajectory":
+            return self.get_batch_unequal_trajectory(batch_size=batch_size, whole_trajectory=True)
+        elif self.batch_mode == "partial_trajectory": # random start
+            return self.get_batch_unequal_trajectory(batch_size=batch_size, whole_trajectory=False)
+        else:
+            print("Undefined batch mode: %s"%(self.batch_mode))
+            exit()    
+
+    # sample a batch of whole trajectory or partial trajectory
+    # o: (T,C,H,W), where T is the total number of steps in the batch
+    # a: (T)
+    # prev_a: (T)
+    # g: (T,goal_dim)
+    # dtg: (T,1)
+    def get_batch_unequal_trajectory(self, batch_size, whole_trajectory):
+        # sample batch_size trajectories from the trajectory pool with replacement
+        batch_inds = np.random.choice(
+            np.arange(self.num_trajectories),
+            size=batch_size,
+            replace=True
+        )
+
+        o, a, g, dtg, prev_a, seq_lengths = [], [], [], [], [], []
+        for i in range(batch_size):
+            # current trajectory
+            traj = self.trajectories[int(batch_inds[i])]
+            # starting index
+            if whole_trajectory:
+                si = 0
+            else:    
+                si = random.randint(0, len(traj['observations']) - 1) # trajectory length
+            
+            # stack current sequence into a numpy array
+            obs_seg = np.expand_dims(np.stack(traj['observations'][si:]), axis=0)
+            act_seg = np.expand_dims(np.stack(traj['actions'][si:]), axis=0)
+            rel_goal_seg = np.expand_dims(np.stack(traj['rel_goals'][si:]), axis=0)
+            dist_to_goal_seg = np.expand_dims(np.stack(traj['distance_to_goals'][si:]), axis=(0,2))
+            # create prev action segment
+            prev_act_seg = [-1]
+            # note that extend will use the reference of a list thus will change its content
+            prev_act_seg.extend(copy.deepcopy(traj['actions'][si:-1]))
+            #print(prev_act_seg)
+            prev_act_seg = np.expand_dims(np.stack(prev_act_seg), axis=0)
+
+            #print(prev_act_seg.shape)
+            #print(act_seg.shape)
+
+            o.append(obs_seg)
+            a.append(act_seg)
+            prev_a.append(prev_act_seg)
+            g.append(rel_goal_seg)
+            dtg.append(dist_to_goal_seg)
+            seq_lengths.append(obs_seg.shape[1])
+
+        # print(seq_lengths)
+
+        # sort seqs in decreading order 
+        o, a, g, dtg, prev_a, batch_sizes = self.sort_seqs(o, a, g, dtg, prev_a, seq_lengths)
+
+        # for o_seg in o:
+        #     print(o_seg.shape)
+
+        o, a, g, dtg, prev_a = self.concat_seqs_columnwise(o, a, g, dtg, prev_a, batch_sizes)
+
+        # concate elements in the list and convert numpy to torch tensor
+        o = torch.from_numpy(np.concatenate(o, axis=0)).to(dtype=torch.float32, device=self.device)
+        a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.long, device=self.device)
+        g = torch.from_numpy(np.concatenate(g, axis=0)).to(dtype=torch.float32, device=self.device)
+        dtg = torch.from_numpy(np.concatenate(dtg, axis=0)).to(dtype=torch.float32, device=self.device)
+        prev_a = torch.from_numpy(np.concatenate(prev_a, axis=0)).to(dtype=torch.long, device=self.device)
+        batch_sizes = torch.from_numpy(batch_sizes).to(dtype=torch.long, device="cpu")
+        # print("====================")
+        # print(o.shape) 
+        # print(a.shape)
+        # print(prev_a.shape)
+        # print(g.shape)
+        # print(dtg.shape)
+        
+
+        if self.goal_form == "rel_goal":
+            return o, a, prev_a, g, batch_sizes
+        elif self.goal_form == "distance_to_goal":
+            return o, a, prev_a, dtg, batch_sizes
+        else:
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit() 
+
+    # o: [(1,tlen,C,H,W)]
+    # a: [(1,tlen)]
+    # g: [(1,tlen,goal_dim)]
+    # dtg: [(1,tlen,1)]
+    # prev_a: [(1,tlen)]
+    # seq_lengths: a list of length of sequences
+    # sort seqs from long to short
+    def sort_seqs(self, o, a, g, dtg, prev_a, seq_lengths):
+        sorted_indices = np.argsort(-np.array(seq_lengths))
+        sorted_lengths = -np.sort(-np.array(seq_lengths))
+        o = [o[i] for i in sorted_indices]
+        a = [a[i] for i in sorted_indices]
+        g = [g[i] for i in sorted_indices]
+        dtg = [dtg[i] for i in sorted_indices]
+        prev_a = [prev_a[i] for i in sorted_indices]
+
+        #print(sorted_lengths)
+        batch_sizes = np.zeros(sorted_lengths[0], dtype=int)
+        for length in sorted_lengths:
+            batch_sizes[:length] += 1
+        #print(batch_sizes)
+        #print(batch_sizes.shape)
+        return o, a, g, dtg, prev_a, batch_sizes
+    
+    def concat_seqs_columnwise(self, o, a, g, dtg, prev_a, batch_sizes):
+        new_o, new_a, new_g, new_dtg, new_prev_a = [], [], [], [], []
+        for column_index, batch_size in enumerate(batch_sizes):
+            for i in range(batch_size):
+                new_o.append(o[i][:,column_index,:,:,:])
+                new_a.append(a[i][:,column_index])
+                new_g.append(g[i][:,column_index,:])
+                new_dtg.append(dtg[i][:,column_index,:])
+                new_prev_a.append(prev_a[i][:,column_index])
+
+        return new_o, new_a, new_g, new_dtg, new_prev_a
+
+    # sample a batch of segments of length K
+    def get_batch_random_segment(self, batch_size):
         # sample batch_size trajectories from the trajectory pool with replacement
         batch_inds = np.random.choice(
             np.arange(self.num_trajectories),
@@ -54,7 +186,7 @@ class BehaviorDataset:
         )
         # organize a batch into observation, action, goal, distance to goal, timestep, mask
         # each element in the new batch is a trjectory segment, max_len: segment length which will be used to train sequence model
-        o, a, g, d, dtg, timesteps, mask = [], [], [], [], [], [], []
+        o, a, g, dtg, timesteps, mask = [], [], [], [], [], []
         for i in range(batch_size):
             # current trajectory
             traj = self.trajectories[int(batch_inds[i])]
@@ -102,7 +234,7 @@ class BehaviorDataset:
             mask.append(np.ones((1, tlen)))
             #print(mask[-1].shape) # (1, tlen)
 
-            # right padding current segment to self.context_length if shorter than self.context_length
+            # padding current segment to self.context_length if shorter than self.context_length
             op, ap, gp, dtgp, tp, mp = self.get_padding(self.context_length - tlen)
 
             # print(op.shape) # (1,K-tlen,C,H,W)
@@ -112,13 +244,26 @@ class BehaviorDataset:
             # print(tp.shape) # (1,K-tlen)
             # print(mp.shape) # (1,K-tlen)
             
-             
-            o[-1] = np.concatenate([o[-1], op],  axis=1)
-            a[-1] = np.concatenate([a[-1], ap],  axis=1)
-            g[-1] = np.concatenate([g[-1], gp], axis=1)
-            dtg[-1] = np.concatenate([dtg[-1], dtgp], axis=1)
-            timesteps[-1] = np.concatenate([timesteps[-1], tp], axis=1)
-            mask[-1] = np.concatenate([mask[-1], mp], axis=1)
+
+            # left padding
+            if self.pad_mode == "left":
+                o[-1] = np.concatenate([op, o[-1]],  axis=1)
+                a[-1] = np.concatenate([ap, a[-1]],  axis=1)
+                g[-1] = np.concatenate([gp, g[-1]], axis=1)
+                dtg[-1] = np.concatenate([dtgp, dtg[-1]], axis=1)
+                timesteps[-1] = np.concatenate([tp, timesteps[-1]], axis=1)
+                mask[-1] = np.concatenate([mp, mask[-1]], axis=1)
+            # right padding
+            elif self.pad_mode == "right":
+                o[-1] = np.concatenate([o[-1], op],  axis=1)
+                a[-1] = np.concatenate([a[-1], ap],  axis=1)
+                g[-1] = np.concatenate([g[-1], gp], axis=1)
+                dtg[-1] = np.concatenate([dtg[-1], dtgp], axis=1)
+                timesteps[-1] = np.concatenate([timesteps[-1], tp], axis=1)
+                mask[-1] = np.concatenate([mask[-1], mp], axis=1)
+            else:
+                print("Error: undefined padding mode: %s"%(self.pad_mode))
+                exit()
 
             # print(o[-1].shape) # (1,K,C,H,W)
             # print(a[-1].shape) # (1,K)
@@ -131,7 +276,7 @@ class BehaviorDataset:
             #     break
             
 
-        # numpy to torch tensor
+        # concate elements in the list and convert numpy to torch tensor
         o = torch.from_numpy(np.concatenate(o, axis=0)).to(dtype=torch.float32, device=self.device)
         a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.long, device=self.device)
         g = torch.from_numpy(np.concatenate(g, axis=0)).to(dtype=torch.float32, device=self.device)
@@ -175,11 +320,11 @@ class BehaviorDataset:
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
-    config_file = os.path.join(config_path, "imitation_learning.yaml")
+    config_file = os.path.join(config_path, "imitation_learning_rnn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
     for i in range(10):
-        dataset.get_batch(batch_size=64)
+        dataset.get_batch(batch_size=4)
 
         #break
         print("Batch %d Done"%(i+1))

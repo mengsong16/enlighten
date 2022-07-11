@@ -8,7 +8,8 @@ scenes_dir: "/dataset"  # where mesh data store
 behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
-experiment_name: "test"
+algorithm_name: "rnn"
+experiment_name: "whole_trajectory"
 log_to_wandb: true #true  # log
 
 # dummy initial setup 
@@ -60,7 +61,7 @@ slack_reward: -1.0e-4 #-1 #-1.0e-4 #-1.0e-2
 goal_reward: true # false
 stop_depend_success: true
 
-# episode termination condition
+# episode termination condition (environment)
 max_steps_per_episode: 500  # should be equal to max_ep_len
 max_collisions_per_episode: 200
 
@@ -70,26 +71,27 @@ seed: 1
 # gpu
 gpu_id: 0 #1
 
-# dt
-K: 20 # context length
-embed_dim: 128
-n_layer: 3
-n_head: 8
-activation_function: 'relu'
-dropout: 0.1
-max_ep_len: 500 # 4096
+# rnn
+rnn_hidden_size: 512
+obs_embedding_size: 512
+goal_embedding_size: 32
+act_embedding_size: 32
+rnn_type: 'gru'
+max_ep_len: 500 # should be consistent with the env max episode length 
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
 
+
 # training
-batch_size: 16
+batch_size: 4
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 warmup_steps: 10000
-max_iters: 400 #500 #30 #10
+max_iters: 400 #400 #500 #30 #10
 num_steps_per_iter: 100 #10000
+batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
 
 # evaluate during training
-eval_every_iterations: 80 #50 #10 
+eval_every_iterations: 40 #40 #80 #50 #10 
 eval_during_training_sample: true
 eval_during_training_splits: ["same_start_goal_val", "same_scene_val", "across_scene_val"]
 
@@ -97,8 +99,8 @@ eval_during_training_splits: ["same_start_goal_val", "same_scene_val", "across_s
 save_every_iterations: 40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "dt-test-s1-20220531-002932" #"dt-test-s1--distance_to_goal-20220531-105916" #"dt-test-s1-20220531-002932"
-eval_checkpoint_file: "ckpt_10.pth"
+eval_experiment_folder: "rnn-test-s1-20220711-003851" #"dt-test-s1--distance_to_goal-20220531-105916" #"dt-test-s1-20220531-002932"
+eval_checkpoint_file: "ckpt_2.pth"
 num_eval_episodes: 100
 eval_use_ckpt_config: false # use checkpoint config file or not
 

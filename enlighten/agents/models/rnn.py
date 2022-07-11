@@ -167,6 +167,12 @@ def _build_pack_info_from_dones(
 def build_packed_input(x: torch.Tensor, select_inds: torch.Tensor, batch_sizes: torch.Tensor)-> PackedSequence:
     select_inds = select_inds.to(device=x.device)
     
+    # print("========================")
+    # print("x: %s"%(x))
+    # print("Input x of packedseq: %s"%(x.index_select(0, select_inds)))
+    # print("Input batch_sizes of packedseq: %s"%(batch_sizes))
+    # print("Select inds: %s"%(select_inds))
+    # print("========================")
     x_seq = PackedSequence(
         x.index_select(0, select_inds), batch_sizes, None, None
     )
@@ -446,6 +452,9 @@ class RNNStateEncoder(nn.Module):
             last_episode_in_batch_mask,
             _
         ) = build_rnn_inputs(x, masks, hidden_states)
+
+        # print(x_seq.data.size())
+        # exit()
 
         x_seq, hidden_states = self.rnn(
             x_seq, self.unpack_hidden(hidden_states)
@@ -778,6 +787,7 @@ class GRUStateEncoder(AttentionRNNStateEncoder):
         else:
             visual_input_size = visual_encoder_output_size    
 
+        
         self.rnn = nn.GRU(
             input_size=visual_input_size+other_input_size,
             hidden_size=hidden_size,
@@ -1138,8 +1148,67 @@ def test_tensor_slice():
     print(h.grad)
     print(h1.grad)
 
+def test_build_rnn_inputs():
+    input_size = 3
+    hidden_size = 2
+    T = 5
+    N = 2
+    gru = nn.GRU(input_size=input_size, hidden_size=hidden_size)
+    
+
+    # x: [T,N,input_size]
+    # h: [1,N,hidden_size]
+    x = torch.rand(T, N, input_size)
+    print("x: %s"%(x))
+    x = x.flatten(0,1)
+    h = torch.rand(1, N, hidden_size)
+
+    
+    # print("x size: %s"%(str(x.size())))
+    # print("h: %s"%(h))
+    # print("h size: %s"%(str(h.size())))
+
+    # dones: [N,T]
+    dones = torch.torch.Tensor([[0,1,0,1,0], [0,0,0,1,0]]).bool()
+    # print("dones: %s"%(dones))
+    # dones: [T,N]
+    dones = dones.permute(1,0)
+    # dones: [T*N,1]
+    dones = dones.flatten(0,1).unsqueeze(1)
+    # print("dones: %s"%(dones))
+    
+    not_dones = torch.logical_not(dones)
+
+    (
+        select_inds,
+        batch_sizes,
+        episode_starts,
+        rnn_state_batch_inds,
+        last_episode_in_batch_mask,
+    ) = _build_pack_info_from_dones(dones, T)
+
+    # print("select_inds: %s"%(str(select_inds)))
+    # print("batch_sizes: %s"%(str(batch_sizes)))
+    #print(episode_starts)
+
+    (
+        x_seq,
+        h,
+        select_inds,
+        rnn_state_batch_inds,
+        last_episode_in_batch_mask,
+        batch_sizes2
+    )=build_rnn_inputs(x, not_dones, h) 
+
+    # print("==============================")
+    # print("x: %s"%(x))
+    # print("x_seq: %s"%(x_seq.data))
+    # print("batch_sizes1: %s"%(batch_sizes))
+    # print("batch_sizes2: %s"%(batch_sizes2))
+
 if __name__ == "__main__":
     #test_rnn()
     #test_rnn_loop_eq()
-    test_gru()
+    #test_gru()
     #test_tensor_slice()
+    test_build_rnn_inputs()

@@ -11,7 +11,7 @@ scenes_dir: "/dataset"  # where mesh data store
 behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
-experiment_name: "pointgoal_baseline_multienv_2m"
+experiment_name:  "pointgoal_baseline_multienv_2m" # "ppo_test"
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb

@@ -56,6 +56,9 @@ class SequenceTrainer:
         
         # set save checkpoint parameters
         self.save_every_iterations = int(self.config.get("save_every_iterations"))
+
+        # use value supervision during training or not
+        self.supervise_value = self.config.get('supervise_value')
     
     def set_experiment_name(self):
         self.project_name = self.config.get("algorithm_name").lower()
@@ -128,6 +131,9 @@ class SequenceTrainer:
     def train_one_iteration(self, num_steps, iter_num=0, print_logs=False):
 
         train_losses = []
+        if self.supervise_value:
+            train_action_losses, train_value_losses = [], []
+        
         logs = dict()
 
         train_start = time.time()
@@ -137,8 +143,16 @@ class SequenceTrainer:
 
         # train for num_steps
         for _ in range(num_steps):
-            train_loss = self.train_one_step()
-            train_losses.append(train_loss)
+            
+            if self.supervise_value:
+                train_loss, train_action_loss, train_value_loss = self.train_one_step()
+                train_losses.append(train_loss) 
+                train_action_losses.append(train_action_loss)
+                train_value_losses.append(train_value_loss)
+            else:   
+                train_loss = self.train_one_step()
+                train_losses.append(train_loss) 
+
             if self.scheduler is not None:
                 self.scheduler.step()
 
@@ -146,6 +160,10 @@ class SequenceTrainer:
         logs['time/total'] = time.time() - self.start_time
         logs['training/train_loss_mean'] = np.mean(train_losses)
         logs['training/train_loss_std'] = np.std(train_losses)
+
+        if self.supervise_value:
+            logs['training/train_action_loss_mean'] = np.mean(train_action_losses)
+            logs['training/train_value_loss_mean'] = np.mean(train_value_losses)
 
         if print_logs:
             print('=' * 80)

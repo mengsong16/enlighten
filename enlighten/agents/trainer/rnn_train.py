@@ -37,11 +37,15 @@ class RNNTrainer(SequenceTrainer):
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
             act_embedding_size=int(self.config.get('act_embedding_size')), #32
-            rnn_type=self.config.get('rnn_type')
+            rnn_type=self.config.get('rnn_type'),
+            supervise_value=self.config.get('supervise_value')
         )
 
     # train for one step
     def train_one_step(self):
+        # predict value or not
+        supervise_value = self.config.get('supervise_value')
+
         # switch model to training mode
         self.model.train()
         
@@ -51,7 +55,7 @@ class RNNTrainer(SequenceTrainer):
         # goals # (T,goal_dim)
         # batch_sizes # L
        
-        observations, action_targets, prev_actions, goals, batch_sizes = self.train_dataset.get_batch(self.batch_size)
+        observations, action_targets, prev_actions, goals, value_targets, batch_sizes = self.train_dataset.get_batch(self.batch_size)
         
         # print(observations.size())
         # print(action_targets.size())
@@ -63,13 +67,19 @@ class RNNTrainer(SequenceTrainer):
         rnn_hidden_size = int(self.config.get('rnn_hidden_size'))
         h_0 = torch.zeros(1, self.batch_size, rnn_hidden_size, dtype=torch.float32, device=self.device) 
 
+        if supervise_value == False:
+            # action_preds: [T, action_num]
+            action_preds = self.model.forward(observations, prev_actions, goals, h_0, batch_sizes)
 
-        # action_preds: [T, action_num]
-        action_preds = self.model.forward(observations, prev_actions, goals, h_0, batch_sizes)
+            # loss is computed over the whole sequence
+            # action_target are ground truth action indices (not one-hot vectors)
+            loss =  F.cross_entropy(action_preds, action_targets)
+        else:
+            action_preds, value_preds = self.model.forward(observations, prev_actions, goals, h_0, batch_sizes)
+            action_loss = F.cross_entropy(action_preds, action_targets)
+            value_loss = torch.mean((value_targets - value_preds)**2)
+            loss = action_loss + value_loss
 
-        # loss is computed over the whole sequence (K action tokens)
-        # action_target are ground truth action indices (not one-hot vectors)
-        loss =  F.cross_entropy(action_preds, action_targets)
 
         #print(loss) # a single float number
 
@@ -80,7 +90,10 @@ class RNNTrainer(SequenceTrainer):
         # optimize for one step
         self.optimizer.step()
 
-        return loss.detach().cpu().item()
+        if supervise_value == False:
+            return loss.detach().cpu().item()
+        else:
+            return loss.detach().cpu().item(), action_loss.cpu().item(), value_loss.cpu().item()    
 
 if __name__ == '__main__':
     trainer = RNNTrainer(config_filename="imitation_learning_rnn.yaml")

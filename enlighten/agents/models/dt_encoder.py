@@ -169,6 +169,16 @@ class DiscreteActionDecoder(nn.Module):
     def forward(self, hidden_states):
         return self.model(hidden_states)  # logits
 
+# value decoder
+class ValueDecoder(nn.Module):
+    def __init__(self, input_size):
+        super().__init__()
+        # no bias
+        self.model = torch.nn.Linear(input_size, 1, bias=False)
+
+    def forward(self, hidden_states):
+        return self.model(hidden_states)  # logits
+
 if __name__ == "__main__":
     oe = ObservationEncoder(channel_num=3, output_size=512)
     print('Done')    

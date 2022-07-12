@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence
 
-from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoalEncoder, GoalEncoder, DiscreteActionEncoder, TimestepEncoder, DiscreteActionDecoder
+from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoalEncoder, GoalEncoder, DiscreteActionEncoder, ValueDecoder, DiscreteActionDecoder
 
 class RNNModel(nn.Module):
     def __init__(self, rnn_type, rnn_input_size, rnn_hidden_size):
@@ -113,7 +113,8 @@ class RNNSequenceModel(nn.Module):
             goal_embedding_size, #32
             act_embedding_size, #32
             rnn_hidden_size, #512
-            rnn_type
+            rnn_type,
+            supervise_value
     ):
         super().__init__()
         
@@ -148,11 +149,16 @@ class RNNSequenceModel(nn.Module):
        
         self.rnn = RNNModel(rnn_type, rnn_input_size, rnn_hidden_size)
         
-        # one heads for output (training), output vector has size as action number
+        # policy head for output, output vector has size as action number
         self.action_decoder = DiscreteActionDecoder(rnn_hidden_size, self.act_num)
 
         # acton logits --> action prob
         self.softmax = nn.Softmax(dim=-1)
+
+        # value head for output (optional)
+        self.supervise_value = supervise_value
+        if self.supervise_value:
+            self.value_decoder = ValueDecoder(rnn_hidden_size)
 
     def encoder_forward(self, observations, prev_actions, goals):
         # (T,C,H,W) ==> (T,obs_embedding_size)
@@ -196,11 +202,15 @@ class RNNSequenceModel(nn.Module):
         h_seq, h_n = self.rnn.seq_forward(x=input_embeddings, h_0=h_0, batch_sizes=batch_sizes)
 
 
-        # [T, action_num]
+        # pred_action_logits: [T, action_num]
         pred_action_logits = self.action_decoder(h_seq.data)
 
-
-        return pred_action_logits
+        # pred_values: [T,1]
+        if self.supervise_value:
+            pred_values = self.value_decoder(h_seq.data)
+            return pred_action_logits, pred_values
+        else:
+            return pred_action_logits
 
     # input: observations: [B, C, H, W]
     #        prev_actions: [B]

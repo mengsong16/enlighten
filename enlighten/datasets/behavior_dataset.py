@@ -121,9 +121,11 @@ class BehaviorDataset:
         o = torch.from_numpy(np.concatenate(o, axis=0)).to(dtype=torch.float32, device=self.device)
         a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.long, device=self.device)
         g = torch.from_numpy(np.concatenate(g, axis=0)).to(dtype=torch.float32, device=self.device)
-        dtg = torch.from_numpy(np.concatenate(dtg, axis=0)).to(dtype=torch.float32, device=self.device)
+        dtg_numpy = np.concatenate(dtg, axis=0)
+        dtg = torch.from_numpy(dtg_numpy).to(dtype=torch.float32, device=self.device)
         prev_a = torch.from_numpy(np.concatenate(prev_a, axis=0)).to(dtype=torch.long, device=self.device)
         batch_sizes = torch.from_numpy(batch_sizes).to(dtype=torch.long, device="cpu")
+        value = torch.from_numpy(copy.deepcopy(dtg_numpy)).to(dtype=torch.float32, device=self.device)
         # print("====================")
         # print(o.shape) 
         # print(a.shape)
@@ -133,9 +135,9 @@ class BehaviorDataset:
         
 
         if self.goal_form == "rel_goal":
-            return o, a, prev_a, g, batch_sizes
+            return o, a, prev_a, g, value, batch_sizes
         elif self.goal_form == "distance_to_goal":
-            return o, a, prev_a, dtg, batch_sizes
+            return o, a, prev_a, dtg, value, batch_sizes
         else:
             print("Undefined goal form: %s"%(self.goal_form))
             exit() 

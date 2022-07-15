@@ -152,7 +152,7 @@ eval_checkpoint_file: "ckpt.9.pth"
 # use checkpoint config file
 eval_use_ckpt_config: false
 # save evaluation results here
-video_dir: "video"
+eval_dir: "evaluation"
 test_episode_count: -1 # number of evaluation episodes #-1: test on all episodes in the dataset
 eval_splits: ["same_start_goal_test", "same_scene_test", "across_scene_test"]
 # dummy

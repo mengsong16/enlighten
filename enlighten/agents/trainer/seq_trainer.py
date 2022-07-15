@@ -19,8 +19,8 @@ from enlighten.agents.common.other import get_device
 from enlighten.datasets.behavior_dataset import BehaviorDataset
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
-from enlighten.agents.evaluation.evaluate_episodes import MultiEnvEvaluator
-
+from enlighten.agents.evaluation.across_scene_single_env_evaluator import AcrossEnvEvaluatorSingle
+from enlighten.agents.evaluation.across_scene_vec_env_evaluator import AcrossEnvEvaluatorVector 
 
 # train seq2seq imitation learning
 class SequenceTrainer:
@@ -39,7 +39,11 @@ class SequenceTrainer:
 
         # create evaluator
         # Note that only evaluator needs environment, offline training does not need
-        self.evaluator = MultiEnvEvaluator(eval_splits=list(self.config.get("eval_during_training_splits")),  
+        if self.config.get("eval_use_vector_envs"):
+            self.evaluator = AcrossEnvEvaluatorVector(eval_splits=list(self.config.get("eval_during_training_splits")),  
+            config_filename=config_filename, device=self.device) 
+        else:    
+            self.evaluator = AcrossEnvEvaluatorSingle(eval_splits=list(self.config.get("eval_during_training_splits")),  
             config_filename=config_filename, device=self.device)
 
     

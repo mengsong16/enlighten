@@ -21,7 +21,6 @@ from enlighten.agents.common.other import get_device
 from enlighten.datasets.behavior_dataset import BehaviorDataset
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
-from enlighten.agents.evaluation.evaluate_episodes import MultiEnvEvaluator
 
 class RNNTrainer(SequenceTrainer):
     def create_model(self):

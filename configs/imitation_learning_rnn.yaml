@@ -9,7 +9,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_da
 
 # experiments
 algorithm_name: "rnn"
-experiment_name: "whole_trajectory_value_supervision" #"whole_trajectory"
+experiment_name: "whole_trajectory_value_supervision" # "whole_trajectory"
 log_to_wandb: true #true  # log
 
 # dummy initial setup 
@@ -69,7 +69,10 @@ max_collisions_per_episode: 200
 seed: 1
 
 # gpu
-gpu_id: 0 #1
+gpu_id: 1 #1
+
+# vector env
+num_environments: 2 #4
 
 # rnn
 rnn_hidden_size: 512
@@ -79,31 +82,30 @@ act_embedding_size: 32
 rnn_type: 'gru'
 max_ep_len: 500 # should be consistent with the env max episode length 
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
-supervise_value: true # false
 
 # training
 batch_size: 4
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 warmup_steps: 10000
-max_iters: 400 #400 #500 #30 #10
+max_iters: 800 #400 #500 #30 #10
 num_steps_per_iter: 100 #10000
 batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
+supervise_value: false #false # true
 
 # evaluate during training
 eval_every_iterations: 40 #40 #80 #50 #10 
 eval_during_training_sample: true
 eval_during_training_splits: ["same_start_goal_val", "same_scene_val", "across_scene_val"]
+eval_use_vector_envs: true
 
 # save checkpoint
 save_every_iterations: 40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "rnn-test-s1-20220711-003851" #"dt-test-s1--distance_to_goal-20220531-105916" #"dt-test-s1-20220531-002932"
-eval_checkpoint_file: "ckpt_2.pth"
-num_eval_episodes: 100
-eval_use_ckpt_config: false # use checkpoint config file or not (used by ppo)
-
+eval_experiment_folder: "rnn-whole_trajectory-s1-20220712-021536" #"dt-test-s1--distance_to_goal-20220531-105916" #"dt-test-s1-20220531-002932"
+eval_checkpoint_file: "ckpt_13.pth" #"ckpt_15.pth"
+eval_dir: "evaluation"
 
 
 

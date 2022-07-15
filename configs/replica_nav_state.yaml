@@ -166,7 +166,7 @@ eval_checkpoint_folder: "checkpoints"
 eval_checkpoint_file: "ckpt.9.pth"
 # use checkpoint config file
 eval_use_ckpt_config: true
-video_dir: "video"
+eval_dir: "evaluation"
 
 # Evaluate on all episodes
 test_episode_count: 10 #50 #-1: test on all episodes in dataset

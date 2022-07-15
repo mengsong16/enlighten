@@ -272,9 +272,9 @@ class PPOTrainer(BaseRLTrainer):
             )
         else:    
             self.envs = construct_envs_based_on_dataset(
-                config,
+                config=config,
                 workers_ignore_signals=is_slurm_batch_job(),
-                split_name=split_name,
+                split_name=split_name
             )
 
 
@@ -1158,7 +1158,7 @@ class PPOTrainer(BaseRLTrainer):
         
         # save evaluation results to txt
         if save_text_results:
-            video_path = os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))
+            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
             if not os.path.exists(video_path):
                 os.mkdir(video_path)
 
@@ -1175,7 +1175,7 @@ class PPOTrainer(BaseRLTrainer):
             video_name = "random"
 
         if "disk" in list(self.config.get("eval_video_option")):
-            video_path = os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))
+            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
             if not os.path.exists(video_path):
                 os.makedirs(video_path)
 
@@ -1405,11 +1405,11 @@ class PPOTrainer(BaseRLTrainer):
     
         # save evaluation results to txt
         if save_text_results:
-            video_path = os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))
+            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
             if not os.path.exists(video_path):
                 os.mkdir(video_path)
 
-            txt_name =  f"ckpt-{checkpoint_idx}-{split_name}-eval-results.txt"
+            txt_name =  f"ckpt_{checkpoint_idx}-{split_name}-eval_results.txt"
             with open(os.path.join(video_path, txt_name), 'w') as outfile:
                 outfile.write(string_n_episode)
                 outfile.write(metric_string)

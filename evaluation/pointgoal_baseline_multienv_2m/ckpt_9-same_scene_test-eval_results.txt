@@ -1,0 +1,4 @@
+Number of episodes: 100 
+Average episode return: 8.0234
+Average episode success: 0.9400
+Average episode spl: 0.6557

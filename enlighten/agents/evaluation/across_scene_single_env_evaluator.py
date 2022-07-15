@@ -10,6 +10,7 @@ from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
 from enlighten.agents.models.decision_transformer import DecisionTransformer
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
+from enlighten.agents.evaluation.across_scene_base_evaluator import AcrossEnvBaseEvaluator
 
 class MeasureHistory:
     def __init__(self, id):
@@ -147,9 +148,9 @@ def evaluate_one_episode_dt(
     episode_length = env.get_current_step()
     success = env.is_success()
     spl = env.get_spl()
-    softspl = env.get_softspl()
+    #softspl = env.get_softspl()
 
-    return episode_length, success, spl, softspl
+    return episode_length, success, spl #, softspl
 
 # evaluate rnn for one episode
 def evaluate_one_episode_rnn(
@@ -241,138 +242,28 @@ def evaluate_one_episode_rnn(
     episode_length = env.get_current_step()
     success = env.is_success()
     spl = env.get_spl()
-    softspl = env.get_softspl()
+    #softspl = env.get_softspl()
 
-    return episode_length, success, spl, softspl
+    return episode_length, success, spl #, softspl
 
-# evaluate an agent in across scene env
-class MultiEnvEvaluator:
-    # eval_splits: ["across_scene_test", "same_scene_test", "across_scene_val", "same_scene_val", "same_start_goal_test", "same_start_goal_val"]
-    def __init__(self, eval_splits, config_filename="imitation_learning_dt.yaml", 
-        env: MultiNavEnv = None, device=None):
-
-        assert config_filename is not None, "needs config file to initialize trainer"
-        
-        config_file = os.path.join(config_path, config_filename)
-        self.config = parse_config(config_file)
-
-        # seed everything except env
-        self.seed = int(self.config.get("seed"))
-        set_seed_except_env_seed(self.seed)
-
-        # create env if None
-        if env is None:
-            self.env = MultiNavEnv(config_file=config_filename) 
-        else:
-            self.env = env
-
-        # device
-        if device is None:
-            self.device = get_device(self.config)
-        else:
-            self.device = device 
-
-        # max episode length
-        self.max_ep_len = int(self.config.get("max_ep_len"))  
-
-        # goal_form
-        self.goal_form = self.config.get("goal_form") 
-        if self.goal_form not in ["rel_goal", "distance_to_goal"]:
-            print("Undefined goal form: %s"%(self.goal_form))
-            exit()
-        
-        # algorithm
-        self.algorithm_name = self.config.get("algorithm_name")
-
-        # get name of evaluation folder
-        self.experiment_name_to_load = self.config.get("eval_experiment_folder")
-          
-        # load episodes of behavior datasets for evaluation
-        print("====> Evaluation splits during training: %s"%(eval_splits))
-        self.eval_dataset_episodes = {}
-        for eval_split in eval_splits:
-            episodes = load_behavior_dataset_meta(yaml_name=config_filename, 
-            split_name=eval_split)
-            self.eval_dataset_episodes[eval_split] = episodes
-
-    # load dt model to be evaluated
-    def load_model(self):
-        # create model
-        if self.algorithm_name == "dt":
-            model = DecisionTransformer(
-                obs_channel = get_obs_channel_num(self.config),
-                obs_width = int(self.config.get("image_width")), 
-                obs_height = int(self.config.get("image_height")),
-                goal_dim=int(self.config.get("goal_dimension")),
-                goal_form=self.config.get("goal_form"),
-                act_num=int(self.config.get("action_number")),
-                context_length=int(self.config.get('K')),
-                max_ep_len=int(self.config.get("max_ep_len")),  
-                pad_mode = str(self.config.get("pad_mode")),
-                hidden_size=int(self.config.get('embed_dim')), # parameters starting from here will be passed to gpt2
-                n_layer=int(self.config.get('n_layer')),
-                n_head=int(self.config.get('n_head')),
-                n_inner=int(4*self.config.get('embed_dim')),
-                activation_function=self.config.get('activation_function'),
-                n_positions=1024,
-                resid_pdrop=float(self.config.get('dropout')),
-                attn_pdrop=float(self.config.get('dropout')),
-            )
-        elif self.algorithm_name == "rnn":
-            model = RNNSequenceModel(
-                obs_channel = get_obs_channel_num(self.config),
-                obs_width = int(self.config.get("image_width")), 
-                obs_height = int(self.config.get("image_height")),
-                goal_dim=int(self.config.get("goal_dimension")),
-                goal_form=self.config.get("goal_form"),
-                act_num=int(self.config.get("action_number")),
-                max_ep_len=int(self.config.get("max_ep_len")),  
-                rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
-                obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
-                goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
-                act_embedding_size=int(self.config.get('act_embedding_size')), #32
-                rnn_type=self.config.get('rnn_type'),
-                supervise_value=self.config.get('supervise_value')
-            )
-        else:
-            print("Error: undefined algorithm name: %s"%(self.algorithm_name))
-            exit()
-        
-        # get checkpoint path
-        checkpoint_path = os.path.join(checkpoints_path, self.experiment_name_to_load, self.config.get("eval_checkpoint_file"))
-        if os.path.exists(checkpoint_path):
-            print("Loading checkpoint at: "+str(checkpoint_path))
-        else:
-            print("Error: checkpoint path does not exist: %s"%(checkpoint_path))
-            exit()  
-        
-        # load checkpoint
-        model.load_state_dict(torch.load(checkpoint_path))
-
-        return model
-
-    def evaluate_over_datasets(self, model=None, sample=True):
-        if model is None:
-            model = self.load_model()
-            
-        
-        logs = {}
-        for split_name, episodes in self.eval_dataset_episodes.items():
-            logs = self.evaluate_over_one_dataset(episodes, model, sample, split_name, logs)
-        
-        return logs
+# evaluate an agent across scene single env
+class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
+    
+    def create_env(self, config_filename):
+        self.env = MultiNavEnv(config_file=config_filename)
+    
     
     def evaluate_over_one_dataset(self, episodes, model, sample, split_name, logs):
         episode_length_array = MeasureHistory("episode_length")
         success_array = MeasureHistory("success")
-        spl_array = MeasureHistory("soft_spl")
-        soft_spl_array = MeasureHistory("soft_spl")
+        spl_array = MeasureHistory("spl")
+        #soft_spl_array = MeasureHistory("soft_spl")
 
         for i, episode in enumerate(episodes):
             print('Episode: {}'.format(i+1))
             
             if self.algorithm_name == "dt":
-                episode_length, success, spl, softspl = evaluate_one_episode_dt(
+                episode_length, success, spl = evaluate_one_episode_dt(
                     episode,
                     self.env,
                     model,
@@ -382,7 +273,7 @@ class MultiEnvEvaluator:
                     self.device)
             elif self.algorithm_name == "rnn":
                 rnn_hidden_size = int(self.config.get("rnn_hidden_size"))
-                episode_length, success, spl, softspl = evaluate_one_episode_rnn(
+                episode_length, success, spl = evaluate_one_episode_rnn(
                 episode,
                 self.env,
                 model,
@@ -398,31 +289,35 @@ class MultiEnvEvaluator:
             episode_length_array.add(episode_length)
             success_array.add(float(success))
             spl_array.add(spl)
-            soft_spl_array.add(softspl)
+            #soft_spl_array.add(softspl)
         
         
         logs[f"{split_name}/total_episodes"] = success_array.len()
         logs[f"{split_name}/success_rate"] = success_array.mean()
         logs[f"{split_name}/mean_spl"] = spl_array.mean()
-        logs[f"{split_name}/mean_soft_spl"] = soft_spl_array.mean()
+        #logs[f"{split_name}/mean_soft_spl"] = soft_spl_array.mean()
         
         return logs
     
-    def print_metrics(self, logs, eval_splits):
-        for split_name in eval_splits:
-            print("================== %s ======================"%(split_name))
-            print("Episodes in total: %d"%(logs[f"{split_name}/total_episodes"]))
-            print("Success rate: %f"%(logs[f"{split_name}/success_rate"]))
-            print("SPL mean: %f"%(logs[f"{split_name}/mean_spl"]))
-            print("Soft SPL mean: %f"%(logs[f"{split_name}/mean_soft_spl"]))
-            print("==============================================")
+    def evaluate_over_datasets(self, model=None, sample=True):
+        if model is None:
+            model = self.load_model()
+            
+        
+        logs = {}
+        for split_name, episodes in self.eval_dataset_episodes.items():
+            logs = self.evaluate_over_one_dataset(episodes, model, sample, split_name, logs)
+        
+        return logs
 
+    
 
 if __name__ == "__main__":
     eval_splits = ["same_start_goal_test", "same_scene_test", "across_scene_test"]
-    evaluator = MultiEnvEvaluator(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
+    evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
     logs = evaluator.evaluate_over_datasets(sample=True)
     evaluator.print_metrics(logs, eval_splits)
+    evaluator.save_eval_logs(logs, eval_splits)
 
         
 

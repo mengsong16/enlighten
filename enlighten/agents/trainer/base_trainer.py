@@ -107,8 +107,8 @@ class BaseTrainer:
             ), "Must specify a tensorboard directory for video display"
             os.makedirs(os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), exist_ok=True)
         if "disk" in self.config.get("eval_video_option"):
-            if not os.path.exists(os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name"))):
-                os.makedirs(os.path.join(root_path, self.config.get("video_dir"), self.config.get("experiment_name")), exist_ok=True) # exist_ok=True, won't raise any error if folder exists
+            if not os.path.exists(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))):
+                os.makedirs(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name")), exist_ok=True) # exist_ok=True, won't raise any error if folder exists
 
         with TensorboardWriter(
             os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), flush_secs=self.flush_secs

@@ -220,7 +220,6 @@ class RNNSequenceModel(nn.Module):
     # B could be 1 or the number of vector environments
     # for evaluation
     def get_action(self, observations, prev_actions, goals, h_prev, sample):
-        B = h_prev.size(1)
         # forward the sequence with no grad
         with torch.no_grad():
             # embed each input modality with a different head
@@ -237,16 +236,26 @@ class RNNSequenceModel(nn.Module):
             # pred_action_logits: [B, action_num]
             # h_cur': [B, hidden_size]
             pred_action_logits = self.action_decoder(torch.squeeze(h_cur, 0))
+
+            #print("=========")
+            #print(pred_action_logits.size())
             
             # apply softmax to convert to probabilities
             # probs: [B, action_num]
             probs = self.softmax(pred_action_logits)
+
+            #print(probs.size())
+            
             
             # sample from the distribution or take the most likely
             if sample:
-                actions = torch.multinomial(probs, num_samples=B)
+                # each row is an independent distribution, draw 1 sample per distribution
+                actions = torch.multinomial(probs, num_samples=1)
             else:
                 _, actions = torch.topk(probs, k=1, dim=-1)
+            
+            #print(actions.size())
+            #print("=========")
         
         # actions: [B, 1]
         # h_cur: [1, B, hidden_size]

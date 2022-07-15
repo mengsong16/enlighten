@@ -81,6 +81,7 @@ ACTION_SPACE_NAME = "action_space"
 OBSERVATION_SPACE_NAME = "observation_space"
 GET_GOAL_OBS_SPACE_NAME = "get_goal_observation_space"
 GET_COMBINED_GOAL_OBS_SPACE_NAME = "get_combined_goal_obs_space"
+GET_DISTANCE_TO_GOAL = "get_current_distance"
 
 # def _make_env_fn(
 #     config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
@@ -399,6 +400,14 @@ class VectorEnv:
             results.append(read_fn())
         return results
 
+    def get_distance_to_goal(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (GET_DISTANCE_TO_GOAL, None)))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        return results
+    
     def get_metrics(self):
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (GET_METRICS_NAME, None)))

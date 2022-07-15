@@ -104,7 +104,7 @@ save_every_iterations: 40 #50 #10
 
 # evaluation
 eval_experiment_folder: "rnn-whole_trajectory-s1-20220712-021536" #"dt-test-s1--distance_to_goal-20220531-105916" #"dt-test-s1-20220531-002932"
-eval_checkpoint_file: "ckpt_13.pth" #"ckpt_15.pth"
+eval_checkpoint_file: "ckpt_14.pth" #"ckpt_15.pth"
 eval_dir: "evaluation"
 
 

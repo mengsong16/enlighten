@@ -25,6 +25,18 @@ from typing import (
     Tuple,
     Union,
 )
+from enlighten.utils.ddp_utils import (
+    EXIT,
+    add_signal_handlers,
+    get_distrib_size,
+    init_distrib_slurm,
+    is_slurm_batch_job,
+    load_resume_state,
+    rank0_only,
+    requeue_job,
+    save_resume_state,
+)
+
 from torch import Size, Tensor
 import tqdm
 
@@ -297,7 +309,8 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
     def evaluate_over_one_dataset(self, model, sample, split_name, logs):
         self.envs = construct_envs_based_on_dataset(
                 config=self.config,
-                split_name=split_name
+                split_name=split_name,
+                workers_ignore_signals=is_slurm_batch_job()
             )
         
         if self.algorithm_name == "rnn":

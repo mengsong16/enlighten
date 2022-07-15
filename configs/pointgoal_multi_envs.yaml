@@ -11,6 +11,7 @@ scenes_dir: "/dataset"  # where mesh data store
 behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
+algorithm_name: "ppo"
 experiment_name:  "pointgoal_baseline_multienv_2m" # "ppo_test"
 
 # dummy initial setup 
@@ -73,6 +74,11 @@ stop_depend_success: true #true
 max_steps_per_episode: 500 #200 #500
 max_collisions_per_episode: 200 #100 #200
 
+# dummy: to be consistent with imitation learning config
+max_ep_len: 500  
+goal_form:  "rel_goal"
+gpu_id: 0
+
 # neural network
 visual_encoder: ResNet #ResNet # CNN 
 pretrained_visual_encoder: false  
@@ -97,6 +103,7 @@ num_environments: 2 #4 #6
 torch_gpu_id: 0
 simulator_gpu_id: 0
 seed: 1
+
 # train for how long: one of them must be -1
 # num_updates: how many times agent.update is called, i.e. how many times the training process loops
 # num of backprop inside each agent update = ppo_epoch * num_mini_batch
@@ -155,6 +162,7 @@ eval_use_ckpt_config: false
 eval_dir: "evaluation"
 test_episode_count: -1 # number of evaluation episodes #-1: test on all episodes in the dataset
 eval_splits: ["same_start_goal_test", "same_scene_test", "across_scene_test"]
+eval_experiment_folder: "pointgoal_baseline_multienv_2m"
 # dummy
 eval_video_option: [] #["disk", "tensorboard"]
 

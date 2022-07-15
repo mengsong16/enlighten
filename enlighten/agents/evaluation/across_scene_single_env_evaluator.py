@@ -11,6 +11,7 @@ from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_o
 from enlighten.agents.models.decision_transformer import DecisionTransformer
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
 from enlighten.agents.evaluation.across_scene_base_evaluator import AcrossEnvBaseEvaluator
+from enlighten.agents.evaluation.ppo_eval import *
 
 class MeasureHistory:
     def __init__(self, id):
@@ -246,6 +247,66 @@ def evaluate_one_episode_rnn(
 
     return episode_length, success, spl #, softspl
 
+# evaluate ppo for one episode
+def evaluate_one_episode_ppo(
+        episode,
+        env,
+        model,
+        obs_transforms,
+        max_ep_len,
+        device,
+        cache,
+        config
+    ):
+    # set model to eval mode
+    model.eval()
+    
+    # reset env
+    obs = env.reset(episode=episode, plan_shortest_path=False)
+    # initialize model data structures
+    recurrent_hidden_states, not_done_masks, prev_actions = init_ppo_inputs(model=model, config=config, 
+        num_envs=1, device=device)
+        
+    print("Scene id: %s"%(episode.scene_id))
+    print("Goal position: %s"%(env.goal_position))
+    print("Start position: %s"%(env.start_position))
+    
+    # run under policy for max_ep_len step or done
+    for t in range(max_ep_len):
+        batch = get_ppo_batch(observations=[obs], 
+            device=device, 
+            cache=cache, 
+            obs_transforms=obs_transforms)
+        
+        actions, recurrent_hidden_states = ppo_act(model=model, 
+            batch=batch, 
+            recurrent_hidden_states=recurrent_hidden_states, 
+            prev_actions=prev_actions, not_done_masks=not_done_masks, 
+            deterministic=False)
+            
+        with torch.no_grad():
+            prev_actions.copy_(actions)
+        
+        action = actions[0][0].item()
+
+        obs, _, done, _ = env.step(action)
+
+        not_done_masks = torch.tensor(
+            [[not done]],
+            dtype=torch.bool,
+            device=device,
+        )
+
+        if done:
+            break   
+
+    # collect measures
+    episode_length = env.get_current_step()
+    success = env.is_success()
+    spl = env.get_spl()
+
+    return episode_length, success, spl
+
 # evaluate an agent across scene single env
 class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
     
@@ -282,6 +343,16 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 sample,
                 self.max_ep_len,
                 self.device)
+            elif self.algorithm_name == "ppo":
+                episode_length, success, spl = evaluate_one_episode_ppo(
+                    episode,
+                    self.env,
+                    model,
+                    self.obs_transforms,
+                    self.max_ep_len,
+                    self.device,
+                    self.cache,
+                    self.config)
             else:
                 print("Error: undefined algorithm name: %s"%(self.algorithm_name))
                 exit()
@@ -314,7 +385,8 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
 
 if __name__ == "__main__":
     eval_splits = ["same_start_goal_test", "same_scene_test", "across_scene_test"]
-    evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
+    #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
+    evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_multi_envs.yaml") 
     logs = evaluator.evaluate_over_datasets(sample=True)
     evaluator.print_metrics(logs, eval_splits)
     evaluator.save_eval_logs(logs, eval_splits)

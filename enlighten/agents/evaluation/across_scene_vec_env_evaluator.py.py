@@ -160,15 +160,15 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
         pbar = tqdm.tqdm(total=number_of_eval_episodes)
 
         # reset envs and get initial observations
-        observations = self.envs.reset()
+        original_observations = self.envs.reset()
 
         # observations: [B,C,H,W]
         # goals: [B,goal_dim]
-        observations, goals = self.observation2agentinput(observations, self.goal_form)
+        observations, goals = self.observation2agentinput(original_observations, self.goal_form)
 
         # initialize algorithm data structures
         # a0 is -1, shape [B]
-        actions = torch.ones((self.envs.num_envs), device=self.device, dtype=torch.long) * (-1)
+        prev_actions = torch.ones((self.envs.num_envs), device=self.device, dtype=torch.long) * (-1)
 
         # h0 is 0, shape [1, B, hidden_size]
         h = torch.zeros(1, self.envs.num_envs, 
@@ -178,7 +178,6 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
         )
 
         # dones
-        dones = None
         not_done_masks = torch.zeros(
             self.envs.num_envs, 1, device=self.device, dtype=torch.bool
         )
@@ -199,17 +198,20 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
             # act agent
             actions, h = model.get_action(
                 observations,
-                actions,
+                prev_actions,
                 goals,
                 h,
                 sample=sample)
+            
+            # actions: [B,1] --> [B]
+            actions = torch.squeeze(actions, 1)
             
             # print(actions)
             # print(actions.size())
             # print(h.size())
 
-            # actions: [B,1] --> [B]
-            actions = torch.squeeze(actions, 1)
+            with torch.no_grad():
+                prev_actions.copy_(actions)
 
             #print(actions)
             #exit()
@@ -223,12 +225,12 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
             outputs = self.envs.step(step_data)
 
             # unpack outputs
-            observations, rewards_l, dones, infos = [
+            original_observations, rewards_l, dones, infos = [
                 list(x) for x in zip(*outputs)
             ]
 
             # get new observations and goals
-            observations, goals = self.observation2agentinput(observations, self.goal_form)
+            observations, goals = self.observation2agentinput(original_observations, self.goal_form)
 
             # get new done masks in cpu
             not_done_masks = torch.tensor(
@@ -289,7 +291,7 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
                 h,
                 not_done_masks,
                 current_episode_reward,
-                actions,
+                prev_actions,
                 observations,
                 goals
             ) = self._pause_envs(
@@ -298,7 +300,7 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
                 h,
                 not_done_masks,
                 current_episode_reward,
-                actions,
+                prev_actions,
                 observations,
                 goals
             )

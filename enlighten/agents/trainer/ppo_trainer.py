@@ -64,7 +64,7 @@ import copy
 #from enlighten.utils.path import config_path
 from enlighten.utils.path import *
 
-from enlighten.agents.algorithms.ppo_agent import PPOAgent
+from enlighten.agents.evaluation.ppo_eval import *
 from enlighten.envs.nav_env import NavEnv
 from enlighten.envs import MultiNavEnv
 from enlighten.utils.video_utils import generate_video, images_to_video, create_video, remove_jpg, BGR_mode
@@ -1065,6 +1065,7 @@ class PPOTrainer(BaseRLTrainer):
             avg_value = measure.get_metric() / float(n_episodes)
             measure.set_metric(avg_value) 
 
+    # To check
     def _eval_checkpoint_single_scene(
         self,
         checkpoint_idx: int = 0,
@@ -1072,12 +1073,19 @@ class PPOTrainer(BaseRLTrainer):
         remove_images=True,
         save_text_results=True
     ):
-        print("Eval single scene")
-        random_agent = False
+        print("Evaluating a single scene ...")
+        
         env =  NavEnv(config_file=self.config, dataset=None)
-        agent = PPOAgent(config_file=self.config, random_agent=random_agent, 
-        observation_space=env.observation_space, goal_observation_space=env.get_goal_observation_space(),
-        action_space=env.action_space)
+        obs_transforms = get_active_obs_transforms(self.config)
+        model = load_ppo_model(config=self.config, 
+                observation_space=env.observation_space, 
+                goal_observation_space=env.get_goal_observation_space(), 
+                action_space=env.action_space,
+                device=self.device,
+                obs_transforms=obs_transforms)
+        
+        # set model to eval mode
+        model.eval()
         
         n_episodes = int(self.config.get("test_episode_count"))
 
@@ -1088,44 +1096,56 @@ class PPOTrainer(BaseRLTrainer):
 
         success_num_steps = []
         for episode_index in range(n_episodes):
+            # reset env
+            obs = env.reset() 
+            # initialize model data structures
+            recurrent_hidden_states, not_done_masks, prev_actions = init_ppo_inputs(model=model, config=self.config, 
+                num_envs=1, device=self.device)
             
-            obs = env.reset() # reset agent state
-            agent.reset() # initialize structures
-            done = None
-            env.set_current_episode(episode_index)
-
             print('-----------------------------')
-            print('Episode: %d'%(env.get_current_episode()))
-            print('Reset')
+            print('Episode: %d'%(episode_index))
             env.print_agent_state()
             print("Goal position: %s"%(env.goal_position))
             print('-----------------------------')
 
             step = 0
+            done = False
             while True: 
+                batch = get_ppo_batch(observations=[obs], 
+                    device=self.device, 
+                    cache=self._obs_batching_cache, 
+                    obs_transforms=obs_transforms)
                 #action = env.action_space.sample()
-                if self.config.get("attention"):
-                    action, attention_image = agent.act(obs)
-                    #print(attention_map.size())
-                else:
-                    action = agent.act(observations=obs, dones=done)
+                actions, recurrent_hidden_states = ppo_act(model=model, 
+                    batch=batch, 
+                    recurrent_hidden_states=recurrent_hidden_states, 
+                    prev_actions=prev_actions, not_done_masks=not_done_masks, 
+                    deterministic=False)
                 
+                with torch.no_grad():
+                    prev_actions.copy_(actions)
+                
+                action = actions[0][0].item()
+
                 obs, reward, done, info = env.step(action)
+
+                not_done_masks = torch.tensor(
+                    [[not done]],
+                    dtype=torch.bool,
+                    device=self.device,
+                )
 
                 #print("Step: %d, Action: %d, Reward: %f"%(step, action, reward))
 
-                if rendering:
-                    if self.config.get("attention"):
-                        env.render(mode="color_sensor", attention_image=attention_image)
-                    else:    
-                        env.render(mode="color_sensor")
+                if rendering:    
+                    env.render(mode="color_sensor")
+
+                step += 1
 
                 if done:
                     env.measurements.print_measures()
                     self.update_avg_measurements(env.measurements)
                     break   
-
-                step += 1 
 
             # update success steps
             #print(env.measurements.measures["success"]._metric)
@@ -1144,8 +1164,6 @@ class PPOTrainer(BaseRLTrainer):
         print(string_n_episode)
         ms = self.avg_measurements.print_measures()
         print("------------------------------------------------")
-
-        
         
         sn = ""
         if len(success_num_steps) > 0:
@@ -1169,10 +1187,7 @@ class PPOTrainer(BaseRLTrainer):
                 outfile.write(sn)
             print("Saved evaluation file.")    
         # save testing episodes to video
-        if not random_agent:
-            video_name = f"ckpt-{checkpoint_idx}"
-        else:
-            video_name = "random"
+        video_name = f"ckpt-{checkpoint_idx}"
 
         if "disk" in list(self.config.get("eval_video_option")):
             video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
@@ -1233,13 +1248,18 @@ class PPOTrainer(BaseRLTrainer):
         # create vec envs
         self._init_envs(split_name=split_name)
         
-        # create ppo agent
-        agent = PPOAgent(config_file=self.config, random_agent=False, 
-            use_vec_env=True, observation_space=self.envs.observation_spaces[0],
+        # create ppo model
+        obs_transforms = get_active_obs_transforms(self.config)
+        model = load_ppo_model(config=self.config, 
+            observation_space=self.envs.observation_spaces[0],
             goal_observation_space=self.envs.get_goal_observation_space(),
-            action_space=self.envs.action_spaces[0])
+            action_space=self.envs.action_spaces[0],
+            device=self.device,
+            obs_transforms=obs_transforms)
         
-        
+        # set model to eval mode
+        model.eval()
+
         # init data structures
         current_episode_reward = torch.zeros(
             self.envs.num_envs, 1, device="cpu"
@@ -1259,12 +1279,16 @@ class PPOTrainer(BaseRLTrainer):
 
         # reset envs and get initial observations
         observations = self.envs.reset()
-        dones = None
+        # get batch 0
+        batch = get_ppo_batch(observations=observations, 
+                device=self.device, 
+                cache=self._obs_batching_cache, 
+                obs_transforms=obs_transforms)
         
-        # reset agent
-        agent.reset()
-        external_inputs = None
-
+        # initialize model data structures
+        recurrent_hidden_states, not_done_masks, prev_actions = init_ppo_inputs(model=model, config=self.config, 
+            num_envs=self.envs.num_envs, device=self.device)
+            
         # evaluate all episodes
         while (
             len(stats_episodes) < number_of_eval_episodes
@@ -1274,8 +1298,14 @@ class PPOTrainer(BaseRLTrainer):
             current_episodes = self.envs.current_episodes()
 
             # act agent
-            actions = agent.act(observations=observations, dones=dones, 
-                cache=self._obs_batching_cache, external_inputs=external_inputs)
+            actions, recurrent_hidden_states = ppo_act(model=model, 
+                    batch=batch, 
+                    recurrent_hidden_states=recurrent_hidden_states, 
+                    prev_actions=prev_actions, not_done_masks=not_done_masks, 
+                    deterministic=False)
+            
+            with torch.no_grad():
+                prev_actions.copy_(actions)
 
             # Move actions to CPU.  If CUDA tensors are
             # sent in to env.step(), that will create CUDA contexts in the subprocesses.
@@ -1289,14 +1319,13 @@ class PPOTrainer(BaseRLTrainer):
                 list(x) for x in zip(*outputs)
             ]
 
-            # get new observations batch
-            batch = batch_obs(
-                observations,
-                device=self.device,
-                cache=self._obs_batching_cache,
-            )
+            # get new batch
+            batch = get_ppo_batch(observations=observations, 
+                    device=self.device, 
+                    cache=self._obs_batching_cache, 
+                    obs_transforms=obs_transforms)
 
-            # get new done masks in cpu
+            # get new done masks on cpu
             not_done_masks = torch.tensor(
                 [[not done] for done in dones],
                 dtype=torch.bool,
@@ -1352,29 +1381,23 @@ class PPOTrainer(BaseRLTrainer):
             not_done_masks = not_done_masks.to(device=self.device)
             (
                 self.envs,
-                new_recurrent_hidden_states,
-                new_not_done_masks,
+                recurrent_hidden_states,
+                not_done_masks,
                 current_episode_reward,
-                new_prev_actions,
-                new_batch,
+                prev_actions,
+                batch,
                 rgb_frames_placeholder,
             ) = self._pause_envs(
                 envs_to_pause,
                 self.envs,
-                agent.recurrent_hidden_states,
+                recurrent_hidden_states,
                 not_done_masks,
                 current_episode_reward,
-                agent.prev_actions,
+                prev_actions,
                 batch,
                 rgb_frames_placeholder,
             )
-
-            # put together external_inputs
-            external_inputs = {"batch": new_batch, "not_done_masks": new_not_done_masks,
-                "prev_actions": new_prev_actions, "recurrent_hidden_states": new_recurrent_hidden_states}
-
             
-
         # evaluation has done, collect and record metrics
         self.record_eval_metrics(stats_episodes=stats_episodes,
                     checkpoint_idx = checkpoint_idx,
@@ -1418,5 +1441,5 @@ class PPOTrainer(BaseRLTrainer):
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_multi_envs.yaml"), resume_training=False)
-   trainer.train()
-   #trainer.eval()
+   #trainer.train()
+   trainer.eval()

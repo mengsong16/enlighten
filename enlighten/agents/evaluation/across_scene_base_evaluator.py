@@ -10,7 +10,11 @@ from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
 from enlighten.agents.models.decision_transformer import DecisionTransformer
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
-
+from enlighten.agents.evaluation.ppo_eval import *
+from enlighten.agents.common.tensor_related import (
+    ObservationBatchingCache,
+    batch_obs,
+)
 
 # evaluate an agent across scene single env
 class AcrossEnvBaseEvaluator:
@@ -102,6 +106,17 @@ class AcrossEnvBaseEvaluator:
                 rnn_type=self.config.get('rnn_type'),
                 supervise_value=self.config.get('supervise_value')
             )
+        elif self.algorithm_name == "ppo":
+            self.obs_transforms = get_active_obs_transforms(self.config)
+            self.cache = ObservationBatchingCache()
+            # assume a single env
+            model = load_ppo_model(config=self.config, 
+                observation_space=self.env.observation_space, 
+                goal_observation_space=self.env.get_goal_observation_space(), 
+                action_space=self.env.action_space,
+                device=self.device,
+                obs_transforms=self.obs_transforms)
+            return model
         else:
             print("Error: undefined algorithm name: %s"%(self.algorithm_name))
             exit()

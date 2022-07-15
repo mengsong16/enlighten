@@ -241,8 +241,7 @@ class NavEnv(gym.Env):
         # set measurements
         measure_ids = list(self.config.get("measurements"))
         self.measurements = Measurements(measure_ids=measure_ids, env=self, config=self.config)
-        # set current episode
-        self.current_episode = 0
+        
 
         # set visitation dictionaries
         self.train_state_count_dict = State_Visitation(position_resolution=float(self.config.get("forward_resolution")), rotation_resolution=float(self.config.get("rotate_resolution")))
@@ -1082,13 +1081,6 @@ class NavEnv(gym.Env):
     def get_softspl(self):
         return self.measurements.measures["softspl"].get_metric()    
 
-
-    def get_current_episode(self):
-        return self.current_episode
-
-    def set_current_episode(self, episode_index):
-        self.current_episode = episode_index   
-    
     def close(self):
         self.sim.close()
         if self.viewer is not None:

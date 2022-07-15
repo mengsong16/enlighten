@@ -775,6 +775,7 @@ def construct_envs_based_on_dataset(
                 "No scenes to load, multiple process logic relies on being able to split scenes uniquely between processes"
             )
 
+        # to make sure that episodes assigned to the same env are from scenes as little as possible 
         if len(scenes) < num_environments:
             print(
                 "reduce the number of environments as there "
@@ -784,6 +785,11 @@ def construct_envs_based_on_dataset(
                 )
             )
             num_environments = len(scenes)
+            # print(
+            #     "num_environments > num_scenes: {} > {}".format(
+            #         num_environments, len(scenes)
+            #     )
+            # )
 
         random.shuffle(scenes)
 

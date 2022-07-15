@@ -142,6 +142,16 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
 
         return observations, goals
 
+    def build_rnn_inputs(self, prev_actions, not_done_masks, hidden_states):
+        start_tokens = torch.ones_like(prev_actions) * (-1)
+        prev_actions = (torch.where(not_done_masks.view(-1), prev_actions, start_tokens)).long()
+
+        hidden_states = torch.where(
+            not_done_masks.view(1, -1, 1),
+            hidden_states,
+            torch.zeros_like(hidden_states))
+        
+        return prev_actions, hidden_states
 
     def evaluate_over_one_dataset_rnn(self, model, sample, split_name, logs):
         # initialize data structures of stats
@@ -196,6 +206,8 @@ class AcrossEnvEvaluatorVector(AcrossEnvBaseEvaluator):
             # print(h.size())
 
             # act agent
+            prev_actions, h = self.build_rnn_inputs(prev_actions, not_done_masks, h)
+
             actions, h = model.get_action(
                 observations,
                 prev_actions,

@@ -188,6 +188,9 @@ class VectorEnv:
         :param workers_ignore_signals: Whether or not workers will ignore SIGINT and SIGTERM
             and instead will only exit when :ref:`close` is called
         """
+
+        
+
         self._is_closed = True
 
         assert (
@@ -222,14 +225,16 @@ class VectorEnv:
             write_fn((CALL_COMMAND, (ACTION_SPACE_NAME, None)))
         self.action_spaces = [
             read_fn() for read_fn in self._connection_read_fns
-        ]        
+        ]     
+
+        
 
         # get number of episodes
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (NUMBER_OF_EPISODE_NAME, None)))
         self.number_of_episodes = [
             read_fn() for read_fn in self._connection_read_fns
-        ]
+        ] 
         
         self._paused: List[Tuple] = []
 
@@ -845,6 +850,7 @@ def _make_multi_nav_fn(config, seed, episode_split):
 
 # make one single scene nav environment
 def _make_nav_env_fn(config: str="navigate_with_flashlight.yaml", seed: int = 0) -> NavEnv:
+
     # create env
     env = NavEnv(config_file=config)
     # set seed
@@ -853,6 +859,8 @@ def _make_nav_env_fn(config: str="navigate_with_flashlight.yaml", seed: int = 0)
     return env
 
 def construct_envs_based_on_singel_scene(config, workers_ignore_signals: bool = False):
+    
+    
     num_environments = int(config.get("num_environments"))
     configs = []
     seeds = []
@@ -864,6 +872,7 @@ def construct_envs_based_on_singel_scene(config, workers_ignore_signals: bool = 
 
     env_fn_args = tuple(zip(configs, seeds))
 
+    
     envs = VectorEnv(
         env_fn_args=env_fn_args,
         make_env_fn=_make_nav_env_fn,

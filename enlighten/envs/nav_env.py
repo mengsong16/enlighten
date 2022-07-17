@@ -201,6 +201,8 @@ class NavEnv(gym.Env):
     """
     # config_file could be a string or a parsed config
     def __init__(self, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml"), dataset=None):
+        
+        
         self.config = parse_config(config_file)
         self.dataset = dataset
     
@@ -269,6 +271,9 @@ class NavEnv(gym.Env):
                 self.transform = midas_transforms.small_transform
         
         self.is_stop_called = False
+
+        # dummy for vec env initialization
+        self.number_of_episodes = 0
 
 
     def create_sim_config(self):
@@ -957,6 +962,35 @@ class NavEnv(gym.Env):
     def get_euclidean_distance(self):
         return euclidean_distance(position_a=self.get_agent_position(), position_b=self.goal_position)
 
+    def export_map_array(self, save_file_name):
+        if self.sim.pathfinder.is_loaded:
+            # map resolution
+            #self.meters_per_pixel = float(self.config.get("forward_resolution"))
+            self.meters_per_pixel = 0.1
+            # The height (min y coordinate) in the environment to make the topdown map 
+            self.height = self.sim.pathfinder.get_bounds()[0][1]
+
+            top_down_map = maps.get_topdown_map(self.sim.pathfinder, self.height, meters_per_pixel=self.meters_per_pixel)
+            # MAP_INVALID_POINT = 0  --> 1 obstacle
+            # MAP_VALID_POINT = 1 --> 0 non-obstacle
+            # MAP_BORDER_INDICATOR = 2  --> 1 obstacle
+            recolor_map = np.array([1,0,1], dtype=np.uint8)
+            top_down_map = recolor_map[top_down_map]
+
+            #print(top_down_map)
+
+            save_folder = "/home/meng/eva/eva/envs/mazelab/sample_maze"
+            save_file = os.path.join(save_folder, save_file_name)
+            with open(save_file, 'wb') as f:
+                np.save(f, top_down_map)
+                print("Map saved to %s"%(save_file))
+                print("Map shape: %s"%(str(top_down_map.shape)))
+
+            return top_down_map
+        else:
+            print("Error: path finder should be loaded before generating map")
+            exit()
+
     # Display the map with agent and path overlay        
     def get_map(self, path_points):
         #sim_topdown_map = self.sim.pathfinder.get_topdown_view(self.meters_per_pixel, self.height)
@@ -1336,6 +1370,11 @@ def zero_quat():
     print(qt.as_euler_angles(np.quaternion(1,0,0,0)))
     print(get_rotation_quat(np.array([0,0,0], dtype="float32")))        
 
+def test_export_map():
+    env =  NavEnv(config_file=os.path.join(config_path, "replica_nav_state.yaml"))
+    #env.export_map_array(save_file_name="replica-room0.npy")
+    env.export_map_array(save_file_name="replica-apt1.npy")
+
 if __name__ == "__main__":    
     test_env("replica_nav_state.yaml")
     #test_env("pointgoal_baseline.yaml")
@@ -1344,5 +1383,7 @@ if __name__ == "__main__":
     #test_rollout_storage()
     #test_stop_action()
     #zero_quat()
+
+    #test_export_map()
 
     

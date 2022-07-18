@@ -134,7 +134,7 @@ class RNNSequenceModel(nn.Module):
 
         
         # three heads for input (training): o,a,g
-        if self.goal_form == "rel_goal":
+        if self.goal_form == "rel_goal" or self.goal_form == "abs_goal":
             self.goal_encoder = GoalEncoder(self.goal_dim, goal_embedding_size)
         elif self.goal_form == "distance_to_goal":
             self.distance_to_goal_encoder = DistanceToGoalEncoder(goal_embedding_size)
@@ -167,7 +167,7 @@ class RNNSequenceModel(nn.Module):
         # input action + 1
         prev_action_embeddings = self.action_encoder(prev_actions+1)
         # (T,goal_dim) ==> (T,goal_embedding_size)
-        if self.goal_form == "rel_goal":
+        if self.goal_form == "rel_goal" or self.goal_form == "abs_goal":
             goal_embeddings = self.goal_encoder(goals)
         elif self.goal_form == "distance_to_goal":
             goal_embeddings = self.distance_to_goal_encoder(goals)

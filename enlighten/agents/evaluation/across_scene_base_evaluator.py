@@ -15,6 +15,7 @@ from enlighten.agents.common.tensor_related import (
     ObservationBatchingCache,
     batch_obs,
 )
+from enlighten.datasets.il_data_gen import goal_position_to_abs_goal
 
 # evaluate an agent across scene single env
 class AcrossEnvBaseEvaluator:
@@ -45,7 +46,7 @@ class AcrossEnvBaseEvaluator:
 
         # goal_form
         self.goal_form = self.config.get("goal_form") 
-        if self.goal_form not in ["rel_goal", "distance_to_goal"]:
+        if self.goal_form not in ["rel_goal", "distance_to_goal", "abs_goal"]:
             print("Undefined goal form: %s"%(self.goal_form))
             exit()
         
@@ -59,8 +60,9 @@ class AcrossEnvBaseEvaluator:
         print("====> Evaluation splits during training: %s"%(eval_splits))
         self.eval_dataset_episodes = {}
         for eval_split in eval_splits:
-            episodes = load_behavior_dataset_meta(yaml_name=config_filename, 
-            split_name=eval_split)
+            episodes = load_behavior_dataset_meta(
+                behavior_dataset_path=self.config.get("behavior_dataset_path"), 
+                split_name=eval_split)
             self.eval_dataset_episodes[eval_split] = episodes
 
     # dummy

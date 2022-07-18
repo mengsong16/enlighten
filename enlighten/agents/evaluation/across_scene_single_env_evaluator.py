@@ -12,6 +12,7 @@ from enlighten.agents.models.decision_transformer import DecisionTransformer
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
 from enlighten.agents.evaluation.across_scene_base_evaluator import AcrossEnvBaseEvaluator
 from enlighten.agents.evaluation.ppo_eval import *
+from enlighten.datasets.il_data_gen import goal_position_to_abs_goal
 
 class MeasureHistory:
     def __init__(self, id):
@@ -59,7 +60,9 @@ def evaluate_one_episode_dt(
         goal_form,
         sample,
         max_ep_len,
-        device
+        device,
+        goal_dimension, 
+        goal_coord_system
     ):
 
     # turn model into eval mode and move to desired device
@@ -73,6 +76,10 @@ def evaluate_one_episode_dt(
         goal = np.array(obs["pointgoal"], dtype="float32")
     elif goal_form == "distance_to_goal":
         goal = env.get_current_distance()
+    elif goal_form == "abs_goal":
+        goal_position = np.array(env.goal_position, dtype="float32")
+        goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system)
     # a0 is 0, shape (1,1)
     actions = torch.zeros((1, 1), device=device, dtype=torch.long)
 
@@ -85,7 +92,7 @@ def evaluate_one_episode_dt(
     obs_array = np.expand_dims(np.expand_dims(obs_array, axis=0), axis=0)
     observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
     # (goal_dim,) --> (1,1,goal_dim)
-    if goal_form == "rel_goal":
+    if goal_form == "rel_goal" or goal_form == "abs_goal":
         goal = np.expand_dims(np.expand_dims(goal, axis=0), axis=0)
         goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
     # float --> (1,1,1)
@@ -120,19 +127,23 @@ def evaluate_one_episode_dt(
             goal = np.array(obs["pointgoal"], dtype="float32")
         elif goal_form == "distance_to_goal":
             goal = env.get_current_distance()
+        elif goal_form == "abs_goal":
+            goal_position = np.array(env.goal_position, dtype="float32")
+            goal = goal_position_to_abs_goal(goal_position,
+                goal_dimension, goal_coord_system)
 
         # change shape and convert to torch tensor
         # (C,H,W) --> (1,1,C,H,W)
         obs_array = np.expand_dims(np.expand_dims(obs_array, axis=0), axis=0)
         new_obs = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
         # (goal_dim,) --> (1,1,goal_dim)
-        if goal_form == "rel_goal":
+        if goal_form == "rel_goal" or goal_form == "abs_goal":
             goal = np.expand_dims(np.expand_dims(goal, axis=0), axis=0)
             new_goal = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
         # float --> (1,1,1)
         elif goal_form == "distance_to_goal":
             new_goal = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1, 1)
-            
+
         # right append new observation and goal
         observations = torch.cat([observations, new_obs], dim=1)
         goals = torch.cat([goals, new_goal], dim=1)
@@ -162,7 +173,9 @@ def evaluate_one_episode_rnn(
         rnn_hidden_size,
         sample,
         max_ep_len,
-        device
+        device,
+        goal_dimension, 
+        goal_coord_system
     ):
 
     # turn model into eval mode and move to desired device
@@ -176,19 +189,24 @@ def evaluate_one_episode_rnn(
         goal = np.array(obs["pointgoal"], dtype="float32")
     elif goal_form == "distance_to_goal":
         goal = env.get_current_distance()
+    elif goal_form == "abs_goal":
+        goal_position = np.array(env.goal_position, dtype="float32")
+        goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system) # (2,) or (3,)
+
     # a0 is -1, shape (1)
     actions = torch.ones((1), device=device, dtype=torch.long) * (-1)
 
     print("Scene id: %s"%(episode.scene_id))
-    print("Goal position: %s"%(env.goal_position))
-    print("Start position: %s"%(env.start_position))
+    print("Goal position: %s"%(env.goal_position)) # (3,)
+    print("Start position: %s"%(env.start_position)) # (3,)
 
     # change shape and convert to torch tensor
     # o: (C,H,W) --> (1,C,H,W)
     obs_array = np.expand_dims(obs_array, axis=0)
     observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
     # g: (goal_dim,) --> (1,goal_dim)
-    if goal_form == "rel_goal":
+    if goal_form == "rel_goal" or goal_form == "abs_goal":
         goal = np.expand_dims(goal, axis=0)
         goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
     # float --> (1,1)
@@ -223,13 +241,17 @@ def evaluate_one_episode_rnn(
             goal = np.array(obs["pointgoal"], dtype="float32")
         elif goal_form == "distance_to_goal":
             goal = env.get_current_distance()
+        elif goal_form == "abs_goal":
+            goal_position = np.array(env.goal_position, dtype="float32")
+            goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system) # (2,) or (3,)
 
         # change shape and convert to torch tensor
         # (C,H,W) --> (1,C,H,W)
         obs_array = np.expand_dims(obs_array, axis=0)
         observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
         # (goal_dim,) --> (1,goal_dim)
-        if goal_form == "rel_goal":
+        if goal_form == "rel_goal" or goal_form == "abs_goal":
             goal = np.expand_dims(goal, axis=0)
             goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
         # float --> (1,1)
@@ -331,7 +353,9 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                     self.goal_form,
                     sample,
                     self.max_ep_len,
-                    self.device)
+                    self.device,
+                    int(self.config.get("goal_dimension")), 
+                    self.config.get("goal_coord_system"))
             elif self.algorithm_name == "rnn":
                 rnn_hidden_size = int(self.config.get("rnn_hidden_size"))
                 episode_length, success, spl = evaluate_one_episode_rnn(
@@ -342,7 +366,9 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 rnn_hidden_size,
                 sample,
                 self.max_ep_len,
-                self.device)
+                self.device,
+                int(self.config.get("goal_dimension")), 
+                self.config.get("goal_coord_system"))
             elif self.algorithm_name == "ppo":
                 episode_length, success, spl = evaluate_one_episode_ppo(
                     episode,

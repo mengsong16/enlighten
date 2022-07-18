@@ -67,6 +67,7 @@ class BehaviorDataset:
     # prev_a: (T)
     # g: (T,goal_dim)
     # dtg: (T,1)
+    # ag: (T,goal_dim)
     def get_batch_unequal_trajectory(self, batch_size, whole_trajectory):
         # sample batch_size trajectories from the trajectory pool with replacement
         batch_inds = np.random.choice(
@@ -75,7 +76,7 @@ class BehaviorDataset:
             replace=True
         )
 
-        o, a, g, dtg, prev_a, seq_lengths = [], [], [], [], [], []
+        o, a, g, dtg, ag, prev_a, seq_lengths = [], [], [], [], [], [], []
         for i in range(batch_size):
             # current trajectory
             traj = self.trajectories[int(batch_inds[i])]
@@ -90,6 +91,8 @@ class BehaviorDataset:
             act_seg = np.expand_dims(np.stack(traj['actions'][si:]), axis=0)
             rel_goal_seg = np.expand_dims(np.stack(traj['rel_goals'][si:]), axis=0)
             dist_to_goal_seg = np.expand_dims(np.stack(traj['distance_to_goals'][si:]), axis=(0,2))
+            # [1,seg_len, goal_dim]
+            abs_goal_seg = np.expand_dims(np.stack(traj['abs_goals'][si:]), axis=0)
             # create prev action segment
             prev_act_seg = [-1]
             # note that extend will use the reference of a list thus will change its content
@@ -99,23 +102,25 @@ class BehaviorDataset:
 
             #print(prev_act_seg.shape)
             #print(act_seg.shape)
+            #print(abs_goal_seg.shape)
 
             o.append(obs_seg)
             a.append(act_seg)
             prev_a.append(prev_act_seg)
             g.append(rel_goal_seg)
             dtg.append(dist_to_goal_seg)
+            ag.append(abs_goal_seg)
             seq_lengths.append(obs_seg.shape[1])
 
         # print(seq_lengths)
 
         # sort seqs in decreading order 
-        o, a, g, dtg, prev_a, batch_sizes = self.sort_seqs(o, a, g, dtg, prev_a, seq_lengths)
+        o, a, g, dtg, ag, prev_a, batch_sizes = self.sort_seqs(o, a, g, dtg, ag, prev_a, seq_lengths)
 
         # for o_seg in o:
         #     print(o_seg.shape)
 
-        o, a, g, dtg, prev_a = self.concat_seqs_columnwise(o, a, g, dtg, prev_a, batch_sizes)
+        o, a, g, dtg, ag, prev_a = self.concat_seqs_columnwise(o, a, g, dtg, ag, prev_a, batch_sizes)
 
         # concate elements in the list and convert numpy to torch tensor
         o = torch.from_numpy(np.concatenate(o, axis=0)).to(dtype=torch.float32, device=self.device)
@@ -123,6 +128,7 @@ class BehaviorDataset:
         g = torch.from_numpy(np.concatenate(g, axis=0)).to(dtype=torch.float32, device=self.device)
         dtg_numpy = np.concatenate(dtg, axis=0)
         dtg = torch.from_numpy(dtg_numpy).to(dtype=torch.float32, device=self.device)
+        ag = torch.from_numpy(np.concatenate(ag, axis=0)).to(dtype=torch.float32, device=self.device)
         prev_a = torch.from_numpy(np.concatenate(prev_a, axis=0)).to(dtype=torch.long, device=self.device)
         batch_sizes = torch.from_numpy(batch_sizes).to(dtype=torch.long, device="cpu")
         value = torch.from_numpy(copy.deepcopy(dtg_numpy)).to(dtype=torch.float32, device=self.device)
@@ -132,12 +138,15 @@ class BehaviorDataset:
         # print(prev_a.shape)
         # print(g.shape)
         # print(dtg.shape)
-        
+        # print(ag.shape)
+        # exit()
 
         if self.goal_form == "rel_goal":
             return o, a, prev_a, g, value, batch_sizes
         elif self.goal_form == "distance_to_goal":
             return o, a, prev_a, dtg, value, batch_sizes
+        elif self.goal_form == "abs_goal":
+            return o, a, prev_a, ag, value, batch_sizes
         else:
             print("Undefined goal form: %s"%(self.goal_form))
             exit() 
@@ -146,16 +155,18 @@ class BehaviorDataset:
     # a: [(1,tlen)]
     # g: [(1,tlen,goal_dim)]
     # dtg: [(1,tlen,1)]
+    # ag: [(1,tlen,goal_dim)]
     # prev_a: [(1,tlen)]
     # seq_lengths: a list of length of sequences
     # sort seqs from long to short
-    def sort_seqs(self, o, a, g, dtg, prev_a, seq_lengths):
+    def sort_seqs(self, o, a, g, dtg, ag, prev_a, seq_lengths):
         sorted_indices = np.argsort(-np.array(seq_lengths))
         sorted_lengths = -np.sort(-np.array(seq_lengths))
         o = [o[i] for i in sorted_indices]
         a = [a[i] for i in sorted_indices]
         g = [g[i] for i in sorted_indices]
         dtg = [dtg[i] for i in sorted_indices]
+        ag = [ag[i] for i in sorted_indices]
         prev_a = [prev_a[i] for i in sorted_indices]
 
         #print(sorted_lengths)
@@ -164,19 +175,20 @@ class BehaviorDataset:
             batch_sizes[:length] += 1
         #print(batch_sizes)
         #print(batch_sizes.shape)
-        return o, a, g, dtg, prev_a, batch_sizes
+        return o, a, g, dtg, ag, prev_a, batch_sizes
     
-    def concat_seqs_columnwise(self, o, a, g, dtg, prev_a, batch_sizes):
-        new_o, new_a, new_g, new_dtg, new_prev_a = [], [], [], [], []
+    def concat_seqs_columnwise(self, o, a, g, dtg, ag, prev_a, batch_sizes):
+        new_o, new_a, new_g, new_dtg, new_ag, new_prev_a = [], [], [], [], [], []
         for column_index, batch_size in enumerate(batch_sizes):
             for i in range(batch_size):
                 new_o.append(o[i][:,column_index,:,:,:])
                 new_a.append(a[i][:,column_index])
                 new_g.append(g[i][:,column_index,:])
                 new_dtg.append(dtg[i][:,column_index,:])
+                new_ag.append(ag[i][:,column_index,:])
                 new_prev_a.append(prev_a[i][:,column_index])
 
-        return new_o, new_a, new_g, new_dtg, new_prev_a
+        return new_o, new_a, new_g, new_dtg, new_ag, new_prev_a
 
     # sample a batch of segments of length K
     def get_batch_random_segment(self, batch_size):

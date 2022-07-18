@@ -1,15 +1,17 @@
-# dataset
+# for original pointgoal dataset
 dataset_type: PointNav-v1 # for pointgoal dataset
 split: val_mini  #[train, val, val_mini] # for pointgoal dataset
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where pointgoal episode split data store
 pointgoal_dataset_path: "/dataset/pointnav_gibson_v1"
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
+# -----------------------------------------------
+# BC training data location
 behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
 algorithm_name: "rnn"
-experiment_name: "whole_trajectory_value_supervision" # "whole_trajectory"
+experiment_name: "whole_trajectory_abs_goal" #"whole_trajectory_value_supervision" 
 log_to_wandb: true #true  # log
 
 # dummy initial setup 
@@ -81,7 +83,7 @@ goal_embedding_size: 32
 act_embedding_size: 32
 rnn_type: 'gru'
 max_ep_len: 500 # should be consistent with the env max episode length 
-goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
+goal_form:  "abs_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
 
 # training
 batch_size: 4
@@ -97,7 +99,7 @@ supervise_value: false #false # true
 eval_every_iterations: 40 #40 #80 #50 #10 
 eval_during_training_sample: true
 eval_during_training_splits: ["same_start_goal_val", "same_scene_val", "across_scene_val"]
-eval_use_vector_envs: true
+eval_use_vector_envs: false #true
 
 # save checkpoint
 save_every_iterations: 40 #50 #10 

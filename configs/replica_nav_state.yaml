@@ -23,8 +23,8 @@ scenes_dir: "data/scene_datasets/"
 #experiment_name: "replica_room_0_daylight_random_start_random_goal_absolute_state_no_distance_reward_relative_goal_input_mlp_nocos_2dcartesian"
 #experiment_name: "replica_office_3_daylight_random_start_random_goal_rgb_distance_reward_absolute_goal_input_rnn_stop_suc"
 #experiment_name: "replica_apartment_1_daylight_random_start_random_goal_absolute_state_no_distance_reward_absolute_goal_input_mlp_nocos"
-experiment_name: "replica_apartment_1_relative_goal_original_reward"
-#experiment_name: "replica_apartment_1_relative_goal"
+#experiment_name: "replica_apartment_1_absolute_goal_original_reward"
+experiment_name: "replica_apartment_1_absolute_goal"
 #experiment_name: "replica_room_0_daylight_random_start_random_goal_absolute_state_no_distance_reward_absolute0_goal_input_mlp_nocos"
 #experiment_name: "replica_hotel_0_daylight_random_start_random_goal_absolute_state_no_distance_reward_absolute_goal_input_mlp_nocos"
 #experiment_name: "test"
@@ -65,7 +65,7 @@ state_only: true #false # only use state as input to the agent
 goal_conditioned: true #false
 goal_format: pointgoal # imagegoal #pointgoal
 goal_relative_to_origin: false #false
-goal_gps_compass: true #true  # false use absolute goal location relative to the start location
+goal_gps_compass: false #true #true  # false use absolute goal location relative to the start location
 goal_coord_system: cartesian #polar # [polar, cartesian]
 goal_dimension: 2 # [2, 3]
 cos_augmented_goal: false #true #false
@@ -76,8 +76,8 @@ random_start: true #false #true
 
 # reward
 success_distance: 0.2 # l2 distance in meter
-success_reward: 2.5 #2.5 #0 #2.5 #100 #2.5 
-slack_reward: -1.0e-4 #-1.0e-4 #-1 #-1.0e-4 #-1 #-1.0e-4 #-1.0e-2
+success_reward: 0 #2.5 #0 #2.5 #100 #2.5 
+slack_reward: -1 #-1.0e-4 #-1 #-1.0e-4 #-1 #-1.0e-4 #-1.0e-2
 goal_reward: false #true # false
 intrinsic_reward_coef: 0 #0.1 # >=0
 prev_state_novelty_coef: 0.5 #0.5

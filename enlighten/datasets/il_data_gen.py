@@ -6,6 +6,7 @@ from enlighten.datasets.dataset import EpisodeIterator
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.utils.geometry_utils import euclidean_distance
 from enlighten.agents.common.seed import set_seed_except_env_seed
+from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
 
 import math
 import os
@@ -264,7 +265,10 @@ def sample_across_scene_episodes(scenes, episode_num,
 
 
 # pointgoal dataset split: {'train', 'val', 'val_mini'}
-def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split, 
+# behavior_dataset_path: "/dataset/behavior_dataset_gibson"
+def generate_behavior_dataset_meta(yaml_name, 
+    pointgoal_dataset_split, 
+    behavior_dataset_path,
     train_scene_num, train_episode_num, 
     across_scene_val_scene_num, across_scene_val_episode_num,
     same_scene_val_episode_num,
@@ -277,7 +281,7 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
 
     pointgoal_meta, total_scene_num, total_episode_num = load_pointgoal_dataset_meta(config, pointgoal_dataset_split)
 
-    behavior_dataset_path = config.get("behavior_dataset_path")
+    #behavior_dataset_path = config.get("behavior_dataset_path")
     behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")
 
     # check divisible
@@ -293,6 +297,7 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
     sample_scene_num = train_scene_num + across_scene_val_scene_num + across_scene_test_scene_num
     if sample_scene_num <= total_scene_num:
         scene_list = pointgoal_meta.keys()
+        # sample without replacement
         selected_scenes = random.sample(scene_list, sample_scene_num)
         # split into train, val, test scenes
         train_scenes = selected_scenes[0:train_scene_num]
@@ -321,15 +326,9 @@ def generate_behavior_dataset_meta(yaml_name, pointgoal_dataset_split,
     behavior_dataset_meta_data_path, pointgoal_meta, "across_scene_test")
 
     
-# yaml_name is config name or config list
-def load_behavior_dataset_meta(yaml_name, split_name):
-    if isinstance(yaml_name, str):
-        config_file = os.path.join(config_path, yaml_name)
-        config = parse_config(config_file)
-    else:
-        config = yaml_name
+# behavior_dataset_path: "/dataset/behavior_dataset_gibson"
+def load_behavior_dataset_meta(behavior_dataset_path, split_name):
 
-    behavior_dataset_path = config.get("behavior_dataset_path")
     behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")
     behavior_dataset_meta_split_path = os.path.join(behavior_dataset_meta_data_path, '%s.pickle'%(split_name))
 
@@ -376,13 +375,14 @@ def extract_observation(obs, observation_spaces):
     
     return obs_array
 
-def generate_one_episode(env, episode):
+def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     observations = []
     actions = []
     rel_goals = []
     distance_to_goals = []
     goal_positions = []
     state_positions = []
+    abs_goals = []
 
     traj = {}
 
@@ -395,6 +395,9 @@ def generate_one_episode(env, episode):
     distance_to_goals.append(env.get_current_distance())  # float
     goal_position = np.array(env.goal_position, dtype="float32")
     goal_positions.append(goal_position) # (3,)
+    abs_goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system) # (2,) or (3,)
+    abs_goals.append(abs_goal)
     state_position = np.array(env.agent.get_state().position, dtype="float32")
     state_positions.append(state_position)  # (3,)
             
@@ -409,6 +412,9 @@ def generate_one_episode(env, episode):
         distance_to_goals.append(env.get_current_distance()) # float
         goal_position = np.array(env.goal_position, dtype="float32")
         goal_positions.append(goal_position) # (3,)
+        abs_goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system) # (2,) or (3,)
+        abs_goals.append(abs_goal)
         state_position = np.array(env.agent.get_state().position, dtype="float32")
         state_positions.append(state_position) # (3,)
 
@@ -425,6 +431,7 @@ def generate_one_episode(env, episode):
     # print(len(distance_to_goals)) # n+1
     # print(len(goal_positions)) # n+1
     # print(len(state_positions)) # n+1
+    # print(len(abs_goals)) # n+1
     # print(len(env.optimal_action_seq)) # n
 
     # print(actions)
@@ -435,6 +442,7 @@ def generate_one_episode(env, episode):
     # print(actions[-3])
     # print(env.optimal_action_seq[-1])
     # print(env.optimal_action_seq[-2])
+    # print(abs_goals)
     # exit()
 
     # check validity at the end of the trajectory
@@ -460,6 +468,7 @@ def generate_one_episode(env, episode):
                 traj["distance_to_goals"] = distance_to_goals
                 traj["goal_positions"] = goal_positions
                 traj["state_positions"] = state_positions
+                traj["abs_goals"] = abs_goals
                 
     else:
         print("Error: shortest path not found")
@@ -467,10 +476,13 @@ def generate_one_episode(env, episode):
     
     return valid_episode, traj, env.optimal_action_seq
         
-
-def generate_train_behavior_data(yaml_name):
+# behavior_dataset_path: "/dataset/behavior_dataset_gibson"
+def generate_train_behavior_data(yaml_name, behavior_dataset_path, split_name):
     env = MultiNavEnv(config_file=yaml_name)
-    train_episodes = load_behavior_dataset_meta(yaml_name, "train")
+    train_episodes = load_behavior_dataset_meta(behavior_dataset_path, split_name)
+
+    goal_dimension = int(env.config.get("goal_dimension"))
+    goal_coord_system = env.config.get("goal_coord_system")
 
     #train_episodes = train_episodes[:10]
     
@@ -479,7 +491,7 @@ def generate_train_behavior_data(yaml_name):
     action_sequences = [] # optimal action sequences generated by path planner
     for episode in tqdm(train_episodes):
         # generate one episode
-        valid_episode, traj, act_seq = generate_one_episode(env, episode)
+        valid_episode, traj, act_seq = generate_one_episode(env, episode, goal_dimension, goal_coord_system)
         if valid_episode == False:
             print("Errror: invalid episode, need to resample train episodes!")
             exit()
@@ -501,25 +513,95 @@ def generate_train_behavior_data(yaml_name):
     # save
     config_file=os.path.join(config_path, yaml_name)
     config = parse_config(config_file)
-    behavior_dataset_path = config.get("behavior_dataset_path")
-    with open(os.path.join(behavior_dataset_path, 'train_data.pickle'), 'wb') as handle:
+
+    with open(os.path.join(behavior_dataset_path, '%s_data.pickle'%(split_name)), 'wb') as handle:
         pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
-    with open(os.path.join(behavior_dataset_path, 'train_action_sequences.pickle'), 'wb') as handle:
+    with open(os.path.join(behavior_dataset_path, '%s_action_sequences.pickle'%(split_name)), 'wb') as handle:
         pickle.dump(action_sequences, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    print("Behavior training dataset generation Done")
+    print("Behavior training dataset %s generation Done: %s"%(split_name, behavior_dataset_path))
 
-    
+
+# borrowed from class PointGoal
+# source_rotation: quartenion representing a 3D rotation
+# goal_coord_system: ["polar", "cartesian"]
+# goal_dimension: 2, 3
+def compute_pointgoal(source_position, source_rotation, goal_position,
+    goal_dimension, goal_coord_system):
+    # use source local coordinate system as global coordinate system
+    # step 1: align origin 
+    direction_vector = goal_position - source_position
+    # step 2: align axis 
+    direction_vector_agent = quaternion_rotate_vector(
+        source_rotation.inverse(), direction_vector
+    )
+
+    if goal_coord_system == "polar":
+        # 2D movement: r, -phi
+        # -phi: angle relative to positive z axis (i.e reverse to robot forward direction)
+        # -phi: azimuth, around y axis
+        if goal_dimension == 2:
+            # -z, x --> x, y --> (r, -\phi)
+            rho, phi = cartesian_to_polar(
+                -direction_vector_agent[2], direction_vector_agent[0]
+            )
+            return np.array([rho, -phi], dtype=np.float32)
+        #  3D movement: r, -phi, theta 
+        #  -phi: azimuth, around y axis
+        #  theta: around z axis   
+        else:
+            # -z, x --> x, y --> -\phi
+            _, phi = cartesian_to_polar(
+                -direction_vector_agent[2], direction_vector_agent[0]
+            )
+            theta = np.arccos(
+                direction_vector_agent[1]
+                / np.linalg.norm(direction_vector_agent)
+            )
+            # r = l2 norm
+            rho = np.linalg.norm(direction_vector_agent)
+
+            return np.array([rho, -phi, theta], dtype=np.float32)
+    else:
+        # 2D movement: [-z,x]
+        # reverse the direction of z axis towards robot forward direction
+        if goal_dimension == 2:
+            return np.array(
+                [-direction_vector_agent[2], direction_vector_agent[0]],
+                dtype=np.float32,
+            )
+        # 3D movement: [x,y,z]    
+        # do not reverse the direction of z axis
+        else:
+            return np.array(direction_vector_agent, dtype=np.float32)
+
+# return abs_goal numpy: (2,), (3,)
+def goal_position_to_abs_goal(goal_position, goal_dimension, goal_coord_system):
+    goal_world_position = np.array(goal_position, dtype=np.float32)
+    return compute_pointgoal(source_position=np.array([0,0,0], dtype="float32"), 
+        source_rotation=np.quaternion(1,0,0,0), 
+        goal_position=goal_world_position,
+        goal_dimension=goal_dimension, 
+        goal_coord_system=goal_coord_system)
+
+def generate_behavior_dataset_train_aug_meta(behavior_dataset_path, aug_num_each_sg_pair):
+    train_episodes = load_behavior_dataset_meta(behavior_dataset_path, 'train')
+    s_g_dict = {}
+    for episode in tqdm(train_episodes):
+        print(episode)
+
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
     #load_pointgoal_dataset("imitation_learning_dt.yaml")  
     #test_get_scene_names("imitation_learning_dt.yaml")
     #shortest_path_follower("imitation_learning_dt.yaml")
-    #generate_pointgoal_dataset_meta(yaml_name="imitation_learning_dt.yaml", split="train")
+    
+    # generate_pointgoal_dataset_meta(yaml_name="imitation_learning_dt.yaml", split="train")
     # generate_behavior_dataset_meta(yaml_name="imitation_learning_dt.yaml", 
     #     pointgoal_dataset_split="train", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson",
     #     train_scene_num=4, train_episode_num=2000, 
     #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
     #     same_scene_val_episode_num=20,
@@ -529,6 +611,7 @@ if __name__ == "__main__":
     #     same_start_goal_test_episode_num=100)
     # generate_behavior_dataset_meta(yaml_name="imitation_learning_dt.yaml", 
     #     pointgoal_dataset_split="train", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson",
     #     train_scene_num=4, train_episode_num=100, 
     #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
     #     same_scene_val_episode_num=12,
@@ -536,4 +619,6 @@ if __name__ == "__main__":
     #     across_scene_test_scene_num=2, across_scene_test_episode_num=10,
     #     same_scene_test_episode_num=12,
     #     same_start_goal_test_episode_num=12)
-    generate_train_behavior_data("imitation_learning_dt.yaml")
+    generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
+        behavior_dataset_path="/dataset/behavior_dataset_gibson",
+        split_name="train")

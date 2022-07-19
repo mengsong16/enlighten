@@ -7,6 +7,7 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.utils.geometry_utils import euclidean_distance
 from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
+from enlighten.datasets.dataset import Episode
 
 import math
 import os
@@ -92,6 +93,8 @@ def shortest_path_follower(yaml_name):
             assert done == True, "done should be true after following the shortest path"
             assert env.is_success() == True, "success should be true after following the shortest path"
         print("===============================")
+    
+    env.close()
 
 # pointgoal dataset split: {'train', 'val', 'val_mini'}
 def generate_pointgoal_dataset_meta(yaml_name, split):
@@ -264,7 +267,8 @@ def sample_across_scene_episodes(scenes, episode_num,
         behavior_dataset_meta_data_path, split_name)
 
 
-# pointgoal dataset split: {'train', 'val', 'val_mini'}
+# Split a specific pointgoal dataset split: {'train', 'val', 'val_mini'} (train by default)
+# into train, validate, test
 # behavior_dataset_path: "/dataset/behavior_dataset_gibson"
 def generate_behavior_dataset_meta(yaml_name, 
     pointgoal_dataset_split, 
@@ -522,6 +526,7 @@ def generate_train_behavior_data(yaml_name, behavior_dataset_path, split_name):
 
     print("Behavior training dataset %s generation Done: %s"%(split_name, behavior_dataset_path))
 
+    env.close()
 
 # borrowed from class PointGoal
 # source_rotation: quartenion representing a 3D rotation
@@ -585,12 +590,111 @@ def goal_position_to_abs_goal(goal_position, goal_dimension, goal_coord_system):
         goal_dimension=goal_dimension, 
         goal_coord_system=goal_coord_system)
 
-def generate_behavior_dataset_train_aug_meta(behavior_dataset_path, aug_num_each_sg_pair):
-    train_episodes = load_behavior_dataset_meta(behavior_dataset_path, 'train')
-    s_g_dict = {}
-    for episode in tqdm(train_episodes):
-        print(episode)
+def assign_episode_to_scene_behavior_dataset(episodes):
+    scene_episode_list = {}
+    for episode in tqdm(episodes):
+        
+        if episode.scene_id in scene_episode_list:
+            scene_episode_list[episode.scene_id].append(episode)
+        else:
+            scene_episode_list[episode.scene_id] = [episode]
 
+    for key, value in scene_episode_list.items():
+        print("%s: %d"%(key, len(value)))
+
+    return scene_episode_list
+
+# extract (s,g) from episode in the original form
+def extract_sg_from_episode(episode):
+    sg_dict = {}
+
+    # (3,) cartesian
+    sg_dict["start_position"] = episode.start_position
+    # (4,) quarternion
+    sg_dict["start_rotation"] = episode.start_rotation
+    # (3,) cartesian
+    sg_dict["goal_position"] = episode.goals[0].position
+
+    return sg_dict
+
+def get_sg_pairs_one_scene(scene_episodes):
+    sg_pairs = []
+    for episode in tqdm(scene_episodes):
+        sg_dict = extract_sg_from_episode(episode)
+        sg_pairs.append(sg_dict)
+
+    return sg_pairs
+
+def sample_new_navigable_goal_position(env, orignal_goal_position):
+    while True:
+        # sample a non-obstacle point
+        new_goal_position = env.sim.pathfinder.get_random_navigable_point()
+        navigable = env.sim.pathfinder.is_navigable(new_goal_position)
+        
+        overlap = np.array_equal(new_goal_position, orignal_goal_position)
+        if (not overlap) and navigable:
+            return new_goal_position
+
+def generate_one_episode_for_one_sg_pair(sg_pairs, scene_name, env):
+    if not env.sim.pathfinder.is_loaded:
+        print("Error: env.sim.pathfinder NOT loaded")
+        exit()
+    
+    while True:
+        # sample a new (s,g) pair
+        sg_pair = random.sample(sg_pairs, 1)[0]
+        
+        orignal_goal_position = sg_pair["goal_position"]
+        orignal_goal_position = np.array(orignal_goal_position, dtype=np.float32)
+        # sample a valid new goal position (not overlap with original goal position)
+        # done and succeed will be checked when executing the trajectory in the environment later
+        # (3,) array
+        new_goal_position = sample_new_navigable_goal_position(env, orignal_goal_position)
+        new_nav_goal = NavigationGoal(position=new_goal_position)
+        new_episode = NavigationEpisode(episode_id="", 
+            scene_id=scene_name,
+            start_position=sg_pair["start_position"],
+            start_rotation=sg_pair["start_rotation"],
+            goals=[new_nav_goal]
+            )
+        # reset env and get the shortest path
+        env.reset(episode=new_episode, plan_shortest_path=True)
+        # the shortest path exists return the episode, otherwise resample
+        if env.optimal_action_seq:
+            return new_episode
+    
+
+def generate_augment_episode_one_scene(scene_name, scene_episodes, env, aug_episode_num_per_scene):
+    sg_pairs = get_sg_pairs_one_scene(scene_episodes)
+    
+    augment_episodes_one_scene = []
+    for i in tqdm(range(aug_episode_num_per_scene)):
+        episode = generate_one_episode_for_one_sg_pair(sg_pairs, scene_name, env)
+        augment_episodes_one_scene.append(episode)
+    
+    return augment_episodes_one_scene
+
+def generate_behavior_dataset_train_aug_meta(yaml_name, behavior_dataset_path, total_aug_episode_num):
+    env = MultiNavEnv(config_file=yaml_name)
+    train_episodes = load_behavior_dataset_meta(behavior_dataset_path, 'train')
+    scene_episode_list = assign_episode_to_scene_behavior_dataset(train_episodes)
+    scene_list = list(scene_episode_list.keys())
+    scene_num = len(scene_list)
+    assert total_aug_episode_num % scene_num == 0, "Error: train: total augment episode number is not divisible by scene number"
+    aug_episode_num_per_scene = int(total_aug_episode_num / scene_num)
+    print("Augmenta each scene with %d episodes"%aug_episode_num_per_scene)
+
+    augment_episodes = []
+    for scene_name, scene_episodes in scene_episode_list.items():
+        augment_episodes_one_scene = generate_augment_episode_one_scene(scene_name, scene_episodes, env, aug_episode_num_per_scene)
+        augment_episodes.extend(augment_episodes_one_scene)
+    
+    # save train_aug meta data
+    behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")
+    save_behavior_dataset_meta(augment_episodes, 
+        behavior_dataset_meta_data_path, "train_aug")
+
+    env.close()
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
@@ -619,6 +723,16 @@ if __name__ == "__main__":
     #     across_scene_test_scene_num=2, across_scene_test_episode_num=10,
     #     same_scene_test_episode_num=12,
     #     same_start_goal_test_episode_num=12)
+    # generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson",
+    #     split_name="train")
+    
+    # generate_behavior_dataset_train_aug_meta(
+    #     yaml_name="imitation_learning_rnn.yaml",
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson", 
+    #     total_aug_episode_num=1000)
+    
     generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
-        behavior_dataset_path="/dataset/behavior_dataset_gibson",
-        split_name="train")
+         behavior_dataset_path="/dataset/behavior_dataset_gibson",
+         split_name="train_aug")
+

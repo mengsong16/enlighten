@@ -182,6 +182,7 @@ class MultiNavEnv(NavEnv):
         self.set_agent_state(new_position=self.start_position, 
             new_rotation=self.start_rotation, is_initial=True, quaternion=True)
     
+    # check validity of the generated optimal action sequence
     def check_optimal_action_sequence(self):
         assert len(self.optimal_action_seq) > 0, "Error: optimal action sequence must have at least one element"
         if self.optimal_action_seq[-1] != self.action_name_to_index("stop"):
@@ -220,6 +221,7 @@ class MultiNavEnv(NavEnv):
 
         # plan shortest path
         # must be called after agent has been set to the start location, and goal has been reset
+        # invalid optimal_action_sequence will be []
         if plan_shortest_path:
             # create shortest path planner, must create everytime reset is called
             self.create_shortest_path_follower()

@@ -30,12 +30,17 @@ class BehaviorDataset:
         self.obs_height = int(self.config.get("image_height"))
         self.goal_form = self.config.get("goal_form")
         self.batch_mode = self.config.get("batch_mode")
+        print("batch mode =====> %s"%(self.batch_mode))
 
         if self.config.get("algorithm_name") == "dt":
             self.pad_mode = self.config.get("pad_mode")
             self.context_length = int(self.config.get("K"))
         
         self.load_trajectories()
+        # load augment trajectories if necessary
+        if self.config.get("use_augment_train_data"):
+            self.load_augment_trajectories()
+
 
     def load_trajectories(self):
         # load all trajectories from the training dataset
@@ -48,6 +53,21 @@ class BehaviorDataset:
         self.num_trajectories = len(self.trajectories)
 
         print("Loaded %d training trajectories"%(self.num_trajectories))
+
+    def load_augment_trajectories(self):
+        # load augment training trajectories and use some or all of them
+        dataset_path = self.config.get("behavior_dataset_path")
+        dataset_path = os.path.join(dataset_path, "train_aug_data.pickle")
+        print("Loading trajectories from %s"%(dataset_path))
+        with open(dataset_path, 'rb') as f:
+            augment_trajectories = pickle.load(f)
+            self.trajectories.extend(augment_trajectories)
+
+        augment_traj_num = len(augment_trajectories)
+        self.num_trajectories += augment_traj_num
+
+        print("Loaded %d augment training trajectories"%(augment_traj_num))
+        print("Use %d training trajectories in total"%(self.num_trajectories))
 
     # sample a batch  
     def get_batch(self, batch_size):

@@ -411,8 +411,8 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
 
 if __name__ == "__main__":
     eval_splits = ["same_start_goal_test", "same_scene_test", "across_scene_test"]
-    #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
-    evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_multi_envs.yaml") 
+    evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
+    #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_multi_envs.yaml") 
     logs = evaluator.evaluate_over_datasets(sample=True)
     evaluator.print_metrics(logs, eval_splits)
     evaluator.save_eval_logs(logs, eval_splits)

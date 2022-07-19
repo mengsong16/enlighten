@@ -550,7 +550,9 @@ class NavEnv(gym.Env):
         if self.sim.pathfinder.is_loaded:
             trajectory_not_exist = True
             while trajectory_not_exist:
+                # ensure that s and g are navigable independently
                 self.set_start_goal_once()
+                # ensure that there is a shortest path exists between s and g
                 found_path, _, _ = self.shortest_path(self.get_agent_position(), self.goal_position)
                 if found_path:
                     trajectory_not_exist = False

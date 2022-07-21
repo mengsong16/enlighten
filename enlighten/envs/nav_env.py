@@ -200,11 +200,12 @@ class NavEnv(gym.Env):
     r"""Base gym navigation environment
     """
     # config_file could be a string or a parsed config
-    def __init__(self, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml"), dataset=None):
+    def __init__(self, config_file=os.path.join(config_path, "navigate_with_flashlight.yaml"), dataset=None, scene_id=None):
         
         
         self.config = parse_config(config_file)
         self.dataset = dataset
+        self.scene_id = scene_id
     
         # create simulator configuration
         self.sim_config, sensors = self.create_sim_config()
@@ -281,7 +282,10 @@ class NavEnv(gym.Env):
         sim_config = habitat_sim.SimulatorConfiguration()
         
         # set scene path
-        sim_config.scene_id = self.config.get('scene_id')
+        if self.scene_id is None:
+            sim_config.scene_id = self.config.get('scene_id')
+        else:
+            sim_config.scene_id = self.scene_id
 
         # set dataset path
         # if not set, the value is "default"
@@ -1197,7 +1201,9 @@ def save_goal_image(img, current_episode):
 
 def test_env(yaml_name):
     #if gym_env:
-    env =  NavEnv(config_file=os.path.join(config_path, yaml_name))
+    env =  NavEnv(config_file=os.path.join(config_path, yaml_name),
+        scene_id="/dataset/gibson/Silas.glb")
+    
     #else:
     #    env = create_garage_env()
     
@@ -1378,8 +1384,8 @@ def test_export_map():
     env.export_map_array(save_file_name="replica-apt1.npy")
 
 if __name__ == "__main__":    
-    test_env("replica_nav_state.yaml")
-    #test_env("pointgoal_baseline.yaml")
+    #test_env("replica_nav_state.yaml")
+    test_env("pointgoal_baseline.yaml")
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
     #test_rollout_storage()

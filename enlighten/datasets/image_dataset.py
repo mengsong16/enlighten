@@ -10,8 +10,8 @@ from enlighten.utils.config_utils import parse_config
 from enlighten.utils.path import *
 from enlighten.agents.common.seed import set_seed_except_env_seed
 
-class BehaviorDataset:
-    """ Sample trajectory segments for supervised learning 
+class ImageDataset:
+    """ Sample images for domain adaptation 
     """
     def __init__(self, config, device=None):
         self.config = config  # config is a dictionary
@@ -42,32 +42,17 @@ class BehaviorDataset:
             self.load_augment_trajectories()
 
 
-    def load_trajectories(self):
+    def load_images(self):
         # load all trajectories from the training dataset
-        dataset_path = self.config.get("behavior_dataset_path")
+        dataset_path = self.config.get("image_dataset_path")
         dataset_path = os.path.join(dataset_path, "train_data.pickle")
-        print("Loading trajectories from %s"%(dataset_path))
+        print("Loading images from %s"%(dataset_path))
         with open(dataset_path, 'rb') as f:
-            self.trajectories = pickle.load(f)
+            self.images = pickle.load(f)
 
-        self.num_trajectories = len(self.trajectories)
+        self.num_images = len(self.trajectories)
 
         print("Loaded %d training trajectories"%(self.num_trajectories))
-
-    def load_augment_trajectories(self):
-        # load augment training trajectories and use some or all of them
-        dataset_path = self.config.get("behavior_dataset_path")
-        dataset_path = os.path.join(dataset_path, "train_aug_data.pickle")
-        print("Loading trajectories from %s"%(dataset_path))
-        with open(dataset_path, 'rb') as f:
-            augment_trajectories = pickle.load(f)
-            self.trajectories.extend(augment_trajectories)
-
-        augment_traj_num = len(augment_trajectories)
-        self.num_trajectories += augment_traj_num
-
-        print("Loaded %d augment training trajectories"%(augment_traj_num))
-        print("Use %d training trajectories in total"%(self.num_trajectories))
 
     # sample a batch  
     def get_batch(self, batch_size):
@@ -77,17 +62,6 @@ class BehaviorDataset:
             return self.get_batch_unequal_trajectory(batch_size=batch_size, whole_trajectory=True)
         elif self.batch_mode == "partial_trajectory": # random start
             return self.get_batch_unequal_trajectory(batch_size=batch_size, whole_trajectory=False)
-        else:
-            print("Undefined batch mode: %s"%(self.batch_mode))
-            exit()    
-
-    def get_batch_shape(self, observations):
-        # B*K
-        if self.batch_mode == "random_segment": 
-            return observations.size()[0] * observations.size()[1]
-        # T 
-        elif self.batch_mode == "whole_trajectory" or self.batch_mode == "partial_trajectory":
-            return observations.size()[0]
         else:
             print("Undefined batch mode: %s"%(self.batch_mode))
             exit()    
@@ -367,7 +341,7 @@ if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
     config_file = os.path.join(config_path, "imitation_learning_rnn.yaml")
     config = parse_config(config_file)
-    dataset = BehaviorDataset(config)
+    dataset = ImageDataset(config)
     for i in range(10):
         dataset.get_batch(batch_size=4)
 

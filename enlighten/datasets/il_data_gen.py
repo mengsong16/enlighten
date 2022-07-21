@@ -3,11 +3,12 @@ from enlighten.utils.config_utils import parse_config
 from enlighten.datasets.pointnav_dataset import PointNavDatasetV1
 from enlighten.datasets.pointnav_dataset import NavigationEpisode, NavigationGoal, ShortestPathPoint
 from enlighten.datasets.dataset import EpisodeIterator
-from enlighten.envs.multi_nav_env import MultiNavEnv
+from enlighten.envs.multi_nav_env import MultiNavEnv, NavEnv
 from enlighten.utils.geometry_utils import euclidean_distance
 from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
 from enlighten.datasets.dataset import Episode
+
 
 import math
 import os
@@ -696,6 +697,142 @@ def generate_behavior_dataset_train_aug_meta(yaml_name, behavior_dataset_path, t
 
     env.close()
 
+def get_scenes_not_in_behavior_dataset(yaml_name, behavior_dataset_path, image_dataset_path):
+    config_file=os.path.join(config_path, yaml_name)
+    config = parse_config(config_file)
+    
+    # get train split of the original pointgoal dataset
+    pointgoal_train_meta, total_scene_num, total_episode_num = load_pointgoal_dataset_meta(config, "train")
+    pointgoal_train_scene_list = pointgoal_train_meta.keys()
+    print("===============================================")
+    print("Pointgoal dataset train split: %d scenes"%(len(pointgoal_train_scene_list)))
+    print(pointgoal_train_scene_list)
+    print("===============================================")
+    
+
+    # get train scenes in behavior dataset
+    behavior_dataset_train_episodes = load_behavior_dataset_meta(behavior_dataset_path, 'train')
+    train_scene_episode_list = assign_episode_to_scene_behavior_dataset(behavior_dataset_train_episodes)
+    train_scene_list = list(train_scene_episode_list.keys())
+    print("===============================================")
+    print("Behavior dataset train split: %d scenes"%(len(train_scene_list)))
+    print(train_scene_list)
+    print("===============================================")
+
+    # get across scene test scenes in behavior dataset
+    behavior_dataset_across_scene_test_episodes = load_behavior_dataset_meta(behavior_dataset_path, 'across_scene_test')
+    across_scene_test_scene_episode_list = assign_episode_to_scene_behavior_dataset(behavior_dataset_across_scene_test_episodes)
+    across_scene_test_scene_list = list(across_scene_test_scene_episode_list.keys())
+    print("===============================================")
+    print("Behavior dataset across_scene_test split: %d scenes"%(len(across_scene_test_scene_list)))
+    print(across_scene_test_scene_list)
+    print("===============================================")
+
+    # get across scene val scenes in behavior dataset
+    behavior_dataset_across_scene_val_episodes = load_behavior_dataset_meta(behavior_dataset_path, 'across_scene_val')
+    across_scene_val_scene_episode_list = assign_episode_to_scene_behavior_dataset(behavior_dataset_across_scene_val_episodes)
+    across_scene_val_scene_list = list(across_scene_val_scene_episode_list.keys())
+    print("===============================================")
+    print("Behavior dataset across_scene_val split: %d scenes"%(len(across_scene_val_scene_list)))
+    print(across_scene_val_scene_list)
+    print("===============================================")
+
+    # get rest scenes
+    rest_scene_list = list(set(pointgoal_train_scene_list) - set(train_scene_list)
+        -set(across_scene_test_scene_list) - set(across_scene_val_scene_list))
+    
+    print("===============================================")
+    print("Remaining scenes: %d"%(len(rest_scene_list)))
+    print("===============================================")
+
+    # save scene information
+    scene_folder = os.path.join(behavior_dataset_path, "scenes")
+    if not os.path.exists(scene_folder):
+        os.makedirs(scene_folder)
+    # dump data
+    with open(os.path.join(scene_folder, 'train.pickle'), 'wb') as handle:
+        pickle.dump(train_scene_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(os.path.join(scene_folder, 'across_scene_test.pickle'), 'wb') as handle:
+        pickle.dump(across_scene_test_scene_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(os.path.join(scene_folder, 'across_scene_val.pickle'), 'wb') as handle:
+        pickle.dump(across_scene_val_scene_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # with open(os.path.join(scene_folder, 'pointnav_train.pickle'), 'wb') as handle:
+    #     pickle.dump(pointgoal_train_scene_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    image_meta_folder = os.path.join(image_dataset_path, "meta_data")
+    if not os.path.exists(image_meta_folder):
+        os.makedirs(image_meta_folder)
+    with open(os.path.join(image_meta_folder, 'remain_scenes.pickle'), 'wb') as handle:
+        pickle.dump(rest_scene_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print("Data saved")
+
+    return rest_scene_list
+
+def generate_image_dataset_scenes(image_dataset_path, scene_number):
+    image_meta_folder = os.path.join(image_dataset_path, "meta_data")
+    total_scenes_path = os.path.join(image_meta_folder, 'remain_scenes.pickle')
+    total_scenes = pickle.load(open(total_scenes_path, "rb" ))
+    # sample without replacement
+    assert len(total_scenes) >= scene_number, "Error: Sample scenes %d is larger than total available scenes %d"%(scene_number, len(total_scenes))
+    selected_scenes = random.sample(total_scenes, scene_number)
+
+    print("===============================================")
+    print(selected_scenes)
+    print("Total scenes: %d"%(len(total_scenes)))
+    print("Sampled scenes: %d"%(len(selected_scenes)))
+    print("===============================================")
+
+    # dump data
+    with open(os.path.join(image_meta_folder, 'train_scenes.pickle'), 'wb') as handle:
+        pickle.dump(selected_scenes, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    print("Training scenes saved.")
+
+    return selected_scenes
+
+def generate_images_in_one_scene(scene_id, image_number_per_scene, yaml_name):
+    env =  NavEnv(config_file=os.path.join(config_path, yaml_name),
+        scene_id=scene_id)
+
+    assert env.random_start, "Error: s0 should be randomized to generate a random image whenever reset is called."
+
+    images = []
+    for i in range(image_number_per_scene):
+        obs = env.reset()
+        # (C,H,W)
+        obs_array = extract_observation(obs, env.observation_space.spaces)
+        images.append(obs_array)
+
+    env.close()
+
+    return images
+
+def generate_image_dataset_data(yaml_name, image_dataset_path, image_number_per_scene):
+    image_meta_folder = os.path.join(image_dataset_path, "meta_data")
+    selected_scenes_path = os.path.join(image_meta_folder, 'train_scenes.pickle')
+    selected_scenes = pickle.load(open(selected_scenes_path, "rb" ))
+    print("Train scenes: %d"%(len(selected_scenes)))
+
+    total_images = {}
+    total_number = 0
+    for scene_id in tqdm(selected_scenes):
+        images = generate_images_in_one_scene(scene_id, 
+            image_number_per_scene, yaml_name)
+        total_images[scene_id] = images
+        print("---------------------------------------")
+        print(scene_id)
+        print("Generated %d images"%(len(images)))
+        total_number += len(images)
+    
+    print("---------------------------------------")
+    print("Generated total train images: %d"%(total_number))
+
+    # dump data
+    with open(os.path.join(image_dataset_path, 'train_data.pickle'), 'wb') as handle:
+        pickle.dump(total_images, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print("Images saved.")
+
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
     #load_pointgoal_dataset("imitation_learning_dt.yaml")  
@@ -732,7 +869,18 @@ if __name__ == "__main__":
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson", 
     #     total_aug_episode_num=1000)
     
-    generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
-         behavior_dataset_path="/dataset/behavior_dataset_gibson",
-         split_name="train_aug")
+    # generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson",
+    #      split_name="train_aug")
 
+    # get_scenes_not_in_behavior_dataset(yaml_name="imitation_learning_rnn.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson",
+    #     image_dataset_path="/dataset/image_dataset_gibson")
+
+    # generate_image_dataset_scenes(
+    #     image_dataset_path="/dataset/image_dataset_gibson", 
+    #     scene_number=50)
+    
+    generate_image_dataset_data(yaml_name="pointgoal_baseline.yaml", 
+        image_dataset_path="/dataset/image_dataset_gibson", 
+        image_number_per_scene=200)

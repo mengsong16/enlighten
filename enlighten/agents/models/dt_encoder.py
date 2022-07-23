@@ -179,6 +179,27 @@ class ValueDecoder(nn.Module):
     def forward(self, hidden_states):
         return self.model(hidden_states)  # logits
 
+# domain discriminator
+class BinaryDiscriminator(nn.Module):
+    def __init__(self, feature_size, hidden_size=512):
+        super(BinaryDiscriminator, self).__init__()
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.5)
+
+        self.ad_layer1 = nn.Linear(feature_size, hidden_size)
+        self.ad_layer1.weight.data.normal_(0, 0.01)
+        self.ad_layer1.bias.data.fill_(0.0)
+
+        # output: one class logit
+        self.ad_layer2 = nn.Linear(hidden_size, 1)
+        self.ad_layer2.weight.data.normal_(0, 0.3)
+        self.ad_layer2.bias.data.fill_(0.0)
+        self.model = nn.Sequential(self.ad_layer1, nn.ReLU(), nn.Dropout(0.5), self.ad_layer2)
+
+    # features: [B, feature_size]
+    def forward(self, features):
+        return self.model(features)
+
 if __name__ == "__main__":
     oe = ObservationEncoder(channel_num=3, output_size=512)
     print('Done')    

@@ -55,7 +55,7 @@ class DTTrainer(SequenceTrainer):
         # dtg # (B,K,1)
         # timestep # (B,K)
         # mask # (B,K)
-        observations, actions, goals, timesteps, attention_mask = self.train_dataset.get_batch(self.batch_size)
+        observations, actions, goals, timesteps, attention_mask, batch_shape = self.train_dataset.get_batch(self.batch_size)
         action_targets = torch.clone(actions)
 
         # [B,K, action_num+1]

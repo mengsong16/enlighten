@@ -28,8 +28,10 @@ class MyViewer:
         self.isopen = True
 
         # To get keyboard response, must after imshow in the first window, and click robotview window to make it active
+        # wait for 1ms
         q = cv2.waitKey(1)
 
+        #if ESC is pressed, close window
         if q == 27:
             exit()
 

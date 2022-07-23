@@ -81,16 +81,7 @@ class BehaviorDataset:
             print("Undefined batch mode: %s"%(self.batch_mode))
             exit()    
 
-    def get_batch_shape(self, observations):
-        # B*K
-        if self.batch_mode == "random_segment": 
-            return observations.size()[0] * observations.size()[1]
-        # T 
-        elif self.batch_mode == "whole_trajectory" or self.batch_mode == "partial_trajectory":
-            return observations.size()[0]
-        else:
-            print("Undefined batch mode: %s"%(self.batch_mode))
-            exit()    
+    
 
     # sample a batch of whole trajectory or partial trajectory
     # o: (T,C,H,W), where T is the total number of steps in the batch
@@ -146,7 +137,7 @@ class BehaviorDataset:
         # print(seq_lengths)
 
         # sort seqs in decreading order 
-        o, a, g, dtg, ag, prev_a, batch_sizes = self.sort_seqs(o, a, g, dtg, ag, prev_a, seq_lengths)
+        o, a, g, dtg, ag, prev_a, batch_sizes, sorted_lengths = self.sort_seqs(o, a, g, dtg, ag, prev_a, seq_lengths)
 
         # for o_seg in o:
         #     print(o_seg.shape)
@@ -173,11 +164,11 @@ class BehaviorDataset:
         # exit()
 
         if self.goal_form == "rel_goal":
-            return o, a, prev_a, g, value, batch_sizes
+            return o, a, prev_a, g, value, batch_sizes, sorted_lengths
         elif self.goal_form == "distance_to_goal":
-            return o, a, prev_a, dtg, value, batch_sizes
+            return o, a, prev_a, dtg, value, batch_sizes, sorted_lengths
         elif self.goal_form == "abs_goal":
-            return o, a, prev_a, ag, value, batch_sizes
+            return o, a, prev_a, ag, value, batch_sizes, sorted_lengths
         else:
             print("Undefined goal form: %s"%(self.goal_form))
             exit() 
@@ -206,7 +197,7 @@ class BehaviorDataset:
             batch_sizes[:length] += 1
         #print(batch_sizes)
         #print(batch_sizes.shape)
-        return o, a, g, dtg, ag, prev_a, batch_sizes
+        return o, a, g, dtg, ag, prev_a, batch_sizes, sorted_lengths
     
     def concat_seqs_columnwise(self, o, a, g, dtg, ag, prev_a, batch_sizes):
         new_o, new_a, new_g, new_dtg, new_ag, new_prev_a = [], [], [], [], [], []
@@ -336,11 +327,12 @@ class BehaviorDataset:
         # print(timesteps.size()) # (B,K)
         # print(mask.size()) # (B,K)
         
+        batch_shape = np.array([self.context_length] * batch_size, dtype=np.int32)
 
         if self.goal_form == "rel_goal":
-            return o, a, g, timesteps, mask
+            return o, a, g, timesteps, mask, batch_shape
         elif self.goal_form == "distance_to_goal":
-            return o, a, dtg, timesteps, mask
+            return o, a, dtg, timesteps, mask, batch_shape
         else:
             print("Undefined goal form: %s"%(self.goal_form))
             exit()  
@@ -368,8 +360,12 @@ if __name__ == "__main__":
     config_file = os.path.join(config_path, "imitation_learning_rnn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
+    
     for i in range(10):
-        dataset.get_batch(batch_size=4)
-
-        #break
+        output = dataset.get_batch(batch_size=4)
+        print(output[0].size()) # pytorch tensor
+        print(type(output[-1])) # numpy array
+        print(output[-1])
+        break
+        
         print("Batch %d Done"%(i+1))

@@ -8,7 +8,8 @@ from enlighten.utils.geometry_utils import euclidean_distance
 from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
 from enlighten.datasets.dataset import Episode
-
+from enlighten.utils.image_utils import try_cv2_import
+cv2 = try_cv2_import()
 
 import math
 import os
@@ -833,6 +834,25 @@ def generate_image_dataset_data(yaml_name, image_dataset_path, image_number_per_
 
     print("Images saved.")
 
+def visualize_image_dataset(image_dataset_path):
+    train_image_path = os.path.join(image_dataset_path, 'train_data.pickle')
+    train_images = pickle.load(open(train_image_path, "rb" ))
+    for scene_id, scene_images in train_images.items():
+        for i in range(2):
+            img = np.asarray(scene_images[i]).astype(np.uint8)
+            # (C,H,W) --> (H,W,C)
+            img = np.transpose(img, (1, 2, 0))
+            
+            cv2.imshow('RobotView', img)
+
+            # wait for 0.5s
+            key = cv2.waitKey(500)
+
+            #if ESC is pressed, exit loop
+            if key == 27:
+                exit()
+
+
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
     #load_pointgoal_dataset("imitation_learning_dt.yaml")  
@@ -881,6 +901,8 @@ if __name__ == "__main__":
     #     image_dataset_path="/dataset/image_dataset_gibson", 
     #     scene_number=50)
     
-    generate_image_dataset_data(yaml_name="pointgoal_baseline.yaml", 
-        image_dataset_path="/dataset/image_dataset_gibson", 
-        image_number_per_scene=200)
+    # generate_image_dataset_data(yaml_name="pointgoal_baseline.yaml", 
+    #     image_dataset_path="/dataset/image_dataset_gibson", 
+    #     image_number_per_scene=200)
+
+    visualize_image_dataset(image_dataset_path="/dataset/image_dataset_gibson")

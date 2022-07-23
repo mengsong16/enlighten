@@ -21,6 +21,8 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.agents.evaluation.across_scene_single_env_evaluator import AcrossEnvEvaluatorSingle
 from enlighten.agents.evaluation.across_scene_vec_env_evaluator import AcrossEnvEvaluatorVector 
+from enlighten.datasets.image_dataset import ImageDataset
+
 
 # train seq2seq imitation learning
 class SequenceTrainer:
@@ -63,6 +65,11 @@ class SequenceTrainer:
 
         # use value supervision during training or not
         self.supervise_value = self.config.get('supervise_value')
+        print("==========> Supervise value: %r"%(self.supervise_value))
+
+        # domain adaptation or not
+        self.domain_adaptation = self.config.get('domain_adaptation')
+        print("==========> Domain adaptation: %r"%(self.domain_adaptation))
     
     def set_experiment_name(self):
         self.project_name = self.config.get("algorithm_name").lower()
@@ -88,9 +95,12 @@ class SequenceTrainer:
     
     # self.config.get: config of wandb
     def train(self):
-        # load training data
+        # load behavior training data
         self.train_dataset = BehaviorDataset(self.config, self.device)
         
+        if self.domain_adaptation:
+            self.target_domain_dataset = ImageDataset(self.config)
+
         # create model and move it to the correct device
         self.create_model()
         self.model = self.model.to(device=self.device)
@@ -134,10 +144,13 @@ class SequenceTrainer:
     # train for one iteration
     def train_one_iteration(self, num_steps, iter_num=0, print_logs=False):
 
-        train_losses = []
+        train_action_losses, train_losses = [], []
         if self.supervise_value:
-            train_action_losses, train_value_losses = [], []
+            train_value_losses = []
         
+        if self.domain_adaptation:
+            train_da_losses = []
+
         logs = dict()
 
         train_start = time.time()
@@ -147,27 +160,31 @@ class SequenceTrainer:
 
         # train for num_steps
         for _ in range(num_steps):
-            
+            loss_dict = self.train_one_step()
+
+            train_losses.append(loss_dict["loss"]) 
+            train_action_losses.append(loss_dict["action_loss"])
+
             if self.supervise_value:
-                train_loss, train_action_loss, train_value_loss = self.train_one_step()
-                train_losses.append(train_loss) 
-                train_action_losses.append(train_action_loss)
-                train_value_losses.append(train_value_loss)
-            else:   
-                train_loss = self.train_one_step()
-                train_losses.append(train_loss) 
+                train_value_losses.append(loss_dict["value_loss"])
+            if self.domain_adaptation:
+                train_da_losses.append(loss_dict["adv_loss"]) 
 
             if self.scheduler is not None:
                 self.scheduler.step()
 
         logs['time/training'] = time.time() - train_start
         logs['time/total'] = time.time() - self.start_time
+
         logs['training/train_loss_mean'] = np.mean(train_losses)
-        logs['training/train_loss_std'] = np.std(train_losses)
+        logs['training/train_action_loss_mean'] = np.mean(train_action_losses)
 
         if self.supervise_value:
-            logs['training/train_action_loss_mean'] = np.mean(train_action_losses)
             logs['training/train_value_loss_mean'] = np.mean(train_value_losses)
+        if self.domain_adaptation:
+            logs['training/train_da_loss_mean'] = np.mean(train_da_losses)
+
+        logs['training/train_loss_std'] = np.std(train_losses)
 
         if print_logs:
             print('=' * 80)

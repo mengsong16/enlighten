@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence
 
-from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoalEncoder, GoalEncoder, DiscreteActionEncoder, ValueDecoder, DiscreteActionDecoder
+from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoalEncoder, GoalEncoder, DiscreteActionEncoder, ValueDecoder, DiscreteActionDecoder, BinaryDiscriminator
 
 class RNNModel(nn.Module):
     def __init__(self, rnn_type, rnn_input_size, rnn_hidden_size):
@@ -114,7 +114,8 @@ class RNNSequenceModel(nn.Module):
             act_embedding_size, #32
             rnn_hidden_size, #512
             rnn_type,
-            supervise_value
+            supervise_value,
+            domain_adaptation
     ):
         super().__init__()
         
@@ -159,6 +160,11 @@ class RNNSequenceModel(nn.Module):
         self.supervise_value = supervise_value
         if self.supervise_value:
             self.value_decoder = ValueDecoder(rnn_hidden_size)
+        
+        # domain adaptation
+        self.domain_adaptation = domain_adaptation
+        if self.domain_adaptation:
+            self.adversarial_discriminator = BinaryDiscriminator(obs_embedding_size)
 
     def encoder_forward(self, observations, prev_actions, goals):
         # (T,C,H,W) ==> (T,obs_embedding_size)
@@ -175,10 +181,18 @@ class RNNSequenceModel(nn.Module):
             print("Undefined goal form: %s"%(self.goal_form))
             exit()    
 
-        # (o,g,a) ==> [T,rnn_input_size]
-        input_embeddings = torch.cat([observation_embeddings, goal_embeddings, prev_action_embeddings], dim=1)
+        
+        if self.domain_adaptation:
+            # (o[:source],g,a) ==> [T,rnn_input_size]
+            source_batch_size = prev_action_embeddings.size(0)
+            input_embeddings = torch.cat([observation_embeddings[:source_batch_size], goal_embeddings, prev_action_embeddings], dim=1)
 
-        return input_embeddings
+            return input_embeddings, observation_embeddings
+        else:
+            # (o,g,a) ==> [T,rnn_input_size]
+            input_embeddings = torch.cat([observation_embeddings, goal_embeddings, prev_action_embeddings], dim=1)
+
+            return input_embeddings
 
 
     # input: B sequence of (o,a,g) of variant lengths, T steps in total
@@ -193,8 +207,11 @@ class RNNSequenceModel(nn.Module):
         # print(goals.size()) # (T,goal_dim)
 
         # embed each input modality with a different head
-        input_embeddings = self.encoder_forward(observations, prev_actions, goals)
-        
+        if self.domain_adaptation:
+            input_embeddings, observation_embeddings = self.encoder_forward(observations, prev_actions, goals)
+            da_logits = self.adversarial_discriminator(observation_embeddings)
+        else:
+            input_embeddings = self.encoder_forward(observations, prev_actions, goals)
         
         # feed the input embeddings into the rnn
         # h_seq.data: [T, hidden_size]
@@ -208,6 +225,12 @@ class RNNSequenceModel(nn.Module):
         # pred_values: [T,1]
         if self.supervise_value:
             pred_values = self.value_decoder(h_seq.data)
+        
+        if self.supervise_value == True and self.domain_adaptation == True:
+            return pred_action_logits, pred_values, da_logits
+        elif self.supervise_value == False and self.domain_adaptation == True:
+            return pred_action_logits, da_logits
+        elif self.supervise_value == True and self.domain_adaptation == False:
             return pred_action_logits, pred_values
         else:
             return pred_action_logits
@@ -223,8 +246,10 @@ class RNNSequenceModel(nn.Module):
         # forward the sequence with no grad
         with torch.no_grad():
             # embed each input modality with a different head
-            input_embeddings = self.encoder_forward(observations, prev_actions, goals)
-
+            if self.domain_adaptation:
+                input_embeddings, _ = self.encoder_forward(observations, prev_actions, goals)
+            else:
+                input_embeddings = self.encoder_forward(observations, prev_actions, goals)
 
             # input_embeddings: [B, input_size] --> [1, B, input_size]
             input_embeddings = torch.unsqueeze(input_embeddings, 0)

@@ -106,7 +106,8 @@ class AcrossEnvBaseEvaluator:
                 goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
                 act_embedding_size=int(self.config.get('act_embedding_size')), #32
                 rnn_type=self.config.get('rnn_type'),
-                supervise_value=self.config.get('supervise_value')
+                supervise_value=self.config.get('supervise_value'),
+                domain_adaptation=self.config.get('domain_adaptation')
             )
         elif self.algorithm_name == "ppo":
             self.obs_transforms = get_active_obs_transforms(self.config)

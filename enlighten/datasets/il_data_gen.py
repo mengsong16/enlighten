@@ -520,9 +520,26 @@ def generate_train_behavior_data(yaml_name, behavior_dataset_path, split_name):
     config_file=os.path.join(config_path, yaml_name)
     config = parse_config(config_file)
 
-    with open(os.path.join(behavior_dataset_path, '%s_data.pickle'%(split_name)), 'wb') as handle:
-        pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # with open(os.path.join(behavior_dataset_path, '%s_data.pickle'%(split_name)), 'wb') as handle:
+    #     pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # dump training trajectories
+    total_trajectory_num = len(trajectories)
     
+    if total_trajectory_num <= 1000:
+        with open(os.path.join(behavior_dataset_path, '%s_data.pickle'%(split_name)), 'wb') as handle:
+            pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        part_num = total_trajectory_num // 1000
+        for i in range(part_num):
+            with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, i+1)), 'wb') as handle:
+                pickle.dump(trajectories[(1000*(i)):(1000*(i+1))], handle, protocol=pickle.HIGHEST_PROTOCOL)
+        rest_num = total_trajectory_num % 1000
+        if rest_num > 0:
+            with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, part_num+1)), 'wb') as handle:
+                pickle.dump(trajectories[(1000*part_num):], handle, protocol=pickle.HIGHEST_PROTOCOL)
+                
+    # dump action sequence
     with open(os.path.join(behavior_dataset_path, '%s_action_sequences.pickle'%(split_name)), 'wb') as handle:
         pickle.dump(action_sequences, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -880,9 +897,19 @@ if __name__ == "__main__":
     #     across_scene_test_scene_num=2, across_scene_test_episode_num=10,
     #     same_scene_test_episode_num=12,
     #     same_start_goal_test_episode_num=12)
-    # generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
-    #     behavior_dataset_path="/dataset/behavior_dataset_gibson",
-    #     split_name="train")
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    #     pointgoal_dataset_split="train", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_large",
+    #     train_scene_num=4, train_episode_num=3000, 
+    #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
+    #     same_scene_val_episode_num=20,
+    #     same_start_goal_val_episode_num=20,
+    #     across_scene_test_scene_num=2, across_scene_test_episode_num=50,
+    #     same_scene_test_episode_num=100,
+    #     same_start_goal_test_episode_num=100)
+    generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
+        behavior_dataset_path="/dataset/behavior_dataset_gibson_large",
+        split_name="train")
     
     # generate_behavior_dataset_train_aug_meta(
     #     yaml_name="imitation_learning_rnn.yaml",
@@ -905,4 +932,4 @@ if __name__ == "__main__":
     #     image_dataset_path="/dataset/image_dataset_gibson", 
     #     image_number_per_scene=200)
 
-    visualize_image_dataset(image_dataset_path="/dataset/image_dataset_gibson")
+    #visualize_image_dataset(image_dataset_path="/dataset/image_dataset_gibson")

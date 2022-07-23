@@ -45,10 +45,15 @@ class BehaviorDataset:
     def load_trajectories(self):
         # load all trajectories from the training dataset
         dataset_path = self.config.get("behavior_dataset_path")
-        dataset_path = os.path.join(dataset_path, "train_data.pickle")
-        print("Loading trajectories from %s"%(dataset_path))
-        with open(dataset_path, 'rb') as f:
-            self.trajectories = pickle.load(f)
+        self.trajectories = []
+        for file in os.listdir(dataset_path):
+            if file.endswith(".pickle") and file.startswith("train_data"):
+                current_train_dataset_path = os.path.join(dataset_path, file)
+                print("Loading trajectories from %s"%(current_train_dataset_path))
+                with open(current_train_dataset_path, 'rb') as f:
+                    trajectories_current_file = pickle.load(f)
+                    self.trajectories.extend(trajectories_current_file)
+        
 
         self.num_trajectories = len(self.trajectories)
 

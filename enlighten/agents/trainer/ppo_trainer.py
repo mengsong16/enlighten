@@ -270,7 +270,8 @@ class PPOTrainer(BaseRLTrainer):
                 config,
                 workers_ignore_signals=is_slurm_batch_job(),
             )
-        else:    
+        else:  
+            print("======> Creating across scene vector envs...")  
             self.envs = construct_envs_based_on_dataset(
                 config=config,
                 workers_ignore_signals=is_slurm_batch_job(),
@@ -1439,7 +1440,7 @@ class PPOTrainer(BaseRLTrainer):
             print("Saved evaluation file: %s"%(txt_name)) 
 
 if __name__ == "__main__":
-   trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
-   #trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_multi_envs.yaml"), resume_training=False)
+   #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
+   trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_multi_envs.yaml"), resume_training=False)
    trainer.train()
    #trainer.eval()

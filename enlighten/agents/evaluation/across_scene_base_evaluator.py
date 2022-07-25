@@ -17,6 +17,7 @@ from enlighten.agents.common.tensor_related import (
 )
 from enlighten.datasets.il_data_gen import goal_position_to_abs_goal
 import pickle
+import matplotlib.pyplot as plt
 
 # evaluate an agent across scene single env
 class AcrossEnvBaseEvaluator:
@@ -223,6 +224,60 @@ class AcrossEnvBaseEvaluator:
                 outfile.write(print_str)
 
         print("Saved evaluation file: %s"%(txt_name)) 
+
+    def plot_checkpoint_one_graph(self, x, curves, eval_metric, save_folder):
+        # plotting the curves 
+        for eval_split, curve in curves.items():
+            plt.plot(x, curve, label=eval_split)
+        
+        # naming the x axis
+        plt.xlabel('number of training steps')
+       
+        # naming the y axis
+        plt.ylabel(eval_metric)
+        
+        # giving a title to the graph
+        title = eval_metric
+        plt.title(title)
+
+        # show a legend on the plot
+        plt.legend()
+
+        # save plot
+        plt.savefig(os.path.join(save_folder, title+'_plot.png'))
+
+        plt.close()  
+
+    def plot_checkpoint_graphs(self, checkpoint_interval_steps):
+        load_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
+
+        eval_result_path = os.path.join(load_folder, "all_eval_results.pickle")
+        print("Loading evaluation results from %s"%(eval_result_path))
+        with open(eval_result_path, 'rb') as f:
+            eval_results = pickle.load(f)
+
+        #print(eval_results)
+        
+        # x axis values
+        x = np.array(list(eval_results.keys())) * checkpoint_interval_steps
+        
+
+        eval_metrics = ["success_rate", "mean_spl"]
+        for eval_metric in eval_metrics:
+            curves = {}
+            for eval_split in self.eval_splits:
+                for checkpoint_id, value in eval_results.items():
+                    for eval_key, eval_value in value.items():
+                        if eval_metric in eval_key and eval_split in eval_key:
+                            if eval_split not in curves:
+                                curves[eval_split] = [eval_value]
+                            else:
+                                curves[eval_split].append(eval_value)
+            
+            
+            self.plot_checkpoint_one_graph(x, curves, eval_metric, load_folder)
+
+
 
         
 

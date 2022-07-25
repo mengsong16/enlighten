@@ -413,7 +413,8 @@ if __name__ == "__main__":
     eval_splits = ["same_start_goal_test", "same_scene_test", "across_scene_test"]
     #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
     evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_multi_envs.yaml") 
-    logs = evaluator.evaluate_over_checkpoints(sample=True)
+    #evaluator.evaluate_over_checkpoints(sample=True)
+    evaluator.plot_checkpoint_graphs(checkpoint_interval_steps=200000)
     
 
         

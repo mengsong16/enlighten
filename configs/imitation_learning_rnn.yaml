@@ -7,14 +7,14 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_large"  # where imitation learning dataset store
 # Image training data location
 image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
 algorithm_name: "rnn"
-experiment_name: "whole_trajectory_rel_goal_da" #"whole_trajectory_value_supervision" 
-log_to_wandb: false #true  # log
+experiment_name: "whole_trajectory_rel_goal_3000" #"whole_trajectory_value_supervision" 
+log_to_wandb: true  # log
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -97,7 +97,7 @@ batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_
 supervise_value: false #false # true
 use_augment_train_data: false #true
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
-domain_adaptation: true
+domain_adaptation: false #true
 
 # evaluate during training
 eval_every_iterations: 40 #40 #80 #50 #10 
@@ -109,9 +109,10 @@ eval_use_vector_envs: false #true
 save_every_iterations: 40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "rnn-whole_trajectory_rel_goal_aug-s1-20220720-002930"  
+eval_experiment_folder: "rnn-whole_trajectory_rel_goal_3000-s1-20220724-024050"
+#"rnn-whole_trajectory_rel_goal_aug-s1-20220720-002930"  
 # "rnn-whole_trajectory_rel_goal-s1-20220720-131451"
-eval_checkpoint_file: "ckpt_43.pth" #"ckpt_38.pth" 
+eval_checkpoint_file: ["ckpt_33.pth"] #"ckpt_38.pth" 
 eval_dir: "evaluation"
 
 

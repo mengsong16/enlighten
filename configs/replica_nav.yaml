@@ -151,7 +151,7 @@ eval_video_option: [] #["disk", "tensorboard"]
 eval_checkpoint_folder: "checkpoints"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
-eval_checkpoint_file: "ckpt.9.pth"
+eval_checkpoint_file: ["ckpt.9.pth"]
 # use checkpoint config file
 eval_use_ckpt_config: false
 eval_dir: "evaluation"

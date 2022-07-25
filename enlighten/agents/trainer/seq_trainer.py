@@ -132,8 +132,10 @@ class SequenceTrainer:
             # evaluate
             if self.eval_every_iterations > 0:
                 if (iter+1) % self.eval_every_iterations == 0:
+                    checkpoint_index = (iter+1) // self.eval_every_iterations
                     self.eval_during_training(logs=logs, print_logs=True)
-                
+                    # add checkpoint index to evaluation logs
+                    logs[f'checkpoints'] = str(checkpoint_index)
             if self.log_to_wandb:
                 wandb.log(logs)
             
@@ -220,6 +222,7 @@ class SequenceTrainer:
         outputs = self.evaluator.evaluate_over_datasets(model=self.model, sample=self.config.get("eval_during_training_sample"))
         for k, v in outputs.items():
             logs[f'evaluation/{k}'] = v
+
         
         logs['time/evaluation'] = time.time() - eval_start
         if print_logs:

@@ -16,6 +16,7 @@ from enlighten.agents.common.tensor_related import (
     batch_obs,
 )
 from enlighten.datasets.il_data_gen import goal_position_to_abs_goal
+import pickle
 
 # evaluate an agent across scene single env
 class AcrossEnvBaseEvaluator:
@@ -57,6 +58,7 @@ class AcrossEnvBaseEvaluator:
         self.experiment_name_to_load = self.config.get("eval_experiment_folder")
           
         # load episodes of behavior datasets for evaluation
+        self.eval_splits = eval_splits
         print("====> Evaluation splits during training: %s"%(eval_splits))
         self.eval_dataset_episodes = {}
         for eval_split in eval_splits:
@@ -70,7 +72,7 @@ class AcrossEnvBaseEvaluator:
         return 
 
     # load dt model to be evaluated
-    def load_model(self):
+    def load_model(self, checkpoint_file):
         # create model
         if self.algorithm_name == "dt":
             model = DecisionTransformer(
@@ -118,7 +120,8 @@ class AcrossEnvBaseEvaluator:
                 goal_observation_space=self.env.get_goal_observation_space(), 
                 action_space=self.env.action_space,
                 device=self.device,
-                obs_transforms=self.obs_transforms)
+                obs_transforms=self.obs_transforms,
+                checkpoint_file=checkpoint_file)
             return model
         else:
             print("Error: undefined algorithm name: %s"%(self.algorithm_name))
@@ -128,7 +131,7 @@ class AcrossEnvBaseEvaluator:
         model.to(self.device)
         
         # get checkpoint path
-        checkpoint_path = os.path.join(checkpoints_path, self.experiment_name_to_load, self.config.get("eval_checkpoint_file"))
+        checkpoint_path = os.path.join(checkpoints_path, self.experiment_name_to_load, checkpoint_file)
         if os.path.exists(checkpoint_path):
             print("Loading checkpoint at: "+str(checkpoint_path))
         else:
@@ -140,6 +143,48 @@ class AcrossEnvBaseEvaluator:
 
         return model
     
+    def extract_int_from_string(self, r):
+        s = ''.join(x for x in r if x.isdigit())
+        return int(s)
+
+    def evaluate_over_checkpoints(self, sample):
+        checkpoint_files = list(self.config.get("eval_checkpoint_file"))
+        # evaluate all checkpoints
+        if "*" in checkpoint_files:
+            checkpoint_files = []
+            checkpoint_folder = os.path.join(checkpoints_path, self.experiment_name_to_load)
+            for file in os.listdir(checkpoint_folder):
+                if file.endswith(".pth") and file.startswith("ckpt."):
+                   checkpoint_files.append(file) 
+        
+        # sort files according to checkpoint index
+        checkpoint_indices = [self.extract_int_from_string(r) for r in checkpoint_files]
+        sort_indices = np.argsort(np.array(checkpoint_indices, dtype=np.int32))
+        checkpoint_files = [checkpoint_files[i] for i in sort_indices]
+        
+        eval_results = {}
+        for checkpoint_file in checkpoint_files:
+            print("================== %s evaluation Start ==================="%(checkpoint_file))
+            logs = self.evaluate_over_datasets(checkpoint_file=checkpoint_file, model=None, sample=sample)
+            index = self.extract_int_from_string(checkpoint_file)
+            eval_results[index] = logs
+
+            self.print_metrics(logs, self.eval_splits)
+            self.save_eval_logs(logs, self.eval_splits, checkpoint_file)
+            print("================== %s evaluation Done ==================="%(checkpoint_file))
+        
+        # dumpt results
+        # get save folder
+        save_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
+        if not os.path.exists(save_folder):
+            os.mkdir(save_folder)
+        
+        save_name =  "all_eval_results.pickle"
+        with open(os.path.join(save_folder, save_name), 'wb') as handle:
+            pickle.dump(eval_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+        print("Results saved to all_eval_results.pickle")
+
     def get_metric_string(self, logs, eval_splits):
         print_str_dict = {}
         for split_name in eval_splits:
@@ -160,7 +205,7 @@ class AcrossEnvBaseEvaluator:
         for v in print_str_dict.values():
             print(v)
 
-    def save_eval_logs(self, logs, eval_splits):
+    def save_eval_logs(self, logs, eval_splits, checkpoint_file):
         # get metric string from logs
         print_str_dict = self.get_metric_string(logs, eval_splits)
     
@@ -170,15 +215,14 @@ class AcrossEnvBaseEvaluator:
             os.mkdir(save_folder)
 
         # get checkpoint name
-        checkpoint_name = self.config.get("eval_checkpoint_file")
-        checkpoint_name = os.path.splitext(checkpoint_name)[0]
+        checkpoint_name = os.path.splitext(checkpoint_file)[0]
         
-        for split_name, print_str in print_str_dict.items():
-            txt_name =  f"{checkpoint_name}-{split_name}-eval_results.txt"
-            with open(os.path.join(save_folder, txt_name), 'w') as outfile:
-                    outfile.write(print_str)
+        txt_name =  f"{checkpoint_name}-eval_results.txt"
+        with open(os.path.join(save_folder, txt_name), 'w') as outfile:
+            for print_str in print_str_dict.values():
+                outfile.write(print_str)
 
-            print("Saved evaluation file: %s"%(txt_name)) 
+        print("Saved evaluation file: %s"%(txt_name)) 
 
         
 

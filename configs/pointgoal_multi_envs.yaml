@@ -155,14 +155,14 @@ use_normalized_advantage: false
 eval_checkpoint_folder: "checkpoints"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
-eval_checkpoint_file: "ckpt.9.pth"
+eval_checkpoint_file: ["ckpt.15.pth"] # ["*"] 
 # use checkpoint config file
 eval_use_ckpt_config: false
 # save evaluation results here
 eval_dir: "evaluation"
 test_episode_count: -1 # number of evaluation episodes #-1: test on all episodes in the dataset
 eval_splits: ["same_start_goal_test", "same_scene_test", "across_scene_test"]
-eval_experiment_folder: "pointgoal_baseline_multienv_2m"
+eval_experiment_folder: "pointgoal_baseline_multienv_4m_large" #"pointgoal_baseline_multienv_2m"
 # dummy
 eval_video_option: [] #["disk", "tensorboard"]
 

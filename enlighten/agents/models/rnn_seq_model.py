@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence
 
-from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoalEncoder, GoalEncoder, DiscreteActionEncoder, ValueDecoder, DiscreteActionDecoder, BinaryDiscriminator
+from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoalEncoder, GoalEncoder, DiscreteActionEncoder, ValueDecoder, DiscreteActionDecoder, BinaryDiscriminator, AdversarialLayer
 
 class RNNModel(nn.Module):
     def __init__(self, rnn_type, rnn_input_size, rnn_hidden_size):
@@ -166,6 +166,9 @@ class RNNSequenceModel(nn.Module):
         if self.domain_adaptation:
             self.adversarial_discriminator = BinaryDiscriminator(obs_embedding_size)
 
+        # gradient reversal layer
+        self.grl = AdversarialLayer()
+
     def encoder_forward(self, observations, prev_actions, goals):
         # (T,C,H,W) ==> (T,obs_embedding_size)
         observation_embeddings = self.obs_encoder(observations)
@@ -209,7 +212,7 @@ class RNNSequenceModel(nn.Module):
         # embed each input modality with a different head
         if self.domain_adaptation:
             input_embeddings, observation_embeddings = self.encoder_forward(observations, prev_actions, goals)
-            da_logits = self.adversarial_discriminator(observation_embeddings)
+            da_logits = self.adversarial_discriminator(self.grl.apply(observation_embeddings))
         else:
             input_embeddings = self.encoder_forward(observations, prev_actions, goals)
         

@@ -165,10 +165,10 @@ class RNNTrainer(SequenceTrainer):
             # evaluate
             if self.config.get('eval_during_training') and self.eval_every_iterations > 0:
                 if (iter+1) % self.eval_every_iterations == 0:
-                    checkpoint_index = (iter+1) // self.eval_every_iterations
                     self.eval_during_training(logs=logs, print_logs=True)
-                    # add checkpoint index to evaluation logs
-                    logs[f'checkpoints'] = str(checkpoint_index)
+                    # add eval point index to evaluation logs
+                    eval_point_index = (iter+1) // self.eval_every_iterations
+                    logs[f'evaluation/checkpoints'] = str(eval_point_index)
             
             # log to wandb
             if self.log_to_wandb:

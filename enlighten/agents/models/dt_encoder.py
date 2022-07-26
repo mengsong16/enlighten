@@ -202,7 +202,7 @@ class BinaryDiscriminator(nn.Module):
 
 class AdversarialLayer(torch.autograd.Function):
     iter_num = 0
-    max_iter = 12500
+    max_iter = 200000 #12500
     @staticmethod
     def forward(ctx, input):
         AdversarialLayer.iter_num += 1

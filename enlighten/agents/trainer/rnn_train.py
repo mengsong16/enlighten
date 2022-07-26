@@ -22,8 +22,20 @@ from enlighten.agents.common.other import get_device
 from enlighten.datasets.behavior_dataset import BehaviorDataset
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
+from enlighten.datasets.image_dataset import ImageDataset
 
 class RNNTrainer(SequenceTrainer):
+    def __init__(self, config_filename):
+        super(RNNTrainer, self).__init__(config_filename)
+
+        # use value supervision during training or not
+        self.supervise_value = self.config.get('supervise_value')
+        print("==========> Supervise value: %r"%(self.supervise_value))
+
+        # domain adaptation or not
+        self.domain_adaptation = self.config.get('domain_adaptation')
+        print("==========> Domain adaptation: %r"%(self.domain_adaptation))
+
     def create_model(self):
         self.model = RNNSequenceModel(
             obs_channel = get_obs_channel_num(self.config),
@@ -118,6 +130,109 @@ class RNNTrainer(SequenceTrainer):
         
         return loss_dict    
 
+    # self.config.get: config of wandb
+    def train(self):
+        # load behavior training data
+        self.train_dataset = BehaviorDataset(self.config, self.device)
+        
+        if self.domain_adaptation:
+            self.target_domain_dataset = ImageDataset(self.config)
+
+        # create model and move it to the correct device
+        self.create_model()
+        self.model = self.model.to(device=self.device)
+
+        # print goal form
+        print("==========> %s"%(self.config.get("goal_form")))
+
+        # create optimizer: AdamW
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=float(self.config.get('learning_rate')),
+            weight_decay=float(self.config.get('weight_decay')),
+        )
+        self.scheduler = None
+        
+        # start training
+        self.batch_size = int(self.config.get('batch_size'))
+        self.start_time = time.time()
+
+        # train for max_iters iterations
+        # each iteration includes num_steps_per_iter steps
+        for iter in range(int(self.config.get('max_iters'))):
+            logs = self.train_one_iteration(num_steps=int(self.config.get('num_steps_per_iter')), iter_num=iter+1, print_logs=True)
+            
+            # evaluate
+            if self.config.get('eval_during_training') and self.eval_every_iterations > 0:
+                if (iter+1) % self.eval_every_iterations == 0:
+                    checkpoint_index = (iter+1) // self.eval_every_iterations
+                    self.eval_during_training(logs=logs, print_logs=True)
+                    # add checkpoint index to evaluation logs
+                    logs[f'checkpoints'] = str(checkpoint_index)
+            
+            # log to wandb
+            if self.log_to_wandb:
+                wandb.log(logs)
+            
+            # save checkpoint
+            if (iter+1) % self.save_every_iterations == 0:
+                self.save_checkpoint(checkpoint_number = int((iter+1) // self.save_every_iterations))
+    
+    # train for one iteration
+    def train_one_iteration(self, num_steps, iter_num=0, print_logs=False):
+
+        train_action_losses, train_losses = [], []
+        if self.supervise_value:
+            train_value_losses = []
+        
+        if self.domain_adaptation:
+            train_da_losses = []
+
+        logs = dict()
+
+        train_start = time.time()
+
+        # switch model to training mode
+        self.model.train()
+
+        # train for num_steps
+        for _ in range(num_steps):
+            loss_dict = self.train_one_step()
+
+            train_losses.append(loss_dict["loss"]) 
+            train_action_losses.append(loss_dict["action_loss"])
+
+            if self.supervise_value:
+                train_value_losses.append(loss_dict["value_loss"])
+            if self.domain_adaptation:
+                train_da_losses.append(loss_dict["adv_loss"]) 
+
+            # step learning rate scheduler at each training step
+            if self.scheduler is not None:
+                self.scheduler.step()
+
+        logs['time/training'] = time.time() - train_start
+        logs['time/total'] = time.time() - self.start_time
+
+        logs['training/train_loss_mean'] = np.mean(train_losses)
+        logs['training/train_action_loss_mean'] = np.mean(train_action_losses)
+
+        if self.supervise_value:
+            logs['training/train_value_loss_mean'] = np.mean(train_value_losses)
+        if self.domain_adaptation:
+            logs['training/train_da_loss_mean'] = np.mean(train_da_losses)
+
+        logs['training/train_loss_std'] = np.std(train_losses)
+
+        if print_logs:
+            print('=' * 80)
+            print(f'Iteration {iter_num}')
+            for k, v in logs.items():
+                print(f'{k}: {v}')
+
+        return logs
+
+    
 if __name__ == '__main__':
     trainer = RNNTrainer(config_filename="imitation_learning_rnn.yaml")
     trainer.train()

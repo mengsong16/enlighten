@@ -297,7 +297,7 @@ class PPOTrainer(BaseRLTrainer):
             if rank0_only():
                 logger.info(
                     "Initialized DD-PPO with {} workers".format(
-                        torch.distributed.get_world_size()
+                        torch.distributed.get_world_size()  # world_size – Number of processes participating in the job
                     )
                 )
 

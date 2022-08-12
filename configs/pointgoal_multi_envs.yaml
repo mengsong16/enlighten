@@ -1,18 +1,20 @@
 # scene
 single_scene: false # train on single scene or a scene dataset
 
-# dataset
+# for original pointgoal dataset
 dataset_type: PointNav-v1
 split: val_mini  #[train, val, val_mini] # for pointgoal dataset
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where pointgoal episode split data store
 pointgoal_dataset_path: "/dataset/pointnav_gibson_v1"
 content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_large" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
+# -----------------------------------------------
+# BC training data location
+behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
 algorithm_name: "ppo"
-experiment_name:  "pointgoal_baseline_multienv_4m_large" # "ppo_test"
+experiment_name:  "pointgoal_baseline_multienv_3m" # "ppo_test"
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -109,10 +111,10 @@ seed: 1
 # num of backprop inside each agent update = ppo_epoch * num_mini_batch
 num_updates: -1 #1000
 # total_num_steps: steps collected in all environments (num_environments)  
-total_num_steps: 4000000 #500000 #300000   # 75e6
+total_num_steps: 3000000 #500000 #300000   # 75e6
 # checkpoint
 # only one of them can be used
-num_checkpoints: 20 #100
+num_checkpoints: 10 #15 #20 #100
 checkpoint_interval: -1
 checkpoint_folder: "checkpoints"  
 # observation transformations
@@ -147,7 +149,6 @@ gamma: 0.99
 tau: 0.95 # 0.98 hurts
 use_linear_clip_decay: true
 use_linear_lr_decay: true
-reward_window_size: 50
 use_normalized_advantage: false
 
 # evaluation
@@ -161,8 +162,8 @@ eval_use_ckpt_config: false
 # save evaluation results here
 eval_dir: "evaluation"
 test_episode_count: -1 # number of evaluation episodes #-1: test on all episodes in the dataset
-eval_splits: ["same_start_goal_test", "same_scene_test", "across_scene_test"]
-eval_experiment_folder: "pointgoal_baseline_multienv_4m_large" #"pointgoal_baseline_multienv_2m"
+eval_splits: ["same_start_goal_val", "same_scene_val", "across_scene_val"]
+eval_experiment_folder: "pointgoal_baseline_multienv_3m" #"pointgoal_baseline_multienv_2m"
 # dummy
 eval_video_option: [] #["disk", "tensorboard"]
 

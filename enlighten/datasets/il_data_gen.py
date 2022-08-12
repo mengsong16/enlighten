@@ -1068,7 +1068,7 @@ if __name__ == "__main__":
     
     # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson",
-    #     train_scene_num=4, train_episode_num=3000, 
+    #     train_scene_num=4, train_episode_num=2000, 
     #     same_scene_val_episode_num=400,
     #     same_start_goal_val_episode_num=400,
     #     across_scene_val_mini_episode_num=28,

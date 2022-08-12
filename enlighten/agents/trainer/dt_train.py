@@ -124,10 +124,10 @@ class DTTrainer(SequenceTrainer):
             # evaluate
             if self.config.get('eval_during_training') and self.eval_every_iterations > 0:
                 if (iter+1) % self.eval_every_iterations == 0:
-                    checkpoint_index = (iter+1) // self.eval_every_iterations
-                    self.eval_during_training(logs=logs, print_logs=True)
+                    logs = self.eval_during_training(logs=logs, print_logs=True)
                     # add checkpoint index to evaluation logs
-                    logs[f'checkpoints'] = str(checkpoint_index)
+                    checkpoint_index = (iter+1) // self.eval_every_iterations
+                    logs['checkpoints/eval_checkpoints'] = checkpoint_index
             
             # log to wandb
             if self.log_to_wandb:

@@ -39,7 +39,7 @@ class SequenceTrainer:
         # set device
         self.device = get_device(self.config)
 
-        # create evaluator
+        # create evaluator during training
         # Note that only evaluator needs environment, offline training does not need
         if self.config.get("eval_use_vector_envs"):
             self.evaluator = AcrossEnvEvaluatorVector(eval_splits=list(self.config.get("eval_during_training_splits")),  

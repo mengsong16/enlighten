@@ -7,13 +7,13 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_72_scene"  # where imitation learning dataset store
 # Image training data location
 image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
 algorithm_name: "rnn"
-experiment_name: "whole_trajectory_rel_goal_new" #"whole_trajectory_value_supervision" 
+experiment_name: "whole_trajectory_rel_goal_72_scene" #"whole_trajectory_value_supervision" 
 log_to_wandb: true
 
 # dummy initial setup 
@@ -21,6 +21,10 @@ scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gog
 agent_initial_position: [3, 0, 1]
 agent_initial_rotation: [0, 70, 0]
 goal_position: [4, 0, -1]
+
+# dummy for saving render images
+eval_video_option: [] #["disk", "tensorboard"]
+
 
 # robot
 forward_resolution: 0.25 # meter
@@ -75,8 +79,8 @@ seed: 1
 # gpu
 gpu_id: 1 #1
 
-# vector env
-num_environments: 4 #2
+# vector env (for evaluation only)
+num_environments: 8 #14 #4 #2
 
 # rnn
 rnn_hidden_size: 512
@@ -87,7 +91,7 @@ rnn_type: 'gru'
 max_ep_len: 500 # should be consistent with the env max episode length 
 
 # training
-batch_size: 4
+batch_size: 4 # amount to the number of vector envs during training
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 max_iters: 2000 #2000 #1000 #800 #400 #500 #30 #10
@@ -109,10 +113,8 @@ eval_use_vector_envs: true #true
 save_every_iterations: 100 #40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "rnn-whole_trajectory_rel_goal_3000-s1-20220724-024050"
-#"rnn-whole_trajectory_rel_goal_aug-s1-20220720-002930"  
-# "rnn-whole_trajectory_rel_goal-s1-20220720-131451"
-eval_checkpoint_file: ["ckpt_33.pth"] #"ckpt_38.pth" 
+eval_experiment_folder: "rnn-whole_trajectory_rel_goal_new-s1-20220811-221023"
+eval_checkpoint_file: ["ckpt_15.pth"] 
 eval_dir: "evaluation"
 
 

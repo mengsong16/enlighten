@@ -20,6 +20,10 @@ agent_initial_position: [3, 0, 1]
 agent_initial_rotation: [0, 70, 0]
 goal_position: [4, 0, -1]
 
+# dummy for saving render images
+eval_video_option: [] #["disk", "tensorboard"]
+
+
 # robot
 forward_resolution: 0.25 # meter
 rotate_resolution: 10 # degree

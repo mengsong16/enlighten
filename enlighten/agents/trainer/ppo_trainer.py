@@ -689,6 +689,8 @@ class PPOTrainer(BaseRLTrainer):
 
         self.pth_time += time.time() - t_update_stats
 
+        # return the number of steps collected by all envs
+        # which will be added to the step counter of environment interation steps
         return env_slice.stop - env_slice.start
 
     @profiling_utils.RangeContext("_collect_rollout_step")
@@ -1027,6 +1029,7 @@ class PPOTrainer(BaseRLTrainer):
                 self._training_log(writer, losses, prev_time)
 
                 # checkpoint model
+                # count_checkpoints starts from 0
                 if rank0_only() and self.should_checkpoint():
                     self.save_checkpoint(
                         f"ckpt.{count_checkpoints}.pth",

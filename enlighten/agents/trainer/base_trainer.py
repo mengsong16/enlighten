@@ -113,25 +113,29 @@ class BaseTrainer:
         with TensorboardWriter(
             os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), flush_secs=self.flush_secs
         ) as writer:
-            single_checkpoint = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name"), self.config.get("eval_checkpoint_file"))
-            if os.path.isfile(single_checkpoint):
-                # evaluate a singe checkpoint
-                proposed_index = get_checkpoint_id(single_checkpoint)
-                if proposed_index is not None:
-                    ckpt_idx = proposed_index
-                else:
-                    ckpt_idx = 0
-                self._eval_checkpoint(
-                    single_checkpoint,
-                    writer,
-                    checkpoint_index=ckpt_idx,
-                )
+            checkpoint_list = list(self.config.get("eval_checkpoint_file"))
+            # evaluate checkpoints in the list provided in config
+            if "*" not in checkpoint_list:
+                for checkpoint_filename in checkpoint_list:
+                    # evaluate a single checkpoint
+                    single_checkpoint = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name"), checkpoint_filename)
+                    proposed_index = get_checkpoint_id(single_checkpoint)
+                    if proposed_index is not None:
+                        ckpt_idx = proposed_index
+                    else:
+                        ckpt_idx = 0
+                    self._eval_checkpoint(
+                        single_checkpoint,
+                        writer,
+                        checkpoint_index=ckpt_idx,
+                    )
             else:
-                # evaluate all checkpoints in the directory in order
+                # evaluate all checkpoints in the checkpoint directory in order
                 prev_ckpt_ind = -1
                 while True:
                     current_ckpt = None
                     while current_ckpt is None:
+                        # pull out current ckpt (prev_ckpt_ind+1)
                         current_ckpt = poll_checkpoint_folder(
                             os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name")), prev_ckpt_ind
                         )
@@ -234,6 +238,10 @@ class BaseRLTrainer(BaseTrainer):
         needs_checkpoint = False
         # use num_checkpoints
         if self.num_checkpoints != -1:
+            # self._last_checkpoint_percent starts from -1
+            # then will be saved and updated to the first percent done
+            # then be updated each checkpoint_every
+            # do not save at percentage 0
             checkpoint_every = 1 / self.num_checkpoints
             if (
                 self._last_checkpoint_percent + checkpoint_every

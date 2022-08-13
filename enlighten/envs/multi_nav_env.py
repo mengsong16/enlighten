@@ -146,7 +146,10 @@ class MultiNavEnv(NavEnv):
         # reset scene id
         episode_scene = episode.scene_id
         
+        # need to change scene
         if self.current_scene != episode_scene:
+            # need to close sim before reconfigure so that memory can be released
+            self.sim.close()
             self.sim_config = habitat_sim.Configuration(self.create_sim_cfg(episode_scene), [self.agent_cfg])
             self.sim.reconfigure(self.sim_config)
             # must recreate agent if simulator is reconfiged, otherwise agent will not move when env.step
@@ -305,7 +308,7 @@ class MultiNavEnv(NavEnv):
         self.sim_config.sim_cfg.scene_id = new_scene
 
 def test_env():
-    env = MultiNavEnv(config_file="imitation_learning_dt.yaml")
+    env = MultiNavEnv(config_file="imitation_learning_rnn.yaml")
     for i in range(10):
         obs = env.reset(plan_shortest_path=True)
         print('Episode: {}'.format(i+1))
@@ -318,9 +321,9 @@ def test_env():
         for j in range(100):
             action = env.action_space.sample()
             obs, reward, done, info = env.step(action)
-            print(obs["color_sensor"].shape)
-            print(obs["pointgoal"].shape)
-            #env.render()
+            #print(obs["color_sensor"].shape)
+            #print(obs["pointgoal"].shape)
+            env.render()
 
         print("===============================")
 

@@ -80,7 +80,7 @@ def shortest_path_follower(yaml_name):
         for action in env.optimal_action_seq:
             #action = env.action_space.sample()
             obs, reward, done, info = env.step(action)
-            #env.render()
+            env.render()
             # print(action)
             # print(obs["pointgoal"])
             # print(env.goal_position)
@@ -422,7 +422,6 @@ def generate_behavior_dataset_meta(yaml_name,
     pointgoal_train_meta, total_train_scene_num, total_train_episode_num = load_pointgoal_dataset_meta(config, "train")
     pointgoal_val_meta, total_val_scene_num, total_val_episode_num = load_pointgoal_dataset_meta(config, "val")
    
-    behavior_dataset_path = config.get("behavior_dataset_path")
     
     # use all val scenes
     across_scene_val_scene_num = total_val_scene_num
@@ -709,7 +708,7 @@ def generate_train_behavior_data(yaml_name, behavior_dataset_path, split_name):
         # generate one episode
         valid_episode, traj, act_seq = generate_one_episode(env, episode, goal_dimension, goal_coord_system)
         if valid_episode == False:
-            print("Errror: invalid episode, need to resample train episodes!")
+            print("Error: invalid episode, need to resample train episodes!")
             exit()
         else:
             trajectories.append(traj)
@@ -1045,12 +1044,12 @@ def visualize_image_dataset(image_dataset_path):
 
 if __name__ == "__main__":
     # ====== first set seed =======
-    set_seed_except_env_seed(seed=1)
+    set_seed_except_env_seed(seed=0)
 
     # ====== test =======
-    #load_pointgoal_dataset("imitation_learning_dt.yaml")  
-    #test_get_scene_names("imitation_learning_dt.yaml")
-    #shortest_path_follower("imitation_learning_dt.yaml")
+    #load_pointgoal_dataset("imitation_learning_rnn.yaml")  
+    #test_get_scene_names("imitation_learning_rnn.yaml")
+    #shortest_path_follower("imitation_learning_rnn.yaml")
     
     # ====== generate pointgoal meta data =======
     # generate_pointgoal_dataset_meta(yaml_name="imitation_learning_dt.yaml", split="train")
@@ -1074,10 +1073,19 @@ if __name__ == "__main__":
     #     across_scene_val_mini_episode_num=28,
     #     same_scene_val_mini_episode_num=28,
     #     same_start_goal_val_mini_episode_num=28)
+
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_72_scene",
+    #     train_scene_num=72, train_episode_num=2160, #2880 2160
+    #     same_scene_val_episode_num=720,
+    #     same_start_goal_val_episode_num=720,
+    #     across_scene_val_mini_episode_num=28,
+    #     same_scene_val_mini_episode_num=72,
+    #     same_start_goal_val_mini_episode_num=72)
     
     # ====== generate train episodes =======
     generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
-        behavior_dataset_path="/dataset/behavior_dataset_gibson",
+        behavior_dataset_path="/dataset/behavior_dataset_gibson_72_scene",
         split_name="train")
     
     # ====== generate train augment meta data =======

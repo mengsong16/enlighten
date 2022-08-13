@@ -10,11 +10,11 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_72_scene" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
 algorithm_name: "ppo"
-experiment_name:  "pointgoal_baseline_multienv_3m" # "ppo_test"
+experiment_name:  "pointgoal_baseline_multienv_72_scene_3m" # "ppo_test"
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -98,8 +98,8 @@ attention_type: caption #fc
 use_double_buffered_sampler: false
 num_steps: 128  # rollout buffer length
 
-# vector env
-num_environments: 4 #4 #6
+# vector env (for training and evaluation)
+num_environments: 4 #14 #8 #6
 
 # training
 torch_gpu_id: 0
@@ -156,14 +156,18 @@ use_normalized_advantage: false
 eval_checkpoint_folder: "checkpoints"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
-eval_checkpoint_file: ["ckpt.15.pth"] # ["*"] 
+eval_checkpoint_file: ["ckpt.0.pth"] # ["*"] 
 # use checkpoint config file
 eval_use_ckpt_config: false
 # save evaluation results here
 eval_dir: "evaluation"
-test_episode_count: -1 # number of evaluation episodes #-1: test on all episodes in the dataset
+# number of evaluation episodes 
+# -1: test on all episodes in the dataset
+# number of evaluation episodes in a single scene
+test_episode_count: -1 
 eval_splits: ["same_start_goal_val", "same_scene_val", "across_scene_val"]
-eval_experiment_folder: "pointgoal_baseline_multienv_3m" #"pointgoal_baseline_multienv_2m"
+eval_experiment_folder: "pointgoal_baseline_multienv_72_scene_3m" #"pointgoal_baseline_multienv_2m"
+
 # dummy
 eval_video_option: [] #["disk", "tensorboard"]
 

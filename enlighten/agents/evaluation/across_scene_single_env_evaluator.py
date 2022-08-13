@@ -408,9 +408,8 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
         return logs
 
     
-
+# evaluate RNN BC or PPO in a single process here
 if __name__ == "__main__":
-    #eval_splits = ["same_start_goal_test", "same_scene_test", "across_scene_test"]
     eval_splits = ["same_start_goal_val", "same_scene_val", "across_scene_val"]
     #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
     evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_multi_envs.yaml") 

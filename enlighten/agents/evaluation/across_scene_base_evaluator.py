@@ -259,7 +259,9 @@ class AcrossEnvBaseEvaluator:
         #print(eval_results)
         
         # x axis values
-        x = np.array(list(eval_results.keys())) * checkpoint_interval_steps
+        # eval_results.keys() are checkpoint index starting from 0
+        # change it to starting from 1
+        x = (np.array(list(eval_results.keys())) + 1) * checkpoint_interval_steps
         
 
         eval_metrics = ["success_rate", "mean_spl"]

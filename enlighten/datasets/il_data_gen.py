@@ -443,6 +443,7 @@ def generate_behavior_dataset_meta(yaml_name,
         train_scene_list = pointgoal_train_meta.keys()
         # sample without replacement
         train_scenes = random.sample(train_scene_list, train_scene_num)
+        #train_scenes = ['/dataset/gibson/Rancocas.glb']
         # verbose
         print("Sampled scenes:")
         print("train scenes: %s"%(train_scenes))
@@ -1066,7 +1067,7 @@ if __name__ == "__main__":
     #     same_start_goal_test_episode_num=100)
     
     # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
-    #     behavior_dataset_path="/dataset/behavior_dataset_gibson",
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene",
     #     train_scene_num=4, train_episode_num=2000, 
     #     same_scene_val_episode_num=400,
     #     same_start_goal_val_episode_num=400,
@@ -1083,9 +1084,27 @@ if __name__ == "__main__":
     #     same_scene_val_mini_episode_num=72,
     #     same_start_goal_val_mini_episode_num=72)
     
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
+    #     train_scene_num=1, train_episode_num=2000, #2880 2160
+    #     same_scene_val_episode_num=200,
+    #     same_start_goal_val_episode_num=200,
+    #     across_scene_val_mini_episode_num=28,
+    #     same_scene_val_mini_episode_num=20,
+    #     same_start_goal_val_mini_episode_num=20)
+
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
+    #     train_scene_num=1, train_episode_num=4000, #2880 2160
+    #     same_scene_val_episode_num=200,
+    #     same_start_goal_val_episode_num=200,
+    #     across_scene_val_mini_episode_num=28,
+    #     same_scene_val_mini_episode_num=20,
+    #     same_start_goal_val_mini_episode_num=20)
+
     # ====== generate train episodes =======
     generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
-        behavior_dataset_path="/dataset/behavior_dataset_gibson_72_scene",
+        behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
         split_name="train")
     
     # ====== generate train augment meta data =======

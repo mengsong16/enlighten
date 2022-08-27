@@ -7,13 +7,13 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_72_scene"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_hard_4000"  # where imitation learning dataset store
 # Image training data location
 image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
 algorithm_name: "rnn"
-experiment_name: "whole_trajectory_rel_goal_72_scene" #"whole_trajectory_value_supervision" 
+experiment_name: "whole_trajectory_rel_goal_1_scene_hard_4000" #"whole_trajectory_value_supervision" 
 log_to_wandb: true
 
 # dummy initial setup 
@@ -80,7 +80,7 @@ seed: 1
 gpu_id: 1 #1
 
 # vector env (for evaluation only)
-num_environments: 8 #14 #4 #2
+num_environments: 14 #8 #14 #4 #2
 
 # rnn
 rnn_hidden_size: 512
@@ -94,7 +94,7 @@ max_ep_len: 500 # should be consistent with the env max episode length
 batch_size: 4 # amount to the number of vector envs during training
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
-max_iters: 2000 #2000 #1000 #800 #400 #500 #30 #10
+max_iters: 3000 #2000 #1000 #800 #400 #500 #30 #10
 num_steps_per_iter: 100 #10000
 batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
@@ -113,8 +113,8 @@ eval_use_vector_envs: true #true
 save_every_iterations: 100 #40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "rnn-whole_trajectory_rel_goal_new-s1-20220811-221023"
-eval_checkpoint_file: ["ckpt_15.pth"] 
+eval_experiment_folder: "rnn-whole_trajectory_rel_goal_1_scene_normal-s1-20220817-181404"
+eval_checkpoint_file: ["ckpt_27.pth"] 
 eval_dir: "evaluation"
 
 

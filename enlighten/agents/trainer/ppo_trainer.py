@@ -1050,9 +1050,10 @@ class PPOTrainer(BaseRLTrainer):
         writer: TensorboardWriter,
         checkpoint_index: int = 0):
         if self.config.get("single_scene") == True:
-            self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, rendering=False)
+            self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, checkpoint_path=checkpoint_path, rendering=False)
         else:
-            self._eval_checkpoint_all_datasets(checkpoint_idx=checkpoint_index)
+            
+            self._eval_checkpoint_all_datasets(checkpoint_idx=checkpoint_index, checkpoint_path=checkpoint_path)
 
     # sum up
     def update_avg_measurements(self, step_measurements):
@@ -1073,6 +1074,7 @@ class PPOTrainer(BaseRLTrainer):
     def _eval_checkpoint_single_scene(
         self,
         checkpoint_idx: int = 0,
+        checkpoint_path=None,
         rendering=True,
         remove_images=True,
         save_text_results=True
@@ -1086,7 +1088,8 @@ class PPOTrainer(BaseRLTrainer):
                 goal_observation_space=env.get_goal_observation_space(), 
                 action_space=env.action_space,
                 device=self.device,
-                obs_transforms=obs_transforms)
+                obs_transforms=obs_transforms,
+                checkpoint_file=checkpoint_path)
         
         # set model to eval mode
         model.eval()
@@ -1232,18 +1235,20 @@ class PPOTrainer(BaseRLTrainer):
     # evaluate a checkpoint on all datasets
     def _eval_checkpoint_all_datasets(
         self,
-        checkpoint_idx
+        checkpoint_idx,
+        checkpoint_path
     ):
         split_names = list(self.config.get("eval_splits"))
         for split_name in split_names:
-            self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx)
+            self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx, checkpoint_path=checkpoint_path)
 
     # evaluate a checkpoint on one dataset
     def _eval_checkpoint_one_dataset(
         self,
         split_name,
         checkpoint_idx: int = 0,
-        save_text_results=True
+        save_text_results=True,
+        checkpoint_path=None
     ) -> None:
         
         if self._is_distributed:
@@ -1259,7 +1264,8 @@ class PPOTrainer(BaseRLTrainer):
             goal_observation_space=self.envs.get_goal_observation_space(),
             action_space=self.envs.action_spaces[0],
             device=self.device,
-            obs_transforms=obs_transforms)
+            obs_transforms=obs_transforms,
+            checkpoint_file=checkpoint_path)
         
         # set model to eval mode
         model.eval()
@@ -1445,5 +1451,5 @@ class PPOTrainer(BaseRLTrainer):
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_multi_envs.yaml"), resume_training=False)
-   trainer.train()
-   #trainer.eval()
+   #trainer.train()
+   trainer.eval()

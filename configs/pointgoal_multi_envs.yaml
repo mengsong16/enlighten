@@ -99,7 +99,7 @@ use_double_buffered_sampler: false
 num_steps: 128  # rollout buffer length
 
 # vector env (for training and evaluation)
-num_environments: 6 #4 #14 #8 #6
+num_environments: 14 #6 #4 #14 #8 #6
 
 # training
 torch_gpu_id: 0
@@ -156,7 +156,7 @@ use_normalized_advantage: false
 eval_checkpoint_folder: "checkpoints"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
-eval_checkpoint_file: ["ckpt.9.pth"] # ["*"] 
+eval_checkpoint_file: ["*"] #["ckpt.9.pth"] # ["*"] 
 # use checkpoint config file
 eval_use_ckpt_config: false
 # save evaluation results here
@@ -165,8 +165,8 @@ eval_dir: "evaluation"
 # -1: test on all episodes in the dataset
 # number of evaluation episodes in a single scene
 test_episode_count: -1 
-eval_splits: ["same_start_goal_val", "same_scene_val", "across_scene_val"]
-eval_experiment_folder: "pointgoal_baseline_multienv_1_scene_normal_3m" #"pointgoal_baseline_multienv_2m"
+eval_splits: ["same_scene_val", "across_scene_val"] # "same_start_goal_val", 
+eval_experiment_folder: "pointgoal_baseline_multienv_1_scene_Rancocas_whole_5m" #"pointgoal_baseline_multienv_2m"
 
 # dummy
 eval_video_option: [] #["disk", "tensorboard"]

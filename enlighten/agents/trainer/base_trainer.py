@@ -141,6 +141,7 @@ class BaseTrainer:
                         )
                         time.sleep(2)  # sleep for 2 secs before polling again
                     logger.info(f"=======current_ckpt: {current_ckpt}=======")
+                    
                     prev_ckpt_ind += 1
                     self._eval_checkpoint(
                         checkpoint_path=current_ckpt,

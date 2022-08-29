@@ -72,7 +72,7 @@ class AcrossEnvBaseEvaluator:
     def create_env(self, config_filename):
         return 
 
-    # load dt model to be evaluated
+    # load dt or rnn model to be evaluated
     def load_model(self, checkpoint_file):
         # create model
         if self.algorithm_name == "dt":

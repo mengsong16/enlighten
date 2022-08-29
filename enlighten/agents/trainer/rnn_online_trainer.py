@@ -1020,6 +1020,7 @@ class BCOnlineTrainer(PPOTrainer):
     def _eval_checkpoint_single_scene(
         self,
         checkpoint_idx: int = 0,
+        checkpoint_path=None,
         rendering=True,
         remove_images=True,
         save_text_results=True
@@ -1033,7 +1034,8 @@ class BCOnlineTrainer(PPOTrainer):
                 goal_observation_space=env.get_goal_observation_space(), 
                 action_space=env.action_space,
                 device=self.device,
-                obs_transforms=obs_transforms)
+                obs_transforms=obs_transforms,
+                checkpoint_file=checkpoint_path)
         
         # set model to eval mode
         model.eval()
@@ -1179,11 +1181,12 @@ class BCOnlineTrainer(PPOTrainer):
     # evaluate a checkpoint on all datasets
     def _eval_checkpoint_all_datasets(
         self,
-        checkpoint_idx
+        checkpoint_idx,
+        checkpoint_path
     ):
         split_names = list(self.config.get("eval_splits"))
         for split_name in split_names:
-            self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx)
+            self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx, checkpoint_path=checkpoint_path)
 
     # evaluate a checkpoint on one dataset
     def _eval_checkpoint_one_dataset(

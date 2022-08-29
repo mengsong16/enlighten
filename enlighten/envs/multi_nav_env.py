@@ -31,13 +31,15 @@ class MultiNavEnv(NavEnv):
         if isinstance(config_file, str):
             config_file = os.path.join(config_path, config_file)
         self.config = parse_config(config_file)
+
+        
     
         # create simulator configuration and sensors
         self.create_sim_config()
 
         # create simulator
         self.sim = habitat_sim.Simulator(self.sim_config) 
-       
+
            
         # create gym observation space
         self.observation_space = self.create_gym_observation_space(self.sensors)
@@ -198,6 +200,7 @@ class MultiNavEnv(NavEnv):
             if self.episode_iterator is None:
                 self.set_agent_to_initial_state()
             else:
+                # iterate to next episode
                 self.current_episode = next(self.episode_iterator)
                 self.reconfigure(self.current_episode)
         else:    
@@ -230,6 +233,7 @@ class MultiNavEnv(NavEnv):
             self.create_shortest_path_follower()
             try:
                 self.optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
+                # append STOP if not appended
                 self.check_optimal_action_sequence()
             except habitat_sim.errors.GreedyFollowerError as e:
                 print("Error: optimal path NOT found!")
@@ -237,8 +241,14 @@ class MultiNavEnv(NavEnv):
         else:
             self.optimal_action_seq = []    
 
+        # create optimal action sequence iterator
+        self.optimal_action_iter = iter(self.optimal_action_seq)
+
         return obs
     
+    def next_optimal_action(self):
+        return next(self.optimal_action_iter, None)
+
     # action is an integer
     def step(self, action):
         # action index to action name
@@ -309,7 +319,8 @@ class MultiNavEnv(NavEnv):
 
 def test_env():
     env = MultiNavEnv(config_file="imitation_learning_rnn.yaml")
-    for i in range(10):
+    
+    for i in range(1):
         obs = env.reset(plan_shortest_path=True)
         print('Episode: {}'.format(i+1))
         print("Goal position: %s"%(env.goal_position))
@@ -317,14 +328,22 @@ def test_env():
         print("Start position: %s"%(env.start_position))
         #print(env.get_optimal_trajectory())
         print("Optimal action sequence: %s"%env.optimal_action_seq)
+        print("Optimal action sequence length: %s"%len(env.optimal_action_seq))
 
-        for j in range(100):
-            action = env.action_space.sample()
+        done = False
+        #for j in range(100):
+        j = 0
+        while not done:
+            #action = env.action_space.sample()
+            action = env.next_optimal_action()
+            #print(action)
             obs, reward, done, info = env.step(action)
             #print(obs["color_sensor"].shape)
             #print(obs["pointgoal"].shape)
             env.render()
+            j += 1
 
+        print("Total steps: %d"%j)
         print("===============================")
 
     

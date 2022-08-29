@@ -25,7 +25,6 @@ goal_position: [4, 0, -1]
 # dummy for saving render images
 eval_video_option: [] #["disk", "tensorboard"]
 
-
 # robot
 forward_resolution: 0.25 # meter
 rotate_resolution: 10 # degree
@@ -79,8 +78,12 @@ seed: 1
 # gpu
 gpu_id: 1 #1
 
-# vector env (for evaluation only)
+# vector env (for evaluation and training)
 num_environments: 14 #8 #14 #4 #2
+single_scene: false  # construct vec envs from a single scene or the dataset
+
+# dummy observation transformations 
+enabled_transforms: []
 
 # rnn
 rnn_hidden_size: 512

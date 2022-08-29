@@ -10,11 +10,11 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_hard_4000" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole" #"/dataset/behavior_dataset_gibson_1_scene_hard_4000" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
 algorithm_name: "ppo"
-experiment_name:  "pointgoal_baseline_multienv_1_scene_hard_4000_4m" # "ppo_test"
+experiment_name:  "pointgoal_baseline_multienv_1_scene_Rancocas_whole_5m" # "ppo_test"
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -99,7 +99,7 @@ use_double_buffered_sampler: false
 num_steps: 128  # rollout buffer length
 
 # vector env (for training and evaluation)
-num_environments: 14 #4 #14 #8 #6
+num_environments: 6 #4 #14 #8 #6
 
 # training
 torch_gpu_id: 0
@@ -111,7 +111,7 @@ seed: 1
 # num of backprop inside each agent update = ppo_epoch * num_mini_batch
 num_updates: -1 #1000
 # total_num_steps: steps collected in all environments (num_environments)  
-total_num_steps: 4000000 #500000 #300000   # 75e6
+total_num_steps: 5000000 #500000 #300000   # 75e6
 # checkpoint
 # only one of them can be used
 num_checkpoints: 10 #15 #20 #100

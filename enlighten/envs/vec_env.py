@@ -3,6 +3,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import chunk
 from tqdm import tqdm
 import signal
 import warnings
@@ -29,6 +30,7 @@ import attr
 import gym
 import numpy as np
 from gym import spaces
+import math
 
 # import habitat
 # from habitat.core.env import Env, RLEnv
@@ -83,6 +85,7 @@ GET_GOAL_OBS_SPACE_NAME = "get_goal_observation_space"
 GET_COMBINED_GOAL_OBS_SPACE_NAME = "get_combined_goal_obs_space"
 GET_DISTANCE_TO_GOAL = "get_current_distance"
 GOAL_POSITION_NAME = "goal_position"
+NEXT_OPTIMAL_ACTION = "next_optimal_action"
 
 # def _make_env_fn(
 #     config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
@@ -409,6 +412,14 @@ class VectorEnv:
     def get_distance_to_goal(self):
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (GET_DISTANCE_TO_GOAL, None)))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        return results
+    
+    def get_next_optimal_action(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (NEXT_OPTIMAL_ACTION, None)))
         results = []
         for read_fn in self._connection_read_fns:
             results.append(read_fn())
@@ -761,6 +772,20 @@ def load_scenes_episodes(config, split_name):
     
     return scene_episodes_dict
 
+# split a list into n chunks
+def chunks(lst, n):
+
+    result_chunks = []
+    for i in range(0, n):
+        result_chunks.append(list(lst[i::n]))
+
+    total_num = 0
+    for ch in result_chunks:
+        total_num += len(ch)
+
+    assert total_num == len(lst), "chunk result is wrong"
+    return result_chunks
+
 # construct vector envs from a data set
 def construct_envs_based_on_dataset(
     config,
@@ -785,47 +810,69 @@ def construct_envs_based_on_dataset(
     scene_episodes_dict = load_scenes_episodes(config=config, split_name=split_name)
     scenes = list(scene_episodes_dict.keys())
 
+    num_scenes = len(scenes)
+
     # shuffle scenes
-    if num_environments > 1:
-        if len(scenes) == 0:
-            raise RuntimeError(
-                "No scenes to load, multiple process logic relies on being able to split scenes uniquely between processes"
+    if num_environments <= 0:
+        raise RuntimeError(
+                "Number of environments should be at least 1"
             )
 
-        # to make sure that episodes assigned to the same env are from scenes as little as possible 
-        if len(scenes) < num_environments:
-            print(
-                "reduce the number of environments as there "
-                "aren't enough number of scenes.\n"
-                "num_environments: {}\tnum_scenes: {}".format(
-                    num_environments, len(scenes)
-                )
-            )
-            num_environments = len(scenes)
-            # print(
-            #     "num_environments > num_scenes: {} > {}".format(
-            #         num_environments, len(scenes)
-            #     )
-            # )
+    if num_scenes <= 0:
+        raise RuntimeError(
+            "No scenes to load, multiple process logic relies on being able to split scenes uniquely between processes"
+        )
 
-        random.shuffle(scenes)
+    # to make sure that episodes assigned to the same env are from scenes as little as possible 
+    random.shuffle(scenes)
 
-    # assign scenes to each env
-    # scene_splits is a list of scene list, len = num of environments
-    scene_splits: List[List[str]] = [[] for _ in range(num_environments)]
-    for idx, scene in enumerate(scenes):
-        scene_splits[idx % len(scene_splits)].append(scene)
-
-    assert sum(map(len, scene_splits)) == len(scenes)
-
-    # create episode list according to scene list
-    episode_splits = []
-    for scene_set in scene_splits:
-        episode_list = []
-        for sc in scene_set:
-            episode_list.extend(scene_episodes_dict[sc])
+    if num_scenes < num_environments:
+        # how many envs does each scene have
+        scene_shares: List[int] = [0 for _ in range(num_scenes)]
+        for env_idx in range(num_environments):
+            scene_shares[env_idx % num_scenes] += 1
         
-        episode_splits.append(episode_list)    
+        print("Assign %d envs to %d scenes"%(num_environments, num_scenes))
+        
+        scene_episodes_list = list(scene_episodes_dict.values())
+
+        episode_splits = []
+        for i, scene_episodes in enumerate(scene_episodes_list):
+            # split episodes in each scene according to shares
+            episode_chunks = chunks(scene_episodes, scene_shares[i])
+            for episode_chunk in episode_chunks:
+                episode_splits.append(episode_chunk)
+
+        # print(
+        #     "reduce the number of environments as there "
+        #     "aren't enough number of scenes.\n"
+        #     "num_environments: {}\tnum_scenes: {}".format(
+        #         num_environments, num_scenes
+        #     )
+        # )
+        # num_environments = num_scenes
+
+    # num_scenes >= num_environments
+    else:
+        
+        # assign scenes to each env
+        # scene_splits is a list of scene list, len = num of environments
+        scene_splits: List[List[str]] = [[] for _ in range(num_environments)]
+        for idx, scene in enumerate(scenes):
+            scene_splits[idx % len(scene_splits)].append(scene)
+
+
+        assert sum(map(len, scene_splits)) == num_scenes
+        print("Assign %d scenes to %d envs"%(num_scenes, num_environments))
+
+        # create episode list according to scene list for each environment
+        episode_splits = []
+        for scene_set in scene_splits:
+            episode_list = []
+            for sc in scene_set:
+                episode_list.extend(scene_episodes_dict[sc])
+            
+            episode_splits.append(episode_list)    
 
 
     # copy configs and compute seeds
@@ -891,3 +938,7 @@ def construct_envs_based_on_singel_scene(config, workers_ignore_signals: bool = 
         workers_ignore_signals=workers_ignore_signals,
     )
     return envs
+
+if __name__ == "__main__": 
+    lst = list(range(9))
+    print(chunks(lst, 4))

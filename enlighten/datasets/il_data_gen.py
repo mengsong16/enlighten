@@ -158,13 +158,16 @@ def check_episode_per_scene(train_scene_num, train_episode_num,
     same_scene_test_episode_num,
     same_start_goal_test_episode_num):
 
-    assert train_episode_num % train_scene_num == 0, "Error: train: episode num is not divisible by scene num"
+    if train_episode_num is not None:
+        assert train_episode_num % train_scene_num == 0, "Error: train: episode num is not divisible by scene num"
     assert across_scene_val_episode_num % across_scene_val_scene_num == 0, "Error: Across scene val: episode num is not divisible by scene num"
     assert across_scene_test_episode_num % across_scene_test_scene_num == 0, "Error: Across scene test: episode num is not divisible by scene num"
     assert same_scene_val_episode_num % train_scene_num == 0, "Error: Same scene val: episode num is not divisible by train scene num"
     assert same_scene_test_episode_num % train_scene_num == 0, "Error: Same scene test: episode num is not divisible by train scene num"
-    assert same_start_goal_val_episode_num % train_scene_num == 0, "Error: same start goal val: episode num is not divisible by train scene num"
-    assert same_start_goal_test_episode_num % train_scene_num == 0, "Error: same start goal test: episode num is not divisible by train scene num"
+    if same_start_goal_val_episode_num is not None:
+        assert same_start_goal_val_episode_num % train_scene_num == 0, "Error: same start goal val: episode num is not divisible by train scene num"
+    if same_start_goal_test_episode_num is not None:
+        assert same_start_goal_test_episode_num % train_scene_num == 0, "Error: same start goal test: episode num is not divisible by train scene num"
 
 
 # save a list of episodes to pickle file
@@ -333,6 +336,57 @@ def sample_train_episodes(train_scenes, train_episode_num,
     # save scene metadata
     save_scene_info(train_scenes, behavior_dataset_path, "train")
 
+# use all episodes from training scenes
+# same_scene: val is a subset of train episodes, val_mini is a subset of val episodes
+def sample_train_episodes_whole_scene(train_scenes,  
+    same_scene_val_episode_num, same_scene_val_mini_episode_num,
+    behavior_dataset_path, pointgoal_train_meta):
+
+    train_scene_num = len(train_scenes)
+    
+    val_episode_per_scene = same_scene_val_episode_num // train_scene_num
+    val_mini_episode_per_scene = same_scene_val_mini_episode_num // train_scene_num
+
+    train_episodes = []
+    sampled_val_episodes = []
+    sampled_val_mini_episodes = []
+    
+
+    for scene_id in train_scenes:
+        # collect all episodes from current scene
+        episodes = []
+        for data in pointgoal_train_meta[scene_id]:
+            episodes.append(data["episode"])
+       
+        # sample episodes from current scene for validation
+        # without replacement
+        val_episodes = random.sample(episodes, val_episode_per_scene)
+        
+        # sample val_mini episodes from val episodes
+        # without replacement
+        val_mini_episodes = random.sample(val_episodes, val_mini_episode_per_scene)
+        
+        # use all episodes in the scene for training
+        train_episodes.extend(episodes)
+        sampled_val_episodes.extend(val_episodes)
+        sampled_val_mini_episodes.extend(val_mini_episodes)
+
+    # check sampled episode number
+    assert same_scene_val_episode_num == len(sampled_val_episodes), "Sampled episode num is not desired episode num"
+    assert same_scene_val_mini_episode_num == len(sampled_val_mini_episodes), "Sampled episode num is not desired episode num"
+    
+    # save episode metadata
+    save_behavior_dataset_meta(train_episodes, 
+        behavior_dataset_path, "train")
+    save_behavior_dataset_meta(sampled_val_episodes, 
+        behavior_dataset_path, "same_scene_val")
+    save_behavior_dataset_meta(sampled_val_mini_episodes, 
+        behavior_dataset_path, "same_scene_val_mini")
+    
+    # save scene metadata
+    save_scene_info(train_scenes, behavior_dataset_path, "train")
+
+
 # sample episodes from val or test scenes
 def sample_across_scene_episodes(scenes, episode_num, 
     behavior_dataset_path, pointgoal_meta, split_name):
@@ -403,6 +457,61 @@ def sample_across_scene_val_val_mini_episodes(val_scenes,
     # save scene metadata
     save_scene_info(val_scenes, behavior_dataset_path, "across_scene_val")
     save_scene_info(val_scenes, behavior_dataset_path, "across_scene_val_mini")
+
+# pointgoal gibson dataset: train --> subset scenes --> behavior: train
+# pointgoal gibson dataset: val --> full --> behavior: val
+# behavior: val --> all scenes, subset episodes --> behavior: val_mini
+def generate_behavior_dataset_meta_whole_scene(yaml_name, 
+    behavior_dataset_path,
+    train_scene_num,  
+    same_scene_val_episode_num,
+    across_scene_val_mini_episode_num,
+    same_scene_val_mini_episode_num):
+
+    config_file = os.path.join(config_path, yaml_name)
+    config = parse_config(config_file)
+
+    pointgoal_train_meta, total_train_scene_num, total_train_episode_num = load_pointgoal_dataset_meta(config, "train")
+    pointgoal_val_meta, total_val_scene_num, total_val_episode_num = load_pointgoal_dataset_meta(config, "val")
+   
+    # use all val scenes
+    across_scene_val_scene_num = total_val_scene_num
+    across_scene_val_mini_scene_num = total_val_scene_num
+    val_scenes = list(pointgoal_val_meta.keys())
+    across_scene_val_episode_num = total_val_episode_num
+
+    # check divisible
+    check_episode_per_scene(train_scene_num, None, 
+    across_scene_val_scene_num, across_scene_val_episode_num,
+    same_scene_val_episode_num,
+    None,
+    across_scene_val_mini_scene_num, across_scene_val_mini_episode_num,
+    same_scene_val_mini_episode_num,
+    None)
+
+    # sample train scenes
+    if train_scene_num <= total_train_scene_num:
+        train_scene_list = pointgoal_train_meta.keys()
+        # sample without replacement
+        #train_scenes = random.sample(train_scene_list, train_scene_num)
+        train_scenes = ['/dataset/gibson/Rancocas.glb']
+        # verbose
+        print("Sampled scenes:")
+        print("train scenes: %s"%(train_scenes))
+    else:
+        print("Error: want to sample %d from %d scenes"%(train_scene_num, total_train_scene_num))  
+        exit()
+    
+    # sample train episodes
+    sample_train_episodes_whole_scene(train_scenes, 
+    same_scene_val_episode_num, same_scene_val_mini_episode_num,
+    behavior_dataset_path, pointgoal_train_meta) 
+
+    # use all val episodes
+    # and sample a subset of val episodes as val_mini
+    sample_across_scene_val_val_mini_episodes(val_scenes, 
+    across_scene_val_mini_episode_num,
+    behavior_dataset_path, pointgoal_val_meta)
 
 # pointgoal gibson dataset: train --> subset scenes --> behavior: train
 # pointgoal gibson dataset: val --> full --> behavior: val
@@ -638,7 +747,7 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
         # print(goal_position.shape)
         # print(state_position.shape)
     
-    # append an additional action STOP
+    # append an additional action STOP (besides the one at the end of the optimal action sequence)
     actions.append(0)
 
     # print(len(observations)) # n+1
@@ -1102,10 +1211,17 @@ if __name__ == "__main__":
     #     same_scene_val_mini_episode_num=20,
     #     same_start_goal_val_mini_episode_num=20)
 
+    generate_behavior_dataset_meta_whole_scene(yaml_name="imitation_learning_online_rnn.yaml", 
+        behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole",
+        train_scene_num=1,
+        same_scene_val_episode_num=1000,
+        across_scene_val_mini_episode_num=28,
+        same_scene_val_mini_episode_num=30)
+
     # ====== generate train episodes =======
-    generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
-        behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
-        split_name="train")
+    # generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
+    #     split_name="train")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(

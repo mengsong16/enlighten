@@ -120,7 +120,24 @@ eval_experiment_folder: "rnn-whole_trajectory_rel_goal_1_scene_normal-s1-2022081
 eval_checkpoint_file: ["ckpt_27.pth"] 
 eval_dir: "evaluation"
 
-
+# distributed
+# use distributed computation (DDPPO) or not
+force_distributed: true
+# Append the slurm job ID to the resume state filename if running a slurm job
+# This is useful when you want to have things from a different job but same
+# same checkpoint dir not resume.
+preemption_append_slurm_job_id: false
+# Save resume states only when running with slurm
+# This is nice if you don't want debug jobs to resume
+preemption_save_state_batch_only: false
+# Number of gradient updates between saving the resume state
+preemption_save_resume_state_interval: 100
+# The PyTorch distributed backend to use
+distrib_backend: GLOO
+# for DDPPO
+sync_frac: 0.6
+# default port
+default_port: 8860 
 
 
 

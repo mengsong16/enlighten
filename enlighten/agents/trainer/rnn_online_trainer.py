@@ -71,6 +71,7 @@ from enlighten.envs import MultiNavEnv
 from enlighten.utils.video_utils import generate_video, images_to_video, create_video, remove_jpg, BGR_mode
 from enlighten.tasks.measures import Measurements
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
+from enlighten.agents.common.other import get_obs_channel_num
 
 class BCOnlineTrainer(PPOTrainer):
     
@@ -80,28 +81,16 @@ class BCOnlineTrainer(PPOTrainer):
     envs: VectorEnv
     agent: RNNSequenceModel
 
-    def __init__(self, config_filename=None, resume_training=False):
-        # initialize parent class
-        super().__init__(config_filename)
-
-        self.resume_training = resume_training
-        if resume_training:
-            # resume training from checkpoint if "checkpoint_folder" indicate an existing file
-            # only load config here, later load model in the train
-            resume_state = load_resume_state(self.config)
-
-            # recover config from saved checkpoint
-            if resume_state is not None:
-                self.config = resume_state["config"]
-
+    def __init__(self, config_filename=None):
+        super().__init__()
+        assert config_filename is not None, "needs config file to initialize trainer"
+        config_file = os.path.join(config_path, config_filename)
+        self.config = parse_config(config_file)
+        self._flush_secs = 30
 
         self.agent = None
         self.envs = None
-        self.obs_transforms = []
-
-        self._static_encoder = False
-        self._encoder = None
-        self._obs_space = None
+    
 
         # Distributed if the world size would be
         # greater than 1
@@ -109,9 +98,11 @@ class BCOnlineTrainer(PPOTrainer):
         self._obs_batching_cache = ObservationBatchingCache()
 
     
-    def _setup_actor_critic_agent(self) -> None:
-        r"""Sets up actor critic and agent for PPO.
+    def _setup_agent(self) -> None:
+        r"""Sets up agent for BC
         """
+
+        # set up log
         log_path = os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"), "train.log")
         log_folder = os.path.dirname(log_path)
         if not os.path.exists(log_folder):
@@ -119,121 +110,25 @@ class BCOnlineTrainer(PPOTrainer):
 
         logger.add_filehandler(log_path)
 
-        if self.config.get("goal_format") == "pointgoal" and self.config.get("goal_coord_system") == "polar":
-            polar_point_goal = True
-        else:
-            polar_point_goal = False
-            
-        # if transform exists, apply it to observation space    
-        observation_space = self.obs_space
-        self.obs_transforms = get_active_obs_transforms(self.config)
-        observation_space = apply_obs_transforms_obs_space(
-            observation_space, self.obs_transforms
+        # create agent model
+        self.agent = RNNSequenceModel(
+            obs_channel = get_obs_channel_num(self.config),
+            obs_width = int(self.config.get("image_width")), 
+            obs_height = int(self.config.get("image_height")),
+            goal_dim=int(self.config.get("goal_dimension")),
+            goal_form=self.config.get("goal_form"),
+            act_num=int(self.config.get("action_number")),
+            max_ep_len=int(self.config.get("max_ep_len")),  
+            rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
+            obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+            goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+            act_embedding_size=int(self.config.get('act_embedding_size')), #32
+            rnn_type=self.config.get('rnn_type'),
+            supervise_value=self.config.get('supervise_value'),
+            domain_adaptation=self.config.get('domain_adaptation')
         )
-        self.obs_space = observation_space
-        
-        # print('-----------------------')
-        # print(observation_space)
-        # print(self.obs_space)
-        # print('-----------------------')
 
-        self._goal_obs_space = self.envs.get_goal_observation_space()
-
-        if self.config.get("state_coord_system") == "polar":
-            polar_state = True
-        else:
-            polar_state = False
-
-        # create actor critic
-        if self.config.get("visual_encoder") == "CNN":
-            self.actor_critic = CNNPolicy(observation_space=observation_space, 
-                goal_observation_space=self._goal_obs_space, 
-                polar_point_goal=polar_point_goal,
-                action_space=self.envs.action_spaces[0],
-                rnn_type=self.config.get("rnn_type"),
-                attention_type=str(self.config.get("attention_type")),
-                goal_input_location=str(self.config.get("goal_input_location")),
-                hidden_size=int(self.config.get("hidden_size")),
-                blind_agent = self.config.get("blind_agent"),
-                rnn_policy = self.config.get("rnn_policy"),
-                state_only = self.config.get("state_only"),
-                polar_state = polar_state,
-                cos_augmented_goal = self.config.get("cos_augmented_goal"),
-                cos_augmented_state = self.config.get("cos_augmented_state")
-                )
-        else:
-            # normalize with running mean and var if rgb images exist
-            # assume that 
-            self.actor_critic = ResNetPolicy(observation_space=observation_space, 
-                goal_observation_space=self._goal_obs_space, 
-                polar_point_goal=polar_point_goal,
-                action_space=self.envs.action_spaces[0],
-                rnn_type=self.config.get("rnn_type"),
-                attention_type=str(self.config.get("attention_type")),
-                goal_input_location=str(self.config.get("goal_input_location")),
-                hidden_size=int(self.config.get("hidden_size")),
-                normalize_visual_inputs="color_sensor" in observation_space,
-                attention = self.config.get("attention"),
-                blind_agent = self.config.get("blind_agent"),
-                rnn_policy = self.config.get("rnn_policy"),
-                state_only = self.config.get("state_only"),
-                polar_state = polar_state,
-                cos_augmented_goal = self.config.get("cos_augmented_goal"),
-                cos_augmented_state = self.config.get("cos_augmented_state") 
-                ) 
-
-        self.actor_critic.to(self.device)
-
-        # load whole pretrained model
-        if self.config.get("pretrained_visual_encoder") or self.config.get("pretrained_whole_model"):
-            pretrained_state = torch.load(
-                self.config.get("pretrained_model_path"), map_location="cpu"
-            )
-
-        # load pretrained actor critic
-        if self.config.get("pretrained_whole_model"):
-            self.actor_critic.load_state_dict(
-                {
-                    k[len("actor_critic.") :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                }
-            )
-        # load pretrained visual encoder in actor_critic    
-        elif self.config.get("pretrained_visual_encoder"):
-            prefix = "actor_critic.net.visual_encoder."
-            self.actor_critic.net.visual_encoder.load_state_dict(
-                {
-                    k[len(prefix) :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                    if k.startswith(prefix)
-                }
-            )
-        # freeze visual encoder if it is static
-        if not self.config.get("train_encoder"):
-            self._static_encoder = True
-            for param in self.actor_critic.net.visual_encoder.parameters():
-                param.requires_grad_(False)
-
-
-        #if self.config.RL.DDPPO.reset_critic:
-        # reset the critic linear layer
-        nn.init.orthogonal_(self.actor_critic.critic.fc.weight)
-        nn.init.constant_(self.actor_critic.critic.fc.bias, 0)
-
-        # create agent
-        self.agent = (DDPPO if self._is_distributed else PPO)(
-            actor_critic=self.actor_critic,
-            clip_param=float(self.config.get("clip_param")),
-            ppo_epoch=int(self.config.get("ppo_epoch")),
-            num_mini_batch=int(self.config.get("num_mini_batch")),
-            value_loss_coef=float(self.config.get("value_loss_coef")),
-            entropy_coef=float(self.config.get("entropy_coef")),
-            kl_coef=float(self.config.get("kl_coef")),
-            lr=float(self.config.get("lr")),
-            eps=float(self.config.get("eps")),
-            max_grad_norm=float(self.config.get("max_grad_norm")),
-            use_normalized_advantage=self.config.get("use_normalized_advantage"),
-        )
+        self.agent.to(self.device)
 
 
     # initialize training, reset envs
@@ -253,26 +148,19 @@ class BCOnlineTrainer(PPOTrainer):
             )
             if rank0_only():
                 logger.info(
-                    "Initialized DD-PPO with {} workers".format(
+                    "Initialized BC with {} workers".format(
                         torch.distributed.get_world_size()  # world_size – Number of processes participating in the job
                     )
                 )
 
-            # TO DO: need to check whether this may make difference for multi-processes
-            # set torch and simulator gpu id according to local rank, not config file
-            self.config["torch_gpu_id"] = local_rank
-            self.config["simulator_gpu_id"] = local_rank
+            # set gpu id according to local rank, not config file
+            self.config["gpu_id"] = local_rank
             # set seed according to rank and total num of environments
             # Multiply by the number of simulators to make sure they also get unique seeds
             self.config["seed"] += (
                 torch.distributed.get_rank() * int(self.config.get("num_environments"))
             )
-            #self.config.freeze()
-
-            # random.seed(self.config.get("seed"))
-            # np.random.seed(self.config.get("seed"))
-            # torch.manual_seed(self.config.get("seed"))
-
+            
             # set seed (except env seed)
             set_seed_except_env_seed(self.config["seed"])
 
@@ -295,9 +183,9 @@ class BCOnlineTrainer(PPOTrainer):
         # create vector envs and dataset
         self._init_envs(split_name="train")
 
-        # use gpu or not
+        # set device to gpu or not
         if torch.cuda.is_available():
-            self.device = torch.device("cuda", self.config.get("torch_gpu_id"))
+            self.device = torch.device("cuda", self.config.get("gpu_id"))
             torch.cuda.set_device(self.device)
         else:
             self.device = torch.device("cpu")
@@ -306,8 +194,8 @@ class BCOnlineTrainer(PPOTrainer):
         if rank0_only() and not os.path.isdir(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"))):
             os.makedirs(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name")))
 
-        # setup actor critic of agent
-        self._setup_actor_critic_agent()
+        # setup agent
+        self._setup_agent()
         if self._is_distributed:
             self.agent.init_distributed(find_unused_params=True)
 
@@ -317,24 +205,9 @@ class BCOnlineTrainer(PPOTrainer):
             )
         )
 
-        #obs_space = self._obs_space
-        if self._static_encoder:
-            self._encoder = self.actor_critic.net.visual_encoder
-            # TO DO: static visual features as observations
-            # obs_space = spaces.Dict(
-            #     {
-            #         "visual_features": spaces.Box(
-            #             low=np.finfo(np.float32).min,
-            #             high=np.finfo(np.float32).max,
-            #             shape=self._encoder.output_shape,
-            #             dtype=np.float32,
-            #         ),
-            #         **obs_space.spaces,
-            #     }
-            # )
-
         # create rollout buffer
         self._combined_goal_obs_space = self.envs.get_combined_goal_obs_space()
+        
         # use single or double buffer
         self._nbuffers = 2 if self.config.get("use_double_buffered_sampler") else 1
         self.rollouts = RolloutStorage(
@@ -350,19 +223,13 @@ class BCOnlineTrainer(PPOTrainer):
 
         # reset envs
         observations = self.envs.reset()
-        # get initial observations and transform them
-        
+
+        # get initial observations
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
         )
-        batch = apply_obs_transforms_batch(batch, self.obs_transforms)
-
-        # static encoder visual features
-        if self._static_encoder:
-            with torch.no_grad():
-                batch["visual_features"] = self._encoder(batch)
-
-        # add observation to rollout buffer
+        
+        # add initial observations to rollout buffer
         self.rollouts.buffers["observations"][0] = batch
 
         # initialize current episode reward, running_episode_stats to 0
@@ -384,88 +251,6 @@ class BCOnlineTrainer(PPOTrainer):
         self.env_time = 0.0
         self.pth_time = 0.0
         self.t_start = time.time()
-
-    # save checkpoint
-    @rank0_only
-    @profiling_utils.RangeContext("save_checkpoint")
-    def save_checkpoint(
-        self, file_name: str, extra_state: Optional[Dict] = None
-    ) -> None:
-        r"""Save checkpoint with specified name.
-
-        Args:
-            file_name: file name for checkpoint
-
-        Returns:
-            None
-        """
-        checkpoint = {
-            "state_dict": self.agent.state_dict(),
-            "config": self.config,
-        }
-        if extra_state is not None:
-            checkpoint["extra_state"] = extra_state
-
-        torch.save(
-            checkpoint, os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"), file_name)
-        )
-
-    # load checkpoint
-    def load_checkpoint(self, checkpoint_path: str, *args, **kwargs) -> Dict:
-        r"""Load checkpoint of specified path as a dict.
-
-        Args:
-            checkpoint_path: path of target checkpoint
-            *args: additional positional args
-            **kwargs: additional keyword args
-
-        Returns:
-            dict containing checkpoint info
-        """
-        return torch.load(checkpoint_path, *args, **kwargs)
-
-
-    # extract scalars from info
-    METRICS_BLACKLIST = {"top_down_map", "collisions.is_collision"}
-
-    @classmethod
-    def _extract_scalars_from_info(
-        cls, info: Dict[str, Any]
-    ) -> Dict[str, float]:
-        result = {}
-        for k, v in info.items():
-            if k in cls.METRICS_BLACKLIST:
-                continue
-
-            if isinstance(v, dict):
-                result.update(
-                    {
-                        k + "." + subk: subv
-                        for subk, subv in cls._extract_scalars_from_info(
-                            v
-                        ).items()
-                        if (k + "." + subk) not in cls.METRICS_BLACKLIST
-                    }
-                )
-            # Things that are scalar-like will have an np.size of 1.
-            # Strings also have an np.size of 1, so explicitly ban those
-            elif np.size(v) == 1 and not isinstance(v, str):
-                result[k] = float(v)
-
-        return result
-
-    # extract scalars from infos
-    @classmethod
-    def _extract_scalars_from_infos(
-        cls, infos: List[Dict[str, Any]]
-    ) -> Dict[str, List[float]]:
-
-        results = defaultdict(list)
-        for i in range(len(infos)):
-            for k, v in cls._extract_scalars_from_info(infos[i]).items():
-                results[k].append(v)
-
-        return results
 
     # execute a policy, push the actions to rollout buffer
     def _compute_actions_and_step_envs(self, buffer_index: int = 0):
@@ -575,8 +360,7 @@ class BCOnlineTrainer(PPOTrainer):
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
         )
-        batch = apply_obs_transforms_batch(batch, self.obs_transforms)
-
+        
         # get rewards
         rewards = torch.tensor(
             rewards_l,
@@ -840,31 +624,7 @@ class BCOnlineTrainer(PPOTrainer):
             optimizer=self.agent.optimizer,
             lr_lambda=lambda x: 1 - self.percent_done(),
         )
-
-        # load state
-        if self.resume_training:
-            resume_state = load_resume_state(self.config)
-            if resume_state is not None:
-                self.agent.load_state_dict(resume_state["state_dict"])
-                self.agent.optimizer.load_state_dict(resume_state["optim_state"])
-                lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
-
-                requeue_stats = resume_state["requeue_stats"]
-                self.env_time = requeue_stats["env_time"]
-                self.pth_time = requeue_stats["pth_time"]
-                self.num_steps_done = requeue_stats["num_steps_done"]
-                self.num_updates_done = requeue_stats["num_updates_done"]
-                self._last_checkpoint_percent = requeue_stats[
-                    "_last_checkpoint_percent"
-                ]
-                count_checkpoints = requeue_stats["count_checkpoints"]
-                prev_time = requeue_stats["prev_time"]
-
-                self.running_episode_stats = requeue_stats["running_episode_stats"]
-                self.window_episode_stats.update(
-                    requeue_stats["window_episode_stats"]
-                )
-
+        
         # create tensorboard
         tensorboard_folder = os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name"))
         if not os.path.exists(tensorboard_folder):
@@ -920,7 +680,8 @@ class BCOnlineTrainer(PPOTrainer):
                     requeue_job()
 
                     return
-                # switch agent (actor-critic model) to evaluation mode
+                
+                # switch agent to evaluation mode
                 self.agent.eval()
                 count_steps_delta = 0
                 profiling_utils.range_push("rollouts loop")
@@ -1016,145 +777,31 @@ class BCOnlineTrainer(PPOTrainer):
             avg_value = measure.get_metric() / float(n_episodes)
             measure.set_metric(avg_value) 
 
-    # To check
-    def _eval_checkpoint_single_scene(
-        self,
-        checkpoint_idx: int = 0,
-        checkpoint_path=None,
-        rendering=True,
-        remove_images=True,
-        save_text_results=True
-    ):
-        print("Evaluating a single scene ...")
-        
-        env =  NavEnv(config_file=self.config, dataset=None)
-        obs_transforms = get_active_obs_transforms(self.config)
-        model = load_ppo_model(config=self.config, 
-                observation_space=env.observation_space, 
-                goal_observation_space=env.get_goal_observation_space(), 
-                action_space=env.action_space,
-                device=self.device,
-                obs_transforms=obs_transforms,
-                checkpoint_file=checkpoint_path)
-        
-        # set model to eval mode
-        model.eval()
-        
-        n_episodes = int(self.config.get("test_episode_count"))
+    # save checkpoint
+    @rank0_only
+    @profiling_utils.RangeContext("save_checkpoint")
+    def save_checkpoint(
+        self, file_name: str, extra_state: Optional[Dict] = None
+    ) -> None:
+        r"""Save checkpoint with specified name.
 
-        eval_metrics = list(self.config.get("eval_metrics"))
-        self.avg_measurements = Measurements(measure_ids=eval_metrics, env=env, config=self.config)
-        self.avg_measurements.init_all_to_zero()
-        self.avg_measurements.print_measures()
+        Args:
+            file_name: file name for checkpoint
 
-        success_num_steps = []
-        for episode_index in range(n_episodes):
-            # reset env
-            obs = env.reset() 
-            # initialize model data structures
-            recurrent_hidden_states, not_done_masks, prev_actions = init_ppo_inputs(model=model, config=self.config, 
-                num_envs=1, device=self.device)
-            
-            print('-----------------------------')
-            print('Episode: %d'%(episode_index))
-            env.print_agent_state()
-            print("Goal position: %s"%(env.goal_position))
-            print('-----------------------------')
+        Returns:
+            None
+        """
+        checkpoint = {
+            "state_dict": self.agent.state_dict(),
+            "config": self.config,
+        }
+        if extra_state is not None:
+            checkpoint["extra_state"] = extra_state
 
-            step = 0
-            done = False
-            while True: 
-                batch = get_ppo_batch(observations=[obs], 
-                    device=self.device, 
-                    cache=self._obs_batching_cache, 
-                    obs_transforms=obs_transforms)
-                #action = env.action_space.sample()
-                actions, recurrent_hidden_states = ppo_act(model=model, 
-                    batch=batch, 
-                    recurrent_hidden_states=recurrent_hidden_states, 
-                    prev_actions=prev_actions, not_done_masks=not_done_masks, 
-                    deterministic=False)
-                
-                with torch.no_grad():
-                    prev_actions.copy_(actions)
-                
-                action = actions[0][0].item()
+        torch.save(
+            checkpoint, os.path.join(checkpoints_path, self.config.get("experiment_name"), file_name)
+        )
 
-                obs, reward, done, info = env.step(action)
-
-                not_done_masks = torch.tensor(
-                    [[not done]],
-                    dtype=torch.bool,
-                    device=self.device,
-                )
-
-                #print("Step: %d, Action: %d, Reward: %f"%(step, action, reward))
-
-                if rendering:    
-                    env.render(mode="color_sensor")
-
-                step += 1
-
-                if done:
-                    env.measurements.print_measures()
-                    self.update_avg_measurements(env.measurements)
-                    break   
-
-            # update success steps
-            #print(env.measurements.measures["success"]._metric)
-            if env.is_success():
-                success_num_steps.append(step+1)
-                print("Episode %d: succeed, steps: %d"%(episode_index, step+1))   
-            else:
-                print("Episode %d: fail"%(episode_index)) 
-            print("------------------------------------------------")       
-        
-        # average metrics over all episodes
-        self.average_avg_measurements(n_episodes)
-
-        print("-------------- Evaluation results --------------")
-        string_n_episode = "Number of episodes: %d"%(n_episodes)
-        print(string_n_episode)
-        ms = self.avg_measurements.print_measures()
-        print("------------------------------------------------")
-        
-        sn = ""
-        if len(success_num_steps) > 0:
-            success_num_steps = np.array(success_num_steps)
-            sn += "min steps of successful episode: %d\n"%(np.amin(success_num_steps))
-            sn += "mean steps of successful episode: %d\n"%(np.mean(success_num_steps))
-            sn += "max steps of successful episode: %d\n"%(np.amax(success_num_steps))
-        print(sn)
-        print("------------------------------------------------")
-        
-        # save evaluation results to txt
-        if save_text_results:
-            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
-            if not os.path.exists(video_path):
-                os.mkdir(video_path)
-
-            txt_name =  f"ckpt-{checkpoint_idx}-eval-results.txt"
-            with open(os.path.join(video_path, txt_name), 'w') as outfile:
-                outfile.write(string_n_episode+"\n")
-                outfile.write(ms)
-                outfile.write(sn)
-            print("Saved evaluation file.")    
-        # save testing episodes to video
-        video_name = f"ckpt-{checkpoint_idx}"
-
-        if "disk" in list(self.config.get("eval_video_option")):
-            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
-            if not os.path.exists(video_path):
-                os.makedirs(video_path)
-
-            is_BGR_mode = BGR_mode(self.config)
-            create_video(video_path=video_path, BGR_mode=is_BGR_mode, video_name=video_name)
-
-            if remove_images:
-                remove_jpg(video_path)
-                print("Images removed")
-        
-        print('Done.')
 
     def get_number_of_eval_episodes(self):
 
@@ -1393,6 +1040,6 @@ class BCOnlineTrainer(PPOTrainer):
             print("Saved evaluation file: %s"%(txt_name)) 
 
 if __name__ == "__main__":
-   trainer = BCOnlineTrainer(config_filename=os.path.join(config_path, "imitation_learning_online_rnn.yaml"), resume_training=False)
+   trainer = BCOnlineTrainer(config_filename=os.path.join(config_path, "imitation_learning_online_rnn.yaml"))
    trainer.train()
    #trainer.eval()

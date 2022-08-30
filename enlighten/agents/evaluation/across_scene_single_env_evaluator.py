@@ -410,11 +410,12 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
     
 # evaluate RNN BC or PPO in a single process here
 if __name__ == "__main__":
-    eval_splits = ["same_start_goal_val", "same_scene_val", "across_scene_val"]
+    #eval_splits = ["same_start_goal_val", "same_scene_val", "across_scene_val"]
+    eval_splits = ["same_scene_val", "across_scene_val"]
     #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
     evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_multi_envs.yaml") 
     #evaluator.evaluate_over_checkpoints(sample=True)
-    evaluator.plot_checkpoint_graphs(checkpoint_interval_steps=200000)
+    evaluator.plot_checkpoint_graphs(checkpoint_interval_steps=500000)
     
 
         

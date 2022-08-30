@@ -140,14 +140,16 @@ class BaseTrainer:
                             os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name")), prev_ckpt_ind
                         )
                         time.sleep(2)  # sleep for 2 secs before polling again
-                    logger.info(f"=======current_ckpt: {current_ckpt}=======")
-                    
-                    prev_ckpt_ind += 1
-                    self._eval_checkpoint(
-                        checkpoint_path=current_ckpt,
-                        writer=writer,
-                        checkpoint_index=prev_ckpt_ind,
-                    )
+
+                    if ".pth" in current_ckpt:    
+                        logger.info(f"=======current_ckpt: {current_ckpt}=======")
+                        
+                        prev_ckpt_ind += 1
+                        self._eval_checkpoint(
+                            checkpoint_path=current_ckpt,
+                            writer=writer,
+                            checkpoint_index=prev_ckpt_ind,
+                        )
 
     def _eval_checkpoint(
         self,

@@ -26,6 +26,7 @@ from enlighten.utils.config_utils import parse_config
 from enlighten.utils.path import *
 
 import copy
+import pickle
 
 class BaseTrainer:
     r"""Generic trainer class that serves as a base template for more
@@ -110,6 +111,14 @@ class BaseTrainer:
             if not os.path.exists(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))):
                 os.makedirs(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name")), exist_ok=True) # exist_ok=True, won't raise any error if folder exists
 
+        split_names = list(self.config.get("eval_splits"))
+        success_rate = {}
+        spl = {}
+        checkpoint_indices = []
+        for split_name in split_names:
+            success_rate[split_name] = []
+            spl[split_name] = []
+
         with TensorboardWriter(
             os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), flush_secs=self.flush_secs
         ) as writer:
@@ -124,13 +133,14 @@ class BaseTrainer:
                         ckpt_idx = proposed_index
                     else:
                         ckpt_idx = 0
-                    self._eval_checkpoint(
+                    checkpoint_indices.append(ckpt_idx)
+                    current_checkpoint_results = self._eval_checkpoint(
                         single_checkpoint,
                         writer,
                         checkpoint_index=ckpt_idx,
                     )
+            # evaluate all checkpoints in the checkpoint directory in order        
             else:
-                # evaluate all checkpoints in the checkpoint directory in order
                 prev_ckpt_ind = -1
                 while True:
                     current_ckpt = None
@@ -145,11 +155,30 @@ class BaseTrainer:
                         logger.info(f"=======current_ckpt: {current_ckpt}=======")
                         
                         prev_ckpt_ind += 1
-                        self._eval_checkpoint(
+                        checkpoint_indices.append(prev_ckpt_ind)
+                        current_checkpoint_results = self._eval_checkpoint(
                             checkpoint_path=current_ckpt,
                             writer=writer,
                             checkpoint_index=prev_ckpt_ind,
                         )
+            # record current checkpoint result
+            for split_name in split_names:
+                success_rate[split_name].append(current_checkpoint_results[split_name]["success_rate"])
+                spl[split_name].append(current_checkpoint_results[split_name]["spl"])            
+
+        # dump results
+        dump_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
+        with open(os.path.join(dump_folder, "success_rate.pickle"), 'wb') as handle:
+            pickle.dump(success_rate, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+        with open(os.path.join(dump_folder, "spl.pickle"), 'wb') as handle:
+            pickle.dump(spl, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+        with open(os.path.join(dump_folder, "checkpoint_list.pickle"), 'wb') as handle:
+            pickle.dump(checkpoint_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+        print("Evaluated checkpoints: %s"%str(checkpoint_indices))
+        print("Done")
 
     def _eval_checkpoint(
         self,

@@ -103,7 +103,7 @@ class BCOnlineTrainer(PPOTrainer):
         """
 
         # set up log
-        log_path = os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"), "train.log")
+        log_path = os.path.join(checkpoints_path, self.config.get("experiment_name"), "train.log")
         log_folder = os.path.dirname(log_path)
         if not os.path.exists(log_folder):
             os.makedirs(log_folder)
@@ -191,8 +191,8 @@ class BCOnlineTrainer(PPOTrainer):
             self.device = torch.device("cpu")
 
         # make checkpoint dir
-        if rank0_only() and not os.path.isdir(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"))):
-            os.makedirs(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name")))
+        if rank0_only() and not os.path.isdir(os.path.join(checkpoints_path, self.config.get("experiment_name"))):
+            os.makedirs(os.path.join(checkpoints_path, self.config.get("experiment_name")))
 
         # setup agent
         self._setup_agent()
@@ -762,79 +762,6 @@ class BCOnlineTrainer(PPOTrainer):
 
             self.envs.close()
 
-    # sum up
-    def update_avg_measurements(self, step_measurements):
-        for k,v in self.avg_measurements.measures.items():
-            if k not in step_measurements.measures:
-                print("Error: evaluation metrics must appear as step metrics")
-            else:
-                #print(step_measurements.measures[k].get_metric())
-                new_value = v.get_metric() + step_measurements.measures[k].get_metric()
-                v.set_metric(new_value)
-
-    def average_avg_measurements(self, n_episodes):
-        for measure in self.avg_measurements.measures.values():
-            avg_value = measure.get_metric() / float(n_episodes)
-            measure.set_metric(avg_value) 
-
-    # save checkpoint
-    @rank0_only
-    @profiling_utils.RangeContext("save_checkpoint")
-    def save_checkpoint(
-        self, file_name: str, extra_state: Optional[Dict] = None
-    ) -> None:
-        r"""Save checkpoint with specified name.
-
-        Args:
-            file_name: file name for checkpoint
-
-        Returns:
-            None
-        """
-        checkpoint = {
-            "state_dict": self.agent.state_dict(),
-            "config": self.config,
-        }
-        if extra_state is not None:
-            checkpoint["extra_state"] = extra_state
-
-        torch.save(
-            checkpoint, os.path.join(checkpoints_path, self.config.get("experiment_name"), file_name)
-        )
-
-
-    def get_number_of_eval_episodes(self):
-
-        number_of_eval_episodes = self.config.get("test_episode_count")
-        # evaluate on all episodes in the dataset
-        if number_of_eval_episodes == -1:
-            # sum over all envs
-            number_of_eval_episodes = sum(self.envs.number_of_episodes)
-        else:
-            total_num_eps = sum(self.envs.number_of_episodes)
-            if total_num_eps < number_of_eval_episodes:
-                logger.warn(
-                    f"Config specified {number_of_eval_episodes} eval episodes"
-                    ", dataset only has {total_num_eps}."
-                )
-                logger.warn(f"Evaluating with {total_num_eps} instead.")
-                number_of_eval_episodes = total_num_eps
-
-        print("===> Number of eval environments: %d"%(self.config.get("num_environments")))
-        print("===> Number of eval episodes: %d"%(number_of_eval_episodes))        
-    
-        return number_of_eval_episodes
-    
-    # evaluate a checkpoint on all datasets
-    def _eval_checkpoint_all_datasets(
-        self,
-        checkpoint_idx,
-        checkpoint_path
-    ):
-        split_names = list(self.config.get("eval_splits"))
-        for split_name in split_names:
-            self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx, checkpoint_path=checkpoint_path)
-
     # evaluate a checkpoint on one dataset
     def _eval_checkpoint_one_dataset(
         self,
@@ -1007,37 +934,6 @@ class BCOnlineTrainer(PPOTrainer):
 
         # close envs
         self.envs.close()
-
-    def record_eval_metrics(self, stats_episodes, checkpoint_idx, split_name, save_text_results):
-        num_episodes = len(stats_episodes)
-        string_n_episode = "Number of episodes: %d \n"%(num_episodes)
-
-        aggregated_stats = {}
-        # average metrics
-        for stat_key in next(iter(stats_episodes.values())).keys():
-            aggregated_stats[stat_key] = (
-                sum(v[stat_key] for v in stats_episodes.values())
-                / num_episodes
-            )
-
-        # print average metrics
-        metric_string = ""
-        for k, v in aggregated_stats.items():
-            cur_string = f"Average episode {k}: {v:.4f}\n"
-            logger.info(cur_string)
-            metric_string += cur_string
-    
-        # save evaluation results to txt
-        if save_text_results:
-            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
-            if not os.path.exists(video_path):
-                os.mkdir(video_path)
-
-            txt_name =  f"ckpt_{checkpoint_idx}-{split_name}-eval_results.txt"
-            with open(os.path.join(video_path, txt_name), 'w') as outfile:
-                outfile.write(string_n_episode)
-                outfile.write(metric_string)
-            print("Saved evaluation file: %s"%(txt_name)) 
 
 if __name__ == "__main__":
    trainer = BCOnlineTrainer(config_filename=os.path.join(config_path, "imitation_learning_online_rnn.yaml"))

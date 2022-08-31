@@ -88,7 +88,7 @@ class PPOTrainer(BaseRLTrainer):
 
         self.resume_training = resume_training
         if resume_training:
-            # resume training from checkpoint if "checkpoint_folder" indicate an existing file
+            # resume training from checkpoint if checkpoints_path indicate an existing file
             resume_state = load_resume_state(self.config)
 
             # recover config from saved checkpoint
@@ -137,7 +137,7 @@ class PPOTrainer(BaseRLTrainer):
     def _setup_actor_critic_agent(self) -> None:
         r"""Sets up actor critic and agent for PPO.
         """
-        log_path = os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"), "train.log")
+        log_path = os.path.join(checkpoints_path, self.config.get("experiment_name"), "train.log")
         log_folder = os.path.dirname(log_path)
         if not os.path.exists(log_folder):
             os.makedirs(log_folder)
@@ -346,8 +346,8 @@ class PPOTrainer(BaseRLTrainer):
             self.device = torch.device("cpu")
 
         # make checkpoint dir
-        if rank0_only() and not os.path.isdir(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"))):
-            os.makedirs(os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name")))
+        if rank0_only() and not os.path.isdir(os.path.join(checkpoints_path, self.config.get("experiment_name"))):
+            os.makedirs(os.path.join(checkpoints_path, self.config.get("experiment_name")))
 
         # setup actor critic of agent
         self._setup_actor_critic_agent()
@@ -450,7 +450,7 @@ class PPOTrainer(BaseRLTrainer):
             checkpoint["extra_state"] = extra_state
 
         torch.save(
-            checkpoint, os.path.join(root_path, self.config.get("checkpoint_folder"), self.config.get("experiment_name"), file_name)
+            checkpoint, os.path.join(checkpoints_path, self.config.get("experiment_name"), file_name)
         )
 
     # load checkpoint
@@ -1050,10 +1050,12 @@ class PPOTrainer(BaseRLTrainer):
         writer: TensorboardWriter,
         checkpoint_index: int = 0):
         if self.config.get("single_scene") == True:
-            self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, checkpoint_path=checkpoint_path, rendering=False)
+            results = self._eval_checkpoint_single_scene(checkpoint_idx=checkpoint_index, checkpoint_path=checkpoint_path, rendering=False)
         else:
             
-            self._eval_checkpoint_all_datasets(checkpoint_idx=checkpoint_index, checkpoint_path=checkpoint_path)
+            results = self._eval_checkpoint_all_datasets(checkpoint_idx=checkpoint_index, checkpoint_path=checkpoint_path)
+
+        return results
 
     # sum up
     def update_avg_measurements(self, step_measurements):
@@ -1210,6 +1212,9 @@ class PPOTrainer(BaseRLTrainer):
         
         print('Done.')
 
+        # dummy 
+        return {}
+
     def get_number_of_eval_episodes(self):
 
         number_of_eval_episodes = self.config.get("test_episode_count")
@@ -1232,15 +1237,20 @@ class PPOTrainer(BaseRLTrainer):
     
         return number_of_eval_episodes
     
-    # evaluate a checkpoint on all datasets
+    # evaluate a checkpoint on all datasets / splits
     def _eval_checkpoint_all_datasets(
         self,
         checkpoint_idx,
         checkpoint_path
     ):
+        results = {}
         split_names = list(self.config.get("eval_splits"))
         for split_name in split_names:
-            self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx, checkpoint_path=checkpoint_path)
+            res = self._eval_checkpoint_one_dataset(split_name=split_name, checkpoint_idx=checkpoint_idx, checkpoint_path=checkpoint_path)
+            # add [success_rate, spl] to results
+            results[split_name] = res
+        
+        return results
 
     # evaluate a checkpoint on one dataset
     def _eval_checkpoint_one_dataset(
@@ -1409,7 +1419,7 @@ class PPOTrainer(BaseRLTrainer):
             )
             
         # evaluation has done, collect and record metrics
-        self.record_eval_metrics(stats_episodes=stats_episodes,
+        success_rate, spl = self.record_eval_metrics(stats_episodes=stats_episodes,
                     checkpoint_idx = checkpoint_idx,
                     split_name = split_name,
                     save_text_results=save_text_results)
@@ -1417,7 +1427,12 @@ class PPOTrainer(BaseRLTrainer):
         # close envs
         self.envs.close()
 
+        return {"success_rate":success_rate, "spl":spl}
+
     def record_eval_metrics(self, stats_episodes, checkpoint_idx, split_name, save_text_results):
+        success_rate = 0.0
+        spl = 0.0
+
         num_episodes = len(stats_episodes)
         string_n_episode = "Number of episodes: %d \n"%(num_episodes)
 
@@ -1434,6 +1449,10 @@ class PPOTrainer(BaseRLTrainer):
         for k, v in aggregated_stats.items():
             cur_string = f"Average episode {k}: {v:.4f}\n"
             logger.info(cur_string)
+            if "success" in k:
+                success_rate = v
+            elif "spl" in k:
+                spl = v 
             metric_string += cur_string
     
         # save evaluation results to txt
@@ -1447,6 +1466,8 @@ class PPOTrainer(BaseRLTrainer):
                 outfile.write(string_n_episode)
                 outfile.write(metric_string)
             print("Saved evaluation file: %s"%(txt_name)) 
+        
+        return success_rate, spl
 
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)

@@ -122,8 +122,7 @@ total_num_steps: 300000 #500000 #300000   # 75e6
 # checkpoint
 # only one of them can be used
 num_checkpoints: 10 #100
-checkpoint_interval: -1
-checkpoint_folder: "checkpoints"  
+checkpoint_interval: -1  
 # observation transformations
 enabled_transforms: []
 

@@ -661,6 +661,8 @@ class BCOnlineTrainer(PPOTrainer):
                         window_episode_stats=dict(self.window_episode_stats),
                     )
 
+                    # note that the saved state has more information than the saved checkpoint
+                    # checkpoint only include state_dict and config
                     save_resume_state(
                         dict(
                             state_dict=self.agent.state_dict(),

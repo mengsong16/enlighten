@@ -139,33 +139,48 @@ class BaseTrainer:
                         writer,
                         checkpoint_index=ckpt_idx,
                     )
+                    # record current checkpoint result
+                    for split_name in split_names:
+                        success_rate[split_name].append(current_checkpoint_results[split_name]["success_rate"])
+                        spl[split_name].append(current_checkpoint_results[split_name]["spl"])            
+
             # evaluate all checkpoints in the checkpoint directory in order        
             else:
-                prev_ckpt_ind = -1
+                prev_file_ind = -1
+                #while True:
+                current_file = "start"
                 while True:
-                    current_ckpt = None
-                    while current_ckpt is None:
-                        # pull out current ckpt (prev_ckpt_ind+1)
-                        current_ckpt = poll_checkpoint_folder(
-                            os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name")), prev_ckpt_ind
-                        )
-                        time.sleep(2)  # sleep for 2 secs before polling again
+                    # pull out current file (a filename or None)
+                    current_file = poll_checkpoint_folder(
+                        os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name")), prev_file_ind
+                    )
+                    #time.sleep(2)  # sleep for 2 secs before polling again
+                    if current_file is None:
+                        break
 
-                    if ".pth" in current_ckpt:    
-                        logger.info(f"=======current_ckpt: {current_ckpt}=======")
-                        
-                        prev_ckpt_ind += 1
-                        checkpoint_indices.append(prev_ckpt_ind)
+                    #print(current_file)
+                    
+                    # if it is a checkpoint file, evaluate it
+                    if ".pth" in current_file:    
+                        logger.info(f"=======current ckpt file: {current_file}=======")
+                        # extract checkpoint id
+                        current_ckpt_ind = get_checkpoint_id(current_file)
+                        checkpoint_indices.append(current_ckpt_ind)
                         current_checkpoint_results = self._eval_checkpoint(
-                            checkpoint_path=current_ckpt,
+                            checkpoint_path=current_file,
                             writer=writer,
-                            checkpoint_index=prev_ckpt_ind,
+                            checkpoint_index=current_ckpt_ind,
                         )
-            # record current checkpoint result
-            for split_name in split_names:
-                success_rate[split_name].append(current_checkpoint_results[split_name]["success_rate"])
-                spl[split_name].append(current_checkpoint_results[split_name]["spl"])            
+                        # record current checkpoint result
+                        for split_name in split_names:
+                            success_rate[split_name].append(current_checkpoint_results[split_name]["success_rate"])
+                            spl[split_name].append(current_checkpoint_results[split_name]["spl"])            
 
+                    
+                    # next file
+                    prev_file_ind += 1
+
+            
         # dump results
         dump_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
         with open(os.path.join(dump_folder, "success_rate.pickle"), 'wb') as handle:

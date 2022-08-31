@@ -963,7 +963,9 @@ class PPOTrainer(BaseRLTrainer):
                     requeue_job()
 
                     return
+                
                 # switch agent (actor-critic model) to evaluation mode
+                # collect data
                 self.agent.eval()
                 count_steps_delta = 0
                 profiling_utils.range_push("rollouts loop")

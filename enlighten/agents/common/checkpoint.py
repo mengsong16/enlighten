@@ -61,9 +61,11 @@ def poll_checkpoint_folder(
     assert os.path.isdir(checkpoint_folder), (
         f"invalid checkpoint folder " f"path {checkpoint_folder}"
     )
+    # get all files in checkpoint_folder
     models_paths = list(
         filter(os.path.isfile, glob.glob(checkpoint_folder + "/*"))
     )
+    # sort these files by last modification time
     models_paths.sort(key=os.path.getmtime)
     ind = previous_ckpt_ind + 1
     if ind < len(models_paths):

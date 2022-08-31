@@ -279,6 +279,7 @@ class VectorEnv:
                     if isinstance(env, (NavEnv, MultiNavEnv, gym.Env)):
                         # NavEnv or MultiNavEnv should have the same iterface for reset and step
                         observations, reward, done, info = env.step(**data)
+                        # if done, automatically reset the environment
                         if auto_reset_done and done:
 
                             observations = env.reset()

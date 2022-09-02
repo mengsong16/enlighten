@@ -255,6 +255,8 @@ class BCOnlineTrainer(PPOTrainer):
 
         # reset envs
         observations = self.envs.reset()
+        # each env plans its shortest path
+        self.envs.plan_shortest_path()
 
         # get initial observations
         obs_batch, goal_batch = self.get_observation_goal_batch(observations)
@@ -278,9 +280,8 @@ class BCOnlineTrainer(PPOTrainer):
 
         # get optimal actions
         t_sample_action = time.time()
+        # actions is a list (may contain None)
         actions = self.envs.get_next_optimal_action()
-        # NB: Move actions to CPU.  If CUDA tensors are
-        actions = actions.to(device="cpu")
         
         self.pth_time += time.time() - t_sample_action
 
@@ -289,18 +290,23 @@ class BCOnlineTrainer(PPOTrainer):
         # step the environments
         t_step_env = time.time()
         for index_env, act in zip(
-            range(env_slice.start, env_slice.stop), actions.unbind(0)
+            range(env_slice.start, env_slice.stop), actions
         ):
-            self.envs.async_step_at(index_env, {"action": act.item()})
-            #self.envs.async_step_at(index_env, act.item())
+            # step the env
+            self.envs.async_step_at(index_env, {"action": act})
 
         self.env_time += time.time() - t_step_env
+
+        # action from list to tensor [B,1]
+        actions = np.array(actions, dtype=np.int64)
+        actions = torch.from_numpy(actions).to(dtype=torch.long, device=self.device)
+        actions = torch.unsqueeze(actions, dim=1)
 
         # add actions to rollout buffer
         self.rollouts.insert(
             actions=actions
         )
-
+        
     #  step the env and collect data
     def _collect_environment_result(self):
         #print("--------collect---------")
@@ -311,7 +317,7 @@ class BCOnlineTrainer(PPOTrainer):
         t_step_env = time.time()
         
         outputs = [
-            # receive steps from all envs
+            # receive step results from all envs
             self.envs.wait_step_at(index_env)
             for index_env in range(env_slice.start, env_slice.stop)
         ]
@@ -330,12 +336,12 @@ class BCOnlineTrainer(PPOTrainer):
         obs_batch, goal_batch = self.get_observation_goal_batch(observations)
         
         # get rewards
-        rewards = torch.tensor(
-            rewards_l,
-            dtype=torch.float,
-            device=self.device,
-        )
-        rewards = rewards.unsqueeze(1)
+        # rewards = torch.tensor(
+        #     rewards_l,
+        #     dtype=torch.float,
+        #     device=self.device,
+        # )
+        # rewards = rewards.unsqueeze(1)
 
         # get dones (whether episodes end)
         not_done_masks = torch.tensor(
@@ -387,6 +393,9 @@ class BCOnlineTrainer(PPOTrainer):
         
         # reset envs
         self.envs.reset()
+        # each env plans its shortest path
+        self.envs.plan_shortest_path()
+
 
         self.pth_time += time.time() - t_update_model
 
@@ -438,8 +447,9 @@ class BCOnlineTrainer(PPOTrainer):
     ):
         
         # add loss to tensorboard
+        # use num_updates_done as x axis
         for k,v in losses.items():
-            writer.add_scalar("Loss/"+str(k), v, self.num_steps_done)
+            writer.add_scalar("Loss/"+str(k), v, self.num_updates_done)
 
         # log_interval: log every # updates, log at percentage 0
         if self.num_updates_done % int(self.config.get("log_interval")) == 0:
@@ -466,20 +476,20 @@ class BCOnlineTrainer(PPOTrainer):
         count_steps_delta = 0
         profiling_utils.range_push("rollouts loop")
 
-        # act one step (for all envs)
+        # act one step (for all envs), add a0
         profiling_utils.range_push("_collect_rollout_step")
         self._compute_actions_and_step_envs()
 
         num_steps = self.envs.get_max_optimal_action_sequence_length()
         # all envs execuate a rollout
         for step in range(num_steps):
-            # step env for one step
+            # step env for one step, add o_t, a_{t-1}, g_t 
             count_steps_delta += self._collect_environment_result()
 
             profiling_utils.range_pop()  
             profiling_utils.range_push("_collect_rollout_step")
 
-            # act one step
+            # act one step, add a_t
             self._compute_actions_and_step_envs()
 
         profiling_utils.range_pop()  # rollouts loop
@@ -571,6 +581,7 @@ class BCOnlineTrainer(PPOTrainer):
                 
                 # collect a batch of trajectories
                 count_steps_delta = self.collect_trajectory_batch()
+                exit()
 
                 # update agent for one time
                 action_loss = self._update_agent()

@@ -127,10 +127,9 @@ class BCRolloutStorage:
     def advance_rollout(self):
         self.current_rollout_step_idx += 1
 
-    # copy current step to step 0, clear the buffer after step 0, set current step counter to step 0
+    # clear the buffer
     # called when the policy is updated
     def after_update(self):
-        self.buffer[0] = self.buffer[self.current_rollout_step_idx]
         self.current_rollout_step_idx = 0
 
     # get a batch for training from the buffer

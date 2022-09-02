@@ -562,6 +562,7 @@ class PPOTrainer(BaseRLTrainer):
 
         # send the command of step env
         for index_env, act in zip(
+            # unbind(0): removes dimension 0 of a tensor 
             range(env_slice.start, env_slice.stop), actions.unbind(0)
         ):
             #print("------ actual action --------")
@@ -798,6 +799,7 @@ class PPOTrainer(BaseRLTrainer):
         deltas["count"] = max(deltas["count"], 1.0)
 
         # add loss to tensorboard
+        # use num_steps_done as x axis
         for k,v in losses.items():
             writer.add_scalar("Loss/"+str(k), v, self.num_steps_done)
 
@@ -805,6 +807,7 @@ class PPOTrainer(BaseRLTrainer):
         # that haven't been logged yet
         # add metrics to tensorboard and averaged over "count" episodes
         # deltas["count"] is the actual # of episodes inside the window, the maximum window size is reward_window_size
+        # use num_steps_done as x axis
         metrics = {
             k: v / deltas["count"]
             for k, v in deltas.items()

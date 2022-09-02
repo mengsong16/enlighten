@@ -194,6 +194,25 @@ class MultiNavEnv(NavEnv):
             print("Error: the last action in the optimal action sequence must be STOP, but %d now, appending STOP."%(self.optimal_action_seq[-1]))
             self.optimal_action_seq.append(self.action_name_to_index("stop"))
        
+    # plan shortest path
+    # must be called after agent has been set to the start location, and goal has been reset
+    # invalid optimal_action_sequence will be []
+    def plan_shortest_path(self):
+        # create shortest path planner, must create everytime reset is called
+        self.create_shortest_path_follower()
+        try:
+            self.optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
+            # append STOP if not appended
+            self.check_optimal_action_sequence()
+        except habitat_sim.errors.GreedyFollowerError as e:
+            print("Error: optimal path NOT found! set optimal action sequence to []")
+            self.optimal_action_seq = []
+        
+
+        # update optimal action sequence iterator
+        self.optimal_action_iter = iter(self.optimal_action_seq)
+
+
     def reset(self, episode=None, plan_shortest_path=False):
         # reset scene, agent start and goal
         if episode is None:
@@ -225,24 +244,11 @@ class MultiNavEnv(NavEnv):
             self.sim.pathfinder.seed(int(self.config.get("seed")))
             #print("Path finder loaded and seeded.")
 
-        # plan shortest path
-        # must be called after agent has been set to the start location, and goal has been reset
-        # invalid optimal_action_sequence will be []
-        if plan_shortest_path:
-            # create shortest path planner, must create everytime reset is called
-            self.create_shortest_path_follower()
-            try:
-                self.optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
-                # append STOP if not appended
-                self.check_optimal_action_sequence()
-            except habitat_sim.errors.GreedyFollowerError as e:
-                print("Error: optimal path NOT found!")
-                self.optimal_action_seq = []
-        else:
-            self.optimal_action_seq = []    
-
-        # create optimal action sequence iterator
+        # create optimal action sequence and its iterator
+        self.optimal_action_seq = []    
         self.optimal_action_iter = iter(self.optimal_action_seq)
+        if plan_shortest_path:
+            self.plan_shortest_path()
 
         return obs
     
@@ -254,6 +260,9 @@ class MultiNavEnv(NavEnv):
 
     # action is an integer
     def step(self, action):
+        if action is None:
+            return None, None, True, {}
+
         # action index to action name
         action_name = self.action_mapping[action]
         

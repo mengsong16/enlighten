@@ -93,7 +93,10 @@ obs_embedding_size: 512
 goal_embedding_size: 32
 act_embedding_size: 32
 rnn_type: 'gru'
+
+# more about env
 max_ep_len: 500 # should be consistent with the env max episode length 
+goal_form:  "rel_goal"
 
 # training
 learning_rate: 1.0e-4

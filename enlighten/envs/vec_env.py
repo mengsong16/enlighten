@@ -88,6 +88,7 @@ GOAL_POSITION_NAME = "goal_position"
 GET_NEXT_OPTIMAL_ACTION = "get_next_optimal_action"
 OPTIMAL_ACTION_SEQUENCE_NAME = "optimal_action_seq"
 OPTIMAL_ACTION_SEQUENCE_LENGTH_NAME = "get_optimal_action_sequence_length"
+PLAN_SHORTEST_PATH_NAME = "plan_shortest_path"
 
 # def _make_env_fn(
 #     config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
@@ -283,7 +284,7 @@ class VectorEnv:
                         observations, reward, done, info = env.step(**data)
                         # if done, automatically reset the environment
                         if auto_reset_done and done:
-
+                            # no optimal action sequence is planned
                             observations = env.reset()
                         with profiling_utils.RangeContext(
                             "worker write after step"
@@ -291,21 +292,9 @@ class VectorEnv:
                             connection_write_fn(
                                 (observations, reward, done, info)
                             )
-                    # elif isinstance(env, GymEnv):  # type: ignore
-                    #     # garage.GymEnv
-                    #     env_step = env.step(**data)
-                    #     observations = env_step.observation
-                    #     reward = env_step.reward
-                    #     info = env_step.env_info
-                    #     done = env_step.terminal
-                    #     if auto_reset_done and done:
-                    #         observations, _ = env.reset()
-                    #     connection_write_fn(
-                    #         (observations, reward, done, info)
-                    #     )
                     else:
                         raise NotImplementedError
-
+                # no optimal action sequence is planned
                 elif command == RESET_COMMAND:
                     observations = env.reset()
                     connection_write_fn(observations)
@@ -451,6 +440,16 @@ class VectorEnv:
     def get_goal_positions(self):
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (GOAL_POSITION_NAME, None)))
+        
+        results = [
+            read_fn() for read_fn in self._connection_read_fns
+        ] 
+
+        return results
+    
+    def plan_shortest_path(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (PLAN_SHORTEST_PATH_NAME, None)))
         
         results = [
             read_fn() for read_fn in self._connection_read_fns

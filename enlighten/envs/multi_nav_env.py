@@ -260,8 +260,8 @@ class MultiNavEnv(NavEnv):
 
     # action is an integer
     def step(self, action):
-        if action is None:
-            return None, None, True, {}
+        # if action is None:
+        #     return None, None, True, {}
 
         # action index to action name
         action_name = self.action_mapping[action]

@@ -228,25 +228,32 @@ class AcrossEnvBaseEvaluator:
         print("Saved evaluation file: %s"%(txt_name)) 
 
     def plot_checkpoint_one_graph(self, x, curves, eval_metric, save_folder):
+        # replace "_" with space
+        eval_metric_name = eval_metric.replace("_", " ")
+
         # plotting the curves 
         for eval_split, curve in curves.items():
             plt.plot(x, curve, label=eval_split)
         
+        # x, y axis start from 0
+        plt.ylim(ymin=0)
+        plt.xlim(xmin=0)
+
         # naming the x axis
-        plt.xlabel('number of training steps')
+        plt.xlabel('number of environment steps')
        
         # naming the y axis
-        plt.ylabel(eval_metric)
+        plt.ylabel(eval_metric_name)
         
         # giving a title to the graph
-        title = eval_metric
+        title = eval_metric_name
         plt.title(title)
 
         # show a legend on the plot
         plt.legend()
 
         # save plot
-        plt.savefig(os.path.join(save_folder, title+'_plot.png'))
+        plt.savefig(os.path.join(save_folder, eval_metric+'_plot.png'))
 
         plt.close()  
 
@@ -281,7 +288,7 @@ class AcrossEnvBaseEvaluator:
             
             self.plot_checkpoint_one_graph(x, curves, eval_metric, load_folder)
 
-
+        print("Done.")
 
         
 

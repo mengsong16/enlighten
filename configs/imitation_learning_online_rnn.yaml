@@ -85,7 +85,7 @@ single_scene: false  # construct vec envs from a single scene or the dataset
 enabled_transforms: []
 
 # rollout buffer
-rollout_buffer_length: 250
+rollout_buffer_length: 250  # must larger than the longest demonstration in the dataset
 
 # rnn
 rnn_hidden_size: 512

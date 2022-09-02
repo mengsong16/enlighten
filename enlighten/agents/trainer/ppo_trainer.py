@@ -60,6 +60,8 @@ from enlighten.agents.models import CNNPolicy, ResNetPolicy
 from enlighten.agents.common.seed import set_seed, set_seed_except_env_seed
 
 import copy
+import matplotlib.pyplot as plt
+import pickle
 
 #from enlighten.utils.path import config_path
 from enlighten.utils.path import *
@@ -1478,9 +1480,66 @@ class PPOTrainer(BaseRLTrainer):
             print("Saved evaluation file: %s"%(txt_name)) 
         
         return success_rate, spl
+    
+    def plot_checkpoint_one_graph(self, x, curves, eval_metric, save_folder):
+        # replace "_" with space
+        eval_metric_name = eval_metric.replace("_", " ")
+        
+        # plotting the curves 
+        for eval_split, curve in curves.items():
+            plt.plot(x, curve, label=eval_split)
+        
+        # x, y axis start from 0
+        plt.ylim(ymin=0)
+        plt.xlim(xmin=0)
+        
+        # naming the x axis
+        plt.xlabel('number of environment steps')
+       
+        # naming the y axis
+        plt.ylabel(eval_metric_name)
+        
+        # giving a title to the graph
+        title = eval_metric_name
+        plt.title(title)
+
+        # show a legend on the plot
+        plt.legend()
+
+        # save plot
+        plt.savefig(os.path.join(save_folder, eval_metric+'_plot.png'))
+
+        plt.close()  
+
+    def plot_checkpoint_graphs(self):
+        checkpoint_interval_steps = int(int(self.config.get("total_num_steps")) / int(self.config.get("num_checkpoints")))
+        load_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
+
+
+        eval_metrics = ["success_rate", "spl"]
+        for eval_metric in eval_metrics:
+            # load results
+            eval_result_path = os.path.join(load_folder, "%s.pickle"%(eval_metric))
+            print("Loading evaluation results from %s"%(eval_result_path))
+            with open(eval_result_path, 'rb') as f:
+                eval_results = pickle.load(f)
+            
+            
+            
+            first_curve = list(eval_results.values())[0]
+            total_checkpoint_num = len(first_curve)
+                
+            # x axis values: checkpoint index starting from 1
+            x = (np.array(list(range(total_checkpoint_num)), dtype=int) + 1) * checkpoint_interval_steps
+
+            curves = eval_results
+            self.plot_checkpoint_one_graph(x, curves, eval_metric, load_folder)
+
+        print("Done.")
 
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_multi_envs.yaml"), resume_training=False)
    #trainer.train()
-   trainer.eval()
+   #trainer.eval()
+   trainer.plot_checkpoint_graphs()

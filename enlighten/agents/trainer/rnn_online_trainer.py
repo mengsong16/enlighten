@@ -248,8 +248,7 @@ class BCOnlineTrainer(PPOTrainer):
             observation_space_channel=n_channel,
             observation_space_height=n_height,
             observation_space_width=n_width,
-            goal_space=self.envs.get_goal_observation_space(),
-            action_space=self.envs.action_spaces[0]
+            goal_space=self.envs.get_goal_observation_space()
         )
         self.rollouts.to(self.device)
 
@@ -272,14 +271,29 @@ class BCOnlineTrainer(PPOTrainer):
         self.pth_time = 0.0
         self.t_start = time.time()
 
+    # get whether all actions in a sequence have been executed
+    def get_action_sequence_dones(self, cur_act_seq_lengths):
+        cur_act_seq_lengths_list = list(cur_act_seq_lengths)
+
+        dones = torch.tensor(
+            [[seq_len <= 0] for seq_len in cur_act_seq_lengths_list],
+            dtype=torch.bool,
+            device=self.device,
+        )
+
+        return dones
+
     # execute the optimal policy, save the actions to rollout buffer
-    def _compute_actions_and_step_envs(self):
-        
+    def _compute_actions_and_step_envs(self, cur_act_seq_lengths):
+        act_seq_dones = self.get_action_sequence_dones(cur_act_seq_lengths)
+
+
         num_envs = self.envs.num_envs
         env_slice = slice(0, num_envs)
 
         # get optimal actions
         t_sample_action = time.time()
+        
         # actions is a list (may contain None)
         actions = self.envs.get_next_optimal_action()
         
@@ -298,11 +312,12 @@ class BCOnlineTrainer(PPOTrainer):
         self.env_time += time.time() - t_step_env
 
         # action from list to tensor [B,1]
-        actions = np.array(actions, dtype=np.int64)
-        actions = torch.from_numpy(actions).to(dtype=torch.long, device=self.device)
+        actions = np.array(actions, dtype=int)
+        actions = torch.from_numpy(actions).to(dtype=torch.int, device=self.device)
         actions = torch.unsqueeze(actions, dim=1)
 
-        # add actions to rollout buffer
+
+        # add actions (a_t, a_{t+1}) to rollout buffer
         self.rollouts.insert(
             actions=actions
         )
@@ -344,18 +359,17 @@ class BCOnlineTrainer(PPOTrainer):
         # rewards = rewards.unsqueeze(1)
 
         # get dones (whether episodes end)
-        not_done_masks = torch.tensor(
-            [[not done] for done in dones],
-            dtype=torch.bool,
-            device=self.device,
-        )
-        done_masks = torch.logical_not(not_done_masks)
+        # not_done_masks = torch.tensor(
+        #     [[not done] for done in dones],
+        #     dtype=torch.bool,
+        #     device=self.device,
+        # )
+        # done_masks = torch.logical_not(not_done_masks)
 
-        # insert (o_i, a_{i-1}, g_i) to rollout buffer
+        # insert (o_t, g_t) to rollout buffer
         self.rollouts.insert(
             next_observations=obs_batch,
-            next_goals=goal_batch,
-            next_masks=not_done_masks,
+            next_goals=goal_batch
         )
         # rollout index++
         self.rollouts.advance_rollout()
@@ -388,6 +402,12 @@ class BCOnlineTrainer(PPOTrainer):
         # action_target are ground truth action indices (not one-hot vectors)
         action_loss =  F.cross_entropy(action_preds, action_targets)
 
+
+        self.pth_time += time.time() - t_update_model
+
+        return action_loss
+
+    def clear_rollout_buffer_reset_envs(self):
         # clear rollouts
         self.rollouts.after_update()
         
@@ -395,11 +415,6 @@ class BCOnlineTrainer(PPOTrainer):
         self.envs.reset()
         # each env plans its shortest path
         self.envs.plan_shortest_path()
-
-
-        self.pth_time += time.time() - t_update_model
-
-        return action_loss
 
     # update stats after each update
     # count_steps_delta: the number of steps collected for this update
@@ -473,24 +488,34 @@ class BCOnlineTrainer(PPOTrainer):
 
     # collect a batch of trajectories
     def collect_trajectory_batch(self):
-        count_steps_delta = 0
+        
+        cur_act_seq_lengths = self.envs.get_optimal_action_sequence_lengths()
+        max_num_steps = max(cur_act_seq_lengths)
+        cur_act_seq_lengths = np.array(cur_act_seq_lengths, dtype=int)
+        # rollout length = optimal action sequence length + 1
+        self.rollouts.seq_lengths = copy.deepcopy(cur_act_seq_lengths+1)
+        
+        #print(self.rollouts.seq_lengths)
+
         profiling_utils.range_push("rollouts loop")
 
-        # act one step (for all envs), add a0
+        # act one step (for all envs), add a1
         profiling_utils.range_push("_collect_rollout_step")
-        self._compute_actions_and_step_envs()
+        self._compute_actions_and_step_envs(cur_act_seq_lengths)
+        cur_act_seq_lengths -= 1
 
-        num_steps = self.envs.get_max_optimal_action_sequence_length()
+        count_steps_delta = 0
         # all envs execuate a rollout
-        for step in range(num_steps):
-            # step env for one step, add o_t, a_{t-1}, g_t 
+        for step_ind in range(max_num_steps-1):
+            # step env for one step, add o_t, g_t (t=1,2,...)
             count_steps_delta += self._collect_environment_result()
 
             profiling_utils.range_pop()  
             profiling_utils.range_push("_collect_rollout_step")
 
-            # act one step, add a_t
-            self._compute_actions_and_step_envs()
+            # act one step, add a_{t+1} (t=1,2,...)
+            self._compute_actions_and_step_envs(cur_act_seq_lengths)
+            cur_act_seq_lengths -= 1
 
         profiling_utils.range_pop()  # rollouts loop
 
@@ -583,7 +608,7 @@ class BCOnlineTrainer(PPOTrainer):
                 count_steps_delta = self.collect_trajectory_batch()
                 exit()
 
-                # update agent for one time
+                # update agent once
                 action_loss = self._update_agent()
 
                 # optimize for one step
@@ -604,6 +629,9 @@ class BCOnlineTrainer(PPOTrainer):
                 )
                 # show losses in tensorboard
                 self._training_log(writer, losses, prev_time)
+
+                # clear rollout buffer and reset envs
+                self.clear_rollout_buffer_reset_envs()
 
                 # save checkpoint
                 if rank0_only() and self.should_checkpoint():

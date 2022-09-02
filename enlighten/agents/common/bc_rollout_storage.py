@@ -25,52 +25,43 @@ class BCRolloutStorage:
         observation_space_channel,
         observation_space_height,
         observation_space_width,
-        goal_space,
-        action_space
+        goal_space
     ):
         self.buffer = TensorDict()
         
-        # (L+1)*N*obs_size
+        # [L+1,B,obs_size], default 0
         observation_space_shape = (observation_space_channel, observation_space_height, observation_space_width)
         self.buffer["observations"] = torch.zeros(
             numsteps + 1,
             num_envs,
-            *observation_space_shape)
+            *observation_space_shape, dtype=torch.float32)
 
-        # (L+1)*N*goal_size
+        # [L+1,B,goal_size], default 0
         self.buffer["goals"] = torch.zeros(
             numsteps + 1,
             num_envs,
-            *goal_space.shape,
+            *goal_space.shape, dtype=torch.float32
         )
         
-        if action_space.__class__.__name__ == "ActionSpace":
-            action_shape = 1    
-        elif action_space.__class__.__name__ == "Discrete":
-            action_shape = 1 # action is represented as index
-        else:  # Box
-            action_shape = action_space.shape[0]
-
+        # [L+1,B,1], default 0 (STOP)
         self.buffer["actions"] = torch.zeros(
-            numsteps + 1, num_envs, action_shape
-        )
-        self.buffer["prev_actions"] = torch.zeros(
-            numsteps + 1, num_envs, action_shape
-        )
+            numsteps + 1, num_envs, 1, dtype=torch.int
+        ) * (-1)
+        # [L+1,B,1], default -1 (unknown)
+        self.buffer["prev_actions"] = torch.ones(
+            numsteps + 1, num_envs, 1, dtype=torch.int
+        ) * (-1)
 
-        # when action_space name is "ActionSpace", the action space is a dictionary of spaces
-        if action_space.__class__.__name__ == "ActionSpace":
-            self.buffer["actions"] = self.buffer["actions"].long()
-            self.buffer["prev_actions"] = self.buffer["prev_actions"].long()
-
-        # mask == True: end of episode
-        self.buffer["masks"] = torch.zeros(
-            numsteps + 1, num_envs, 1, dtype=torch.bool
-        )
-
+        # batch_sizes, default 0
+        self.batch_sizes = torch.zeros(num_envs, dtype=torch.long)
+       
         self._num_envs = num_envs
 
-        self.numsteps = numsteps
+        # max length
+        self.buffer_length = numsteps
+
+        # rollout lengths
+        self.seq_lengths = np.zeros(self._num_envs, dtype=int)
 
         # initialize step index counter to 0
         self.current_rollout_step_idx = 0
@@ -80,20 +71,18 @@ class BCRolloutStorage:
     def to(self, device):
         self.buffer.map_in_place(lambda v: v.to(device))
 
-    # insert one step data (a_t, o_{t+1}, g_{t+1}, d_{t+1}) to the buffer
+    # insert one step data (a_t, o_{t+1}, g_{t+1}) to the buffer
     def insert(
         self,
         next_observations=None,
         next_goals=None,
-        actions=None,
-        next_masks=None
+        actions=None
     ):
 
         next_step = dict(
             observations=next_observations,
             goals=next_goals,
-            prev_actions=actions,
-            masks=next_masks,
+            prev_actions=actions
         )
 
         current_step = dict(

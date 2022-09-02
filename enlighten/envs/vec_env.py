@@ -433,9 +433,7 @@ class VectorEnv:
             results.append(read_fn())
         return results
 
-    def get_max_optimal_action_sequence_length(self):
-        lengths = self.get_optimal_action_sequence_lengths()
-        return max(lengths)
+    
 
     def get_goal_positions(self):
         for write_fn in self._connection_write_fns:

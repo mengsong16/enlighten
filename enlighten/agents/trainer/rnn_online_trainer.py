@@ -517,6 +517,7 @@ class BCOnlineTrainer(PPOTrainer):
         count_checkpoints = 0 # checkpoint index starts from 0
         prev_time = 0
         self.total_updates = int(self.config.get('total_updates')) # total training times
+        self.checkpoint_interval = int(self.config.get('save_every_updates'))
 
         with (
             TensorboardWriter(

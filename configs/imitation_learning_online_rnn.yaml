@@ -7,14 +7,12 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "behavior_dataset_gibson_1_scene_hard_4000"  # where imitation learning dataset store
-# Image training data location
-image_dataset_path: "/dataset/image_dataset_gibson"
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole"  # where imitation learning dataset store
+
 
 # experiments
 algorithm_name: "rnn"
-experiment_name: "whole_trajectory_rel_goal_1_scene_hard_4000" #"whole_trajectory_value_supervision" 
-log_to_wandb: true
+experiment_name: "rnn_bc_online_1_scene_Rancocas_whole"
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -79,11 +77,15 @@ seed: 1
 gpu_id: 1 #1
 
 # vector env (for evaluation and training)
-num_environments: 14 #8 #14 #4 #2
+# amount to the number of trajectories in a batch during training
+num_environments: 4 #8 #14 #4 #2
 single_scene: false  # construct vec envs from a single scene or the dataset
 
 # dummy observation transformations 
 enabled_transforms: []
+
+# rollout buffer
+rollout_buffer_length: 250
 
 # rnn
 rnn_hidden_size: 512
@@ -94,26 +96,17 @@ rnn_type: 'gru'
 max_ep_len: 500 # should be consistent with the env max episode length 
 
 # training
-batch_size: 4 # amount to the number of vector envs during training
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
-max_iters: 3000 #2000 #1000 #800 #400 #500 #30 #10
-num_steps_per_iter: 100 #10000
-batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
-goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
-supervise_value: false # true
-use_augment_train_data: false #true
-domain_adaptation: false #true
+total_updates: 300000 
 
-# evaluate during training
-eval_during_training: true
-eval_every_iterations: 100 #100 #40 #80 #50 #10 
-eval_during_training_sample: true
-eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
-eval_use_vector_envs: true #true
+# training log
+verbose: true # false
+log_interval: 25  # log stats every n training updates
+tensorboard_dir: "tensorboard"
 
 # save checkpoint
-save_every_iterations: 100 #40 #50 #10 
+save_every_updates: 100 #40 #50 #10 
 
 # evaluation
 eval_experiment_folder: "rnn-whole_trajectory_rel_goal_1_scene_normal-s1-20220817-181404"
@@ -123,8 +116,9 @@ eval_dir: "evaluation"
 test_episode_count: -1 # test all episodes in the dataset
 
 # distributed
-# use distributed computation (DDPPO) or not
-force_distributed: true
+# use distributed computation or not
+# if use, seed and gpu id will be rewritten according to the local rank
+force_distributed: true #true
 # Append the slurm job ID to the resume state filename if running a slurm job
 # This is useful when you want to have things from a different job but same
 # same checkpoint dir not resume.
@@ -136,8 +130,6 @@ preemption_save_state_batch_only: false
 preemption_save_resume_state_interval: 100
 # The PyTorch distributed backend to use
 distrib_backend: GLOO
-# for DDPPO
-sync_frac: 0.6
 # default port
 default_port: 8860 
 

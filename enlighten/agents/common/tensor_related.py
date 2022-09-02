@@ -84,6 +84,9 @@ class ObservationBatchingCache:
 # profiling decorator: https://github.com/facebookresearch/habitat-sim/blob/main/habitat_sim/utils/profiling_utils.py
 # to capture the time spent in annotated ranges
 # this function could be time consuming
+# organize observations to sensor tensors
+# e.g. batch["pointgoal"] is a [N,2] tensor where N is the number of envs
+
 @profiling_utils.RangeContext("batch_obs")
 @torch.no_grad()
 def batch_obs(

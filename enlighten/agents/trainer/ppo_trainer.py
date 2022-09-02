@@ -261,7 +261,7 @@ class PPOTrainer(BaseRLTrainer):
         )
 
     # create vector envs and scene dataset
-    def _init_envs(self, split_name, config=None):
+    def _init_envs(self, split_name, auto_reset_done, config=None):
         if config is None:
             config = self.config
 
@@ -274,6 +274,7 @@ class PPOTrainer(BaseRLTrainer):
             print("======> Creating across scene vector envs...")  
             self.envs = construct_envs_based_on_dataset(
                 config=config,
+                auto_reset_done=auto_reset_done,
                 workers_ignore_signals=is_slurm_batch_job(),
                 split_name=split_name
             )
@@ -336,7 +337,7 @@ class PPOTrainer(BaseRLTrainer):
         )
 
         # create vector envs and dataset
-        self._init_envs(split_name="train")
+        self._init_envs(split_name="train", auto_reset_done=True)
 
         # use gpu or not
         if torch.cuda.is_available():
@@ -695,9 +696,9 @@ class PPOTrainer(BaseRLTrainer):
 
     @profiling_utils.RangeContext("_collect_rollout_step")
     def _collect_rollout_step(self):
-        
+        # get action
         self._compute_actions_and_step_envs()
-        
+        # step env
         return self._collect_environment_result()
 
     # train/update policy
@@ -858,6 +859,8 @@ class PPOTrainer(BaseRLTrainer):
             return False
         # This is where the preemption of workers happens.  If a
         # worker detects it will be a straggler, it preempts itself!
+        # stop the whole process of collecting data if
+        # most of rollouts are done (60%), and the rest rollouts are too long
         return (
             rollout_step
             >= int(self.config.get("num_steps")) * self.SHORT_ROLLOUT_THRESHOLD
@@ -1269,7 +1272,7 @@ class PPOTrainer(BaseRLTrainer):
             raise RuntimeError("Evaluation does not support distributed mode")
 
         # create vec envs
-        self._init_envs(split_name=split_name)
+        self._init_envs(split_name=split_name, auto_reset_done=True)
         
         # create ppo model
         obs_transforms = get_active_obs_transforms(self.config)

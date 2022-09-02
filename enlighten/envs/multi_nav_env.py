@@ -246,8 +246,11 @@ class MultiNavEnv(NavEnv):
 
         return obs
     
-    def next_optimal_action(self):
+    def get_next_optimal_action(self):
         return next(self.optimal_action_iter, None)
+
+    def get_optimal_action_sequence_length(self):
+        return len(self.optimal_action_seq)
 
     # action is an integer
     def step(self, action):
@@ -335,7 +338,7 @@ def test_env():
         j = 0
         while not done:
             #action = env.action_space.sample()
-            action = env.next_optimal_action()
+            action = env.get_next_optimal_action()
             #print(action)
             obs, reward, done, info = env.step(action)
             #print(obs["color_sensor"].shape)

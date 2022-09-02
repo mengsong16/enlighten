@@ -90,12 +90,16 @@ class SequenceTrainer:
     
     # save checkpoint
     def save_checkpoint(self, checkpoint_number):
-        # only save agent weights
-        checkpoint = self.model.state_dict()
+        
         folder_name = self.project_name + "-" + self.group_name + "-" + self.experiment_name
         folder_path = os.path.join(checkpoints_path, folder_name)
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
+        # save agent weights and config
+        checkpoint = {
+            "state_dict": self.model.state_dict(),
+            "config": self.config,
+        }
 
         checkpoint_path = os.path.join(folder_path, f"ckpt_{checkpoint_number}.pth")
         torch.save(checkpoint, checkpoint_path)

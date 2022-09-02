@@ -85,7 +85,9 @@ GET_GOAL_OBS_SPACE_NAME = "get_goal_observation_space"
 GET_COMBINED_GOAL_OBS_SPACE_NAME = "get_combined_goal_obs_space"
 GET_DISTANCE_TO_GOAL = "get_current_distance"
 GOAL_POSITION_NAME = "goal_position"
-NEXT_OPTIMAL_ACTION = "next_optimal_action"
+GET_NEXT_OPTIMAL_ACTION = "get_next_optimal_action"
+OPTIMAL_ACTION_SEQUENCE_NAME = "optimal_action_seq"
+OPTIMAL_ACTION_SEQUENCE_LENGTH_NAME = "get_optimal_action_sequence_length"
 
 # def _make_env_fn(
 #     config_filename: str="navigate_with_flashlight.yaml", rank: int = 0
@@ -420,12 +422,32 @@ class VectorEnv:
     
     def get_next_optimal_action(self):
         for write_fn in self._connection_write_fns:
-            write_fn((CALL_COMMAND, (NEXT_OPTIMAL_ACTION, None)))
+            write_fn((CALL_COMMAND, (GET_NEXT_OPTIMAL_ACTION, None)))
         results = []
         for read_fn in self._connection_read_fns:
             results.append(read_fn())
         return results
     
+    def get_optimal_action_sequences(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (OPTIMAL_ACTION_SEQUENCE_NAME, None)))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        return results
+    
+    def get_optimal_action_sequence_lengths(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (OPTIMAL_ACTION_SEQUENCE_LENGTH_NAME, None)))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        return results
+
+    def get_max_optimal_action_sequence_length(self):
+        lengths = self.get_optimal_action_sequence_lengths()
+        return max(lengths)
+
     def get_goal_positions(self):
         for write_fn in self._connection_write_fns:
             write_fn((CALL_COMMAND, (GOAL_POSITION_NAME, None)))
@@ -791,6 +813,7 @@ def chunks(lst, n):
 def construct_envs_based_on_dataset(
     config,
     split_name,
+    auto_reset_done,
     workers_ignore_signals: bool = False,
 ) -> VectorEnv:
     r"""Create VectorEnv object with specified config and env class type.
@@ -890,6 +913,7 @@ def construct_envs_based_on_dataset(
     envs = VectorEnv(
         make_env_fn=_make_multi_nav_fn,
         env_fn_args=env_fn_args,
+        auto_reset_done=auto_reset_done,
         workers_ignore_signals=workers_ignore_signals,
     ) 
 
@@ -932,7 +956,7 @@ def construct_envs_based_on_singel_scene(config, workers_ignore_signals: bool = 
 
     env_fn_args = tuple(zip(configs, seeds))
 
-    
+    # auto_reset_done = True
     envs = VectorEnv(
         env_fn_args=env_fn_args,
         make_env_fn=_make_nav_env_fn,

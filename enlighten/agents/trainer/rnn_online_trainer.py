@@ -18,6 +18,7 @@ import tqdm
 from gym import spaces
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
+from torch.nn import functional as F
 
 from habitat import logger
 from enlighten.envs import VectorEnv
@@ -29,7 +30,7 @@ from enlighten.utils.obs_transformers import (
     apply_obs_transforms_obs_space,
     get_active_obs_transforms,
 )
-from enlighten.agents.common.rollout_storage import RolloutStorage
+from enlighten.agents.common.bc_rollout_storage import BCRolloutStorage
 from enlighten.utils.tensorboard_utils import TensorboardWriter
 from habitat_sim.utils import profiling_utils
 
@@ -70,23 +71,24 @@ from enlighten.envs.nav_env import NavEnv
 from enlighten.envs import MultiNavEnv
 from enlighten.utils.video_utils import generate_video, images_to_video, create_video, remove_jpg, BGR_mode
 from enlighten.tasks.measures import Measurements
-from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
+from enlighten.agents.models.rnn_seq_model import DDBC
 from enlighten.agents.common.other import get_obs_channel_num
 
 class BCOnlineTrainer(PPOTrainer):
     
-    SHORT_ROLLOUT_THRESHOLD: float = 0.25
     _is_distributed: bool
     _obs_batching_cache: ObservationBatchingCache
     envs: VectorEnv
-    agent: RNNSequenceModel
+    agent: DDBC
 
     def __init__(self, config_filename=None):
-        super().__init__()
+
         assert config_filename is not None, "needs config file to initialize trainer"
         config_file = os.path.join(config_path, config_filename)
         self.config = parse_config(config_file)
+
         self._flush_secs = 30
+        
 
         self.agent = None
         self.envs = None
@@ -111,7 +113,7 @@ class BCOnlineTrainer(PPOTrainer):
         logger.add_filehandler(log_path)
 
         # create agent model
-        self.agent = RNNSequenceModel(
+        self.agent = DDBC(
             obs_channel = get_obs_channel_num(self.config),
             obs_width = int(self.config.get("image_width")), 
             obs_height = int(self.config.get("image_height")),
@@ -125,11 +127,48 @@ class BCOnlineTrainer(PPOTrainer):
             act_embedding_size=int(self.config.get('act_embedding_size')), #32
             rnn_type=self.config.get('rnn_type'),
             supervise_value=self.config.get('supervise_value'),
-            domain_adaptation=self.config.get('domain_adaptation')
+            device=self.device
         )
 
-        self.agent.to(self.device)
+    # [HEIGHT X WIDTH x CHANNEL] --> [CHANNEL x HEIGHT X WIDTH]
+    # CHANNEL = {1,3,4}
+    # return observation space shape
+    # assume "color_sensor" is in the observation space
+    def extract_observation_space_shape(self):
+        observation_space = self.envs.observation_spaces[0]
+        
+        n_channel = 0
+       
+        if "color_sensor" in observation_space.spaces:
+            n_height = observation_space.spaces["color_sensor"].shape[0]
+            n_width = observation_space.spaces["color_sensor"].shape[1]
+            
+            n_channel += observation_space.spaces["color_sensor"].shape[2]
 
+        if "depth_sensor" in observation_space.spaces:
+            n_channel += observation_space.spaces["depth_sensor"].shape[2]
+
+        # check if observation is valid
+        if n_channel == 0:
+            print("Error: channel of observation input is 0")
+            exit()
+        
+        return n_channel, n_height, n_width
+
+    # [N,C,H,W]
+    # [N,3]
+    def get_observation_goal_batch(self, observations):
+        batch = batch_obs(
+            observations, device=self.device, cache=self._obs_batching_cache
+        )
+
+        goal_batch = batch['pointgoal']
+        obs_batch = batch['color_sensor'].permute(0,3,1,2)
+        if "depth_sensor" in batch.keys():
+            depth_batch = batch['depth_sensor'].permute(0,3,1,2)
+            obs_batch  = torch.cat((obs_batch, depth_batch), 1)
+
+        return obs_batch, goal_batch
 
     # initialize training, reset envs
     def _init_train(self):
@@ -142,6 +181,7 @@ class BCOnlineTrainer(PPOTrainer):
             add_signal_handlers()
 
         # set gpu and seed in distributed mode
+        # otherwise use the gpu id and seed in the config
         if self._is_distributed:
             local_rank, tcp_store = init_distrib_slurm(
                 self.config.get("distrib_backend"), int(self.config.get("default_port"))
@@ -164,11 +204,6 @@ class BCOnlineTrainer(PPOTrainer):
             # set seed (except env seed)
             set_seed_except_env_seed(self.config["seed"])
 
-            # initialize how many rollouts are done    
-            self.num_rollouts_done_store = torch.distributed.PrefixStore(
-                "rollout_tracker", tcp_store
-            )
-            self.num_rollouts_done_store.set("num_done", "0")
 
         # verbose the entire config setting
         if rank0_only() and self.config.get("verbose"):
@@ -180,8 +215,8 @@ class BCOnlineTrainer(PPOTrainer):
             num_steps_to_capture=-1,
         )
 
-        # create vector envs and dataset
-        self._init_envs(split_name="train")
+        # create vector envs and dataset for training
+        self._init_envs(split_name="train", auto_reset_done=False)
 
         # set device to gpu or not
         if torch.cuda.is_available():
@@ -194,7 +229,7 @@ class BCOnlineTrainer(PPOTrainer):
         if rank0_only() and not os.path.isdir(os.path.join(checkpoints_path, self.config.get("experiment_name"))):
             os.makedirs(os.path.join(checkpoints_path, self.config.get("experiment_name")))
 
-        # setup agent
+        # setup agent (after setup device)
         self._setup_agent()
         if self._is_distributed:
             self.agent.init_distributed(find_unused_params=True)
@@ -205,19 +240,16 @@ class BCOnlineTrainer(PPOTrainer):
             )
         )
 
+        n_channel, n_height, n_width = self.extract_observation_space_shape()
         # create rollout buffer
-        self._combined_goal_obs_space = self.envs.get_combined_goal_obs_space()
-        
-        # use single or double buffer
-        self._nbuffers = 2 if self.config.get("use_double_buffered_sampler") else 1
-        self.rollouts = RolloutStorage(
-            self.config.get("num_steps"),
-            self.envs.num_envs,
-            self._combined_goal_obs_space,
-            self.envs.action_spaces[0],
-            self.config.get("hidden_size"),
-            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
-            is_double_buffered=self.config.get("use_double_buffered_sampler"),
+        self.rollouts = BCRolloutStorage(
+            numsteps=int(self.config.get("rollout_buffer_length")),
+            num_envs=self.envs.num_envs,
+            observation_space_channel=n_channel,
+            observation_space_height=n_height,
+            observation_space_width=n_width,
+            goal_space=self.envs.get_goal_observation_space(),
+            action_space=self.envs.action_spaces[0]
         )
         self.rollouts.to(self.device)
 
@@ -225,128 +257,65 @@ class BCOnlineTrainer(PPOTrainer):
         observations = self.envs.reset()
 
         # get initial observations
-        batch = batch_obs(
-            observations, device=self.device, cache=self._obs_batching_cache
-        )
-        
-        # add initial observations to rollout buffer
-        self.rollouts.buffers["observations"][0] = batch
+        obs_batch, goal_batch = self.get_observation_goal_batch(observations)
 
-        # initialize current episode reward, running_episode_stats to 0
-        # Note that running_episode_stats accumulate along all history episodes (never reset to 0)
-        self.current_episode_reward = torch.zeros(self.envs.num_envs, 1)
-        # stats in info will be added later
-        self.running_episode_stats = dict(
-            count=torch.zeros(self.envs.num_envs, 1),
-            reward=torch.zeros(self.envs.num_envs, 1),
-        )
-        # stats is calculated every n episodes
-        # n <= self.window_episode_stats
-        # this is a double ended queue, exceed the length will be popped
-        self.window_episode_stats = defaultdict(
-            lambda: deque(maxlen=self.config.get("reward_window_size"))
-        )
+
+        # add initial observations to rollout buffer
+        self.rollouts.buffer["observations"][0] = obs_batch
+        self.rollouts.buffer["goals"][0] = goal_batch
+    
 
         # time counter
         self.env_time = 0.0
         self.pth_time = 0.0
         self.t_start = time.time()
 
-    # execute a policy, push the actions to rollout buffer
-    def _compute_actions_and_step_envs(self, buffer_index: int = 0):
-        #print("--------compute--------")
-
+    # execute the optimal policy, save the actions to rollout buffer
+    def _compute_actions_and_step_envs(self):
+        
         num_envs = self.envs.num_envs
-        env_slice = slice(
-            int(buffer_index * num_envs / self._nbuffers),
-            int((buffer_index + 1) * num_envs / self._nbuffers),
-        )
+        env_slice = slice(0, num_envs)
 
+        # get optimal actions
         t_sample_action = time.time()
-
-        # sample actions
-        with torch.no_grad():
-            step_batch = self.rollouts.buffers[
-                self.rollouts.current_rollout_step_idxs[buffer_index],
-                env_slice,
-            ]
-
-            # get action
-            # act only one step
-            profiling_utils.range_push("compute actions")
-            (
-                values,
-                actions,
-                actions_log_probs,
-                recurrent_hidden_states,
-            ) = self.actor_critic.act(
-                step_batch["observations"],
-                step_batch["recurrent_hidden_states"],
-                step_batch["prev_actions"],
-                step_batch["masks"],
-            ) # here deterministic = False
-
+        actions = self.envs.get_next_optimal_action()
         # NB: Move actions to CPU.  If CUDA tensors are
-        # sent in to env.step(), that will create CUDA contexts
-        # in the subprocesses.
-        # For backwards compatibility, we also call .item() to convert to
-        # an int
         actions = actions.to(device="cpu")
-        #print("========== actions =======")
-        #print(actions)
-        #print("==========================")
+        
         self.pth_time += time.time() - t_sample_action
 
         profiling_utils.range_pop()  # compute actions
 
+        # step the environments
         t_step_env = time.time()
-
-        # send the command of step env
         for index_env, act in zip(
             range(env_slice.start, env_slice.stop), actions.unbind(0)
         ):
-            #print("------ actual action --------")
-            #print(act.item())
-            #print("------ actual action --------")
-            #print(type(act.item()))
             self.envs.async_step_at(index_env, {"action": act.item()})
             #self.envs.async_step_at(index_env, act.item())
 
         self.env_time += time.time() - t_step_env
 
-        # add actions, values, hidden states to rollout buffer
+        # add actions to rollout buffer
         self.rollouts.insert(
-            next_recurrent_hidden_states=recurrent_hidden_states,
-            actions=actions,
-            action_log_probs=actions_log_probs,
-            value_preds=values,
-            buffer_index=buffer_index,
+            actions=actions
         )
 
-    #  step the env and collect obs
-    def _collect_environment_result(self, buffer_index: int = 0):
+    #  step the env and collect data
+    def _collect_environment_result(self):
         #print("--------collect---------")
         num_envs = self.envs.num_envs
-        env_slice = slice(
-            int(buffer_index * num_envs / self._nbuffers),
-            int((buffer_index + 1) * num_envs / self._nbuffers),
-        )
-
+        # set env_slice
+        env_slice = slice(0, num_envs)
+        # start collection
         t_step_env = time.time()
-        # print("-------------------------------")
-        # print(env_slice.start)
-        # print(env_slice.stop)
-        # print("-------------------------------")
-
-        #print("--------------pt 1-----------------")
+        
         outputs = [
-            # step all envs for one step
+            # receive steps from all envs
             self.envs.wait_step_at(index_env)
             for index_env in range(env_slice.start, env_slice.stop)
         ]
-        
-        #print("--------------pt 2-----------------")
-
+    
         # unwrap the results
         observations, rewards_l, dones, infos = [
             list(x) for x in zip(*outputs)
@@ -354,79 +323,36 @@ class BCOnlineTrainer(PPOTrainer):
 
         self.env_time += time.time() - t_step_env
 
+        # organize data
         t_update_stats = time.time()
 
-        # batch are only observations (do not include hidden states, etc)
-        batch = batch_obs(
-            observations, device=self.device, cache=self._obs_batching_cache
-        )
+        # get batch from observations
+        obs_batch, goal_batch = self.get_observation_goal_batch(observations)
         
         # get rewards
         rewards = torch.tensor(
             rewards_l,
             dtype=torch.float,
-            device=self.current_episode_reward.device,
+            device=self.device,
         )
         rewards = rewards.unsqueeze(1)
 
-        # get done (whether episode ends)
+        # get dones (whether episodes end)
         not_done_masks = torch.tensor(
             [[not done] for done in dones],
             dtype=torch.bool,
-            device=self.current_episode_reward.device,
+            device=self.device,
         )
         done_masks = torch.logical_not(not_done_masks)
 
-        #print(type(infos))
-        #print(infos)
-        #print(type(rewards))
-        #print(rewards)
-
-        # accumulate rewards for current episode
-        self.current_episode_reward[env_slice] += rewards
-        current_ep_reward = self.current_episode_reward[env_slice]
-        # add tensorboard stats here
-        # add episode reward if episode ends, otherwise add 0
-        self.running_episode_stats["reward"][env_slice] += current_ep_reward.where(done_masks, current_ep_reward.new_zeros(()))  # type: ignore
-        # count: number of episodes in the window
-        self.running_episode_stats["count"][env_slice] += done_masks.float()  # type: ignore
-        
-        # extract scalars from infos and add to running_episode_stats
-        # under tensorboard "Metrics"
-        for k, v_k in self._extract_scalars_from_infos(infos).items():
-            v = torch.tensor(
-                v_k,
-                dtype=torch.float,
-                device=self.current_episode_reward.device,
-            ).unsqueeze(1)
-            # create item and initialize to 0 if not exist
-            if k not in self.running_episode_stats:
-                self.running_episode_stats[k] = torch.zeros_like(
-                    self.running_episode_stats["count"]
-                )
-
-            # add spl or success if episode ends, otherwise add 0 (spl and success is returned every step)
-            # when episode ends, if episode fail, both spl and success is 0, otherwise they are positive
-            self.running_episode_stats[k][env_slice] += v.where(done_masks, v.new_zeros(()))  # type: ignore
-
-        # reset current episode cummulative reward to 0 if current episode is already done
-        self.current_episode_reward[env_slice].masked_fill_(done_masks, 0.0)
-
-        # get static visual features
-        if self._static_encoder:
-            with torch.no_grad():
-                batch["visual_features"] = self._encoder(batch)
-
-        # insert obs to rollout buffer
-        # hidden states are zero (by default)
+        # insert (o_i, a_{i-1}, g_i) to rollout buffer
         self.rollouts.insert(
-            next_observations=batch,
-            rewards=rewards,
+            next_observations=obs_batch,
+            next_goals=goal_batch,
             next_masks=not_done_masks,
-            buffer_index=buffer_index,
         )
-
-        self.rollouts.advance_rollout(buffer_index)
+        # rollout index++
+        self.rollouts.advance_rollout()
 
         self.pth_time += time.time() - t_update_stats
 
@@ -434,70 +360,50 @@ class BCOnlineTrainer(PPOTrainer):
         # which will be added to the step counter of environment interation steps
         return env_slice.stop - env_slice.start
 
-    @profiling_utils.RangeContext("_collect_rollout_step")
-    def _collect_rollout_step(self):
-        
-        self._compute_actions_and_step_envs()
-        
-        return self._collect_environment_result()
-
-    # train/update policy
+    # update agent for one time
     @profiling_utils.RangeContext("_update_agent")
     def _update_agent(self):
         t_update_model = time.time()
-        with torch.no_grad():
-            step_batch = self.rollouts.buffers[
-                self.rollouts.current_rollout_step_idx
-            ]
-
-            next_value = self.actor_critic.get_value(
-                step_batch["observations"],
-                step_batch["recurrent_hidden_states"],
-                step_batch["prev_actions"],
-                step_batch["masks"],
-            )
-
-        self.rollouts.compute_returns(
-            next_value, self.config.get("use_gae"), self.config.get("gamma"), self.config.get("tau")
-        )
+        
+        # get training batch
+        observations, action_targets, prev_actions, goals, batch_sizes = self.rollouts.get_batch()
 
         # switch agent model to training mode
         self.agent.train()
 
-        # update agent parameters for ppo_epoch epoches
-        value_loss, action_loss, dist_entropy, kl_divergence = self.agent.update(
-            self.rollouts
-        )
+        # forward agent
+        rnn_hidden_size = int(self.config.get('rnn_hidden_size'))
+        h_0 = torch.zeros(1, self.batch_size, rnn_hidden_size, dtype=torch.float32, device=self.device) 
+        action_preds = self.agent.forward(observations, prev_actions, goals, h_0, batch_sizes)
 
+        # update agent parameters for ppo_epoch epoches
+        # action loss is computed over the whole sequence
+        # action_preds: [T, action_num]
+        # action_target are ground truth action indices (not one-hot vectors)
+        action_loss =  F.cross_entropy(action_preds, action_targets)
+
+        # clear rollouts
         self.rollouts.after_update()
+        
+        # reset envs
+        self.envs.reset()
+
         self.pth_time += time.time() - t_update_model
 
-        return (
-            value_loss,
-            action_loss,
-            dist_entropy,
-            kl_divergence
-        )
+        return action_loss
 
-    # update stats after step the env
+    # update stats after each update
+    # count_steps_delta: the number of steps collected for this update
     def _coalesce_post_step(
         self, losses: Dict[str, float], count_steps_delta: int
     ) -> Dict[str, float]:
-        stats_ordering = sorted(self.running_episode_stats.keys())
-        stats = torch.stack(
-            [self.running_episode_stats[k] for k in stats_ordering], 0
-        )
-
-        # move to correct device
+        
+        # initialize stats
+        stats = torch.zeros(1)
         stats = self._all_reduce(stats)
 
-        # append accumlated stats at current timestep to window_episode_stats
-        # stats: accumlated from step 0 to current step t
-        # window means a moving window along the history steps
-        for i, k in enumerate(stats_ordering):
-            self.window_episode_stats[k].append(stats[i])
-
         if self._is_distributed:
+            # average losses over all processes
             loss_name_ordering = sorted(losses.keys())
             stats = torch.tensor(
                 [losses[k] for k in loss_name_ordering] + [count_steps_delta],
@@ -513,58 +419,30 @@ class BCOnlineTrainer(PPOTrainer):
                 k: stats[i].item() for i, k in enumerate(loss_name_ordering)
             }
 
-        if self._is_distributed and rank0_only():
-            self.num_rollouts_done_store.set("num_done", "0")
-
         self.num_steps_done += count_steps_delta
 
         return losses
 
-    # update training log
+    def should_checkpoint(self) -> bool:
+        # do not save at when 0 update is done, save when total_updates are done
+        needs_checkpoint = (
+            self.num_updates_done % self.checkpoint_interval
+        ) == 0
+
+        return needs_checkpoint
+
     # log on tensorboard
     @rank0_only
     def _training_log(
         self, writer, losses: Dict[str, float], prev_time: int = 0
     ):
-        # compute delta between the first step and the last step inside the window
-        deltas = {
-            k: (
-                (v[-1] - v[0]).sum().item()
-                if len(v) > 1
-                else v[0].sum().item()
-            )
-            for k, v in self.window_episode_stats.items()
-        }
-        deltas["count"] = max(deltas["count"], 1.0)
-
+        
         # add loss to tensorboard
         for k,v in losses.items():
             writer.add_scalar("Loss/"+str(k), v, self.num_steps_done)
 
-        # Check to see if there are any metrics
-        # that haven't been logged yet
-        # add metrics to tensorboard and averaged over "count" episodes
-        # deltas["count"] is the actual # of episodes inside the window, the maximum window size is reward_window_size
-        metrics = {
-            k: v / deltas["count"]
-            for k, v in deltas.items()
-            if k not in {"reward", "count"}
-        }
-        if len(metrics) > 0:
-            for k,v in metrics.items():
-                writer.add_scalar("Metrics/"+str(k), v, self.num_steps_done)    
-
-        # add reward to tensorboard and averaged over "count" episodes
-        writer.add_scalar(
-            "Reward/reward",
-            #{"reward": deltas["reward"] / deltas["count"]},
-            deltas["reward"] / deltas["count"],
-            self.num_steps_done,
-        )
-
-        # log stats
-        # log_interval: log every # updates
-        if self.num_updates_done % self.config.get("log_interval") == 0:
+        # log_interval: log every # updates, log at percentage 0
+        if self.num_updates_done % int(self.config.get("log_interval")) == 0:
             logger.info(
                 "update: {}\tfps: {:.3f}\t".format(
                     self.num_updates_done,
@@ -583,28 +461,31 @@ class BCOnlineTrainer(PPOTrainer):
                 )
             )
 
-            logger.info(
-                "Average window size: {}  {}".format(
-                    len(self.window_episode_stats["count"]),
-                    "  ".join(
-                        "{}: {:.3f}".format(k, v / deltas["count"])
-                        for k, v in deltas.items()
-                        if k != "count"
-                    ),
-                )
-            )
+    # collect a batch of trajectories
+    def collect_trajectory_batch(self):
+        count_steps_delta = 0
+        profiling_utils.range_push("rollouts loop")
 
-    def should_end_early(self, rollout_step) -> bool:
-        if not self._is_distributed:
-            return False
-        # This is where the preemption of workers happens.  If a
-        # worker detects it will be a straggler, it preempts itself!
-        return (
-            rollout_step
-            >= int(self.config.get("num_steps")) * self.SHORT_ROLLOUT_THRESHOLD
-        ) and int(self.num_rollouts_done_store.get("num_done")) >= (
-            float(self.config.get("sync_frac")) * torch.distributed.get_world_size()
-        )
+        # act one step (for all envs)
+        profiling_utils.range_push("_collect_rollout_step")
+        self._compute_actions_and_step_envs()
+
+        num_steps = self.envs.get_max_optimal_action_sequence_length()
+        # all envs execuate a rollout
+        for step in range(num_steps):
+            # step env for one step
+            count_steps_delta += self._collect_environment_result()
+
+            profiling_utils.range_pop()  
+            profiling_utils.range_push("_collect_rollout_step")
+
+            # act one step
+            self._compute_actions_and_step_envs()
+
+        profiling_utils.range_pop()  # rollouts loop
+
+        # return the number of steps collected
+        return count_steps_delta
 
     # train process
     @profiling_utils.RangeContext("train")
@@ -616,20 +497,27 @@ class BCOnlineTrainer(PPOTrainer):
         """
 
         self._init_train()
-
-        count_checkpoints = 0
-        prev_time = 0
-
-        lr_scheduler = LambdaLR(
-            optimizer=self.agent.optimizer,
-            lr_lambda=lambda x: 1 - self.percent_done(),
-        )
         
-        # create tensorboard
+        # create optimizer and scheduler
+        optimizer = torch.optim.AdamW(
+            self.agent.parameters(),
+            lr=float(self.config.get('learning_rate')),
+            weight_decay=float(self.config.get('weight_decay')),
+        )
+        scheduler = None
+        
+        # create tensorboard folder
         tensorboard_folder = os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name"))
         if not os.path.exists(tensorboard_folder):
             os.makedirs(tensorboard_folder)
         
+        # start training
+        self.num_updates_done = 0 # the number of training updates done
+        self.num_steps_done = 0   # the number of steps collected
+        count_checkpoints = 0 # checkpoint index starts from 0
+        prev_time = 0
+        self.total_updates = int(self.config.get('total_updates')) # total training times
+
         with (
             TensorboardWriter(
                 tensorboard_folder, flush_secs=self.flush_secs
@@ -639,15 +527,11 @@ class BCOnlineTrainer(PPOTrainer):
         ) as writer:
             # training loop
             # loop one time: self.num_updates_done + 1
-            while not self.is_done():
+            while self.num_updates_done < self.total_updates:
                 profiling_utils.on_start_step()
                 profiling_utils.range_push("train update")
 
-                if self.config.get("use_linear_clip_decay"):
-                    self.agent.clip_param = self.config.get("clip_param") * (
-                        1 - self.percent_done()
-                    )
-
+                # save resume state every n updates
                 if rank0_only() and self._should_save_resume_state():
                     requeue_stats = dict(
                         env_time=self.env_time,
@@ -655,101 +539,61 @@ class BCOnlineTrainer(PPOTrainer):
                         count_checkpoints=count_checkpoints,
                         num_steps_done=self.num_steps_done,
                         num_updates_done=self.num_updates_done,
-                        _last_checkpoint_percent=self._last_checkpoint_percent,
                         prev_time=(time.time() - self.t_start) + prev_time,
-                        running_episode_stats=self.running_episode_stats,
-                        window_episode_stats=dict(self.window_episode_stats),
                     )
 
                     # note that the saved state has more information than the saved checkpoint
                     # checkpoint only include state_dict and config
-                    save_resume_state(
-                        dict(
+                    if scheduler is None:
+                        state = dict(
                             state_dict=self.agent.state_dict(),
-                            optim_state=self.agent.optimizer.state_dict(),
-                            lr_sched_state=lr_scheduler.state_dict(),
+                            optim_state=optimizer.state_dict(),
                             config=self.config,
                             requeue_stats=requeue_stats,
-                        ),
-                        self.config,
-                    )
+                        )
+                    else:
+                        state = dict(
+                            state_dict=self.agent.state_dict(),
+                            optim_state=optimizer.state_dict(),
+                            lr_sched_state=scheduler.state_dict(),
+                            config=self.config,
+                            requeue_stats=requeue_stats,
+                        )    
+                    save_resume_state(state)
 
+                # exit function in the middle
                 if EXIT.is_set():
                     profiling_utils.range_pop()  # train update
-
                     self.envs.close()
-
                     requeue_job()
-
                     return
                 
-                # switch agent to evaluation mode, collect data
-                self.agent.eval()
-                count_steps_delta = 0
-                profiling_utils.range_push("rollouts loop")
+                # collect a batch of trajectories
+                count_steps_delta = self.collect_trajectory_batch()
 
-                # act one step (for all envs)
-                profiling_utils.range_push("_collect_rollout_step")
-                for buffer_index in range(self._nbuffers):
-                    self._compute_actions_and_step_envs(buffer_index)
+                # update agent for one time
+                action_loss = self._update_agent()
 
-                # all envs execuate a rollout (of length num_steps)
-                for step in range(int(self.config.get("num_steps"))):
-                    is_last_step = (
-                        self.should_end_early(step + 1)
-                        or (step + 1) == int(self.config.get("num_steps"))
-                    )
+                # optimize for one step
+                optimizer.zero_grad()
+                action_loss.backward()
+                optimizer.step()
+                if scheduler is not None:
+                    scheduler.step()
 
-                    for buffer_index in range(self._nbuffers):
-                        # step env for one step
-                        count_steps_delta += self._collect_environment_result(
-                            buffer_index
-                        )
-
-                        if (buffer_index + 1) == self._nbuffers:
-                            profiling_utils.range_pop()  # _collect_rollout_step
-
-                        if not is_last_step:
-                            if (buffer_index + 1) == self._nbuffers:
-                                profiling_utils.range_push(
-                                    "_collect_rollout_step"
-                                )
-                            # act one step
-                            self._compute_actions_and_step_envs(buffer_index)
-
-                    if is_last_step:
-                        break
-
-                profiling_utils.range_pop()  # rollouts loop
-
-                if self._is_distributed:
-                    self.num_rollouts_done_store.add("num_done", 1)
-
-                # train agent for one time
-                (
-                    value_loss,
-                    action_loss,
-                    dist_entropy,
-                    kl_divergence
-                ) = self._update_agent()
-
-                if self.config.get("use_linear_lr_decay"):
-                    lr_scheduler.step()  # type: ignore
-
+                # updates counter++
                 self.num_updates_done += 1
 
-                # show value_loass and action_loss in tensorboard
-                # count_steps_delta: how many envs in this buffer, e.g. 6
-                # steps: count_steps_delta * 1
+                # average losses over all processes
+                # count_steps_delta: the number of steps collected
                 losses = self._coalesce_post_step(
-                    dict(value_loss=value_loss, action_loss=action_loss, kl_divergence=kl_divergence, dist_entropy=dist_entropy),
+                    dict(action_loss=action_loss),
                     count_steps_delta,
                 )
-                # update tensor board
+                # show losses in tensorboard
                 self._training_log(writer, losses, prev_time)
 
-                # checkpoint model
-                # count_checkpoints starts from 0
+                # save checkpoint
                 if rank0_only() and self.should_checkpoint():
                     self.save_checkpoint(
                         f"ckpt.{count_checkpoints}.pth",

@@ -19,6 +19,7 @@ from gym import spaces
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.nn import functional as F
+from torch import Tensor
 
 from habitat import logger
 from enlighten.envs import VectorEnv
@@ -92,6 +93,8 @@ class BCOnlineTrainer(PPOTrainer):
 
         self.agent = None
         self.envs = None
+
+        #self.num_envs = int(self.config.get("num_environments"))
     
 
         # Distributed if the world size would be
@@ -198,7 +201,7 @@ class BCOnlineTrainer(PPOTrainer):
             # set seed according to rank and total num of environments
             # Multiply by the number of simulators to make sure they also get unique seeds
             self.config["seed"] += (
-                torch.distributed.get_rank() * int(self.config.get("num_environments"))
+                torch.distributed.get_rank() * int(self.config.get("num_environments")) #self.num_envs
             )
             
             # set seed (except env seed)
@@ -244,7 +247,7 @@ class BCOnlineTrainer(PPOTrainer):
         # create rollout buffer
         self.rollouts = BCRolloutStorage(
             numsteps=int(self.config.get("rollout_buffer_length")),
-            num_envs=self.envs.num_envs,
+            num_envs=self.envs.num_envs, #int(self.config.get("num_environments")),
             observation_space_channel=n_channel,
             observation_space_height=n_height,
             observation_space_width=n_width,
@@ -283,10 +286,26 @@ class BCOnlineTrainer(PPOTrainer):
 
         return dones
 
+    # once an env has been paused, it will be paused forever unless resumed
+    @staticmethod
+    def _pause_envs(
+        dones,
+        envs: Union[VectorEnv, NavEnv]
+    ) -> Tuple[
+        Union[VectorEnv, NavEnv]
+    ]:
+        # pausing self.envs which has done
+        for idx, done in enumerate(dones):
+            if done:
+                envs.pause_at(idx)
+
+        return envs
+
     # execute the optimal policy, save the actions to rollout buffer
     def _compute_actions_and_step_envs(self, cur_act_seq_lengths):
-        act_seq_dones = self.get_action_sequence_dones(cur_act_seq_lengths)
-
+        #act_seq_dones = self.get_action_sequence_dones(cur_act_seq_lengths)
+        #print(act_seq_dones)
+        #self._pause_envs(act_seq_dones, self.envs)
 
         num_envs = self.envs.num_envs
         env_slice = slice(0, num_envs)
@@ -296,6 +315,8 @@ class BCOnlineTrainer(PPOTrainer):
         
         # actions is a list (may contain None)
         actions = self.envs.get_next_optimal_action()
+
+        #print(actions)
         
         self.pth_time += time.time() - t_sample_action
 
@@ -386,7 +407,7 @@ class BCOnlineTrainer(PPOTrainer):
         t_update_model = time.time()
         
         # get training batch
-        observations, action_targets, prev_actions, goals, batch_sizes = self.rollouts.get_batch()
+        observations, action_targets, prev_actions, goals, batch_sizes = self.rollouts.get_training_batch()
 
         # switch agent model to training mode
         self.agent.train()
@@ -490,8 +511,11 @@ class BCOnlineTrainer(PPOTrainer):
     def collect_trajectory_batch(self):
         
         cur_act_seq_lengths = self.envs.get_optimal_action_sequence_lengths()
-        max_num_steps = max(cur_act_seq_lengths)
+        max_num_steps = max(cur_act_seq_lengths) # denote as n
         cur_act_seq_lengths = np.array(cur_act_seq_lengths, dtype=int)
+        # start lengths
+        # print(cur_act_seq_lengths)
+        # print("======================")
         # rollout length = optimal action sequence length + 1
         self.rollouts.seq_lengths = copy.deepcopy(cur_act_seq_lengths+1)
         
@@ -500,23 +524,47 @@ class BCOnlineTrainer(PPOTrainer):
         profiling_utils.range_push("rollouts loop")
 
         # act one step (for all envs), add a1
+        # step env for one step, buffer index++
+        # must be paired with collect_environment_result
         profiling_utils.range_push("_collect_rollout_step")
         self._compute_actions_and_step_envs(cur_act_seq_lengths)
         cur_act_seq_lengths -= 1
+        #print(cur_act_seq_lengths)
+        #print("======================")
 
         count_steps_delta = 0
-        # all envs execuate a rollout
+        # all envs execuate a rollout, iterate for n-1 times
         for step_ind in range(max_num_steps-1):
-            # step env for one step, add o_t, g_t (t=1,2,...)
+            # receive the last env step, add o_t, g_t (t=1,2,...n-1)
             count_steps_delta += self._collect_environment_result()
 
             profiling_utils.range_pop()  
             profiling_utils.range_push("_collect_rollout_step")
 
-            # act one step, add a_{t+1} (t=1,2,...)
+            # act one step, add a_{t+1} (t=2,3...,n)
+            # step env for one step, buffer index++
+            # must be paired with collect_environment_result
             self._compute_actions_and_step_envs(cur_act_seq_lengths)
             cur_act_seq_lengths -= 1
+            #print(cur_act_seq_lengths)
+            #print("======================")
 
+        # receive the last env step, add o_n, g_n 
+        count_steps_delta += self._collect_environment_result()
+
+        # effective steps in the buffer: n+1 steps, from 0 to n
+        assert self.rollouts.current_rollout_step_idx == max_num_steps, "Error: rollout buffer index should be equal to max action sequence length"
+
+        # print("================")
+        # print(self.rollouts.buffer["actions"][self.rollouts.current_rollout_step_idx-1])
+        # print(self.rollouts.buffer["actions"][self.rollouts.current_rollout_step_idx]) # n+1 step: stop (0)
+        # print("================")
+        # print(self.rollouts.buffer["prev_actions"][0]) # 0 step: -1
+        # print(self.rollouts.buffer["prev_actions"][self.rollouts.current_rollout_step_idx])
+        # end lengths
+        # print(cur_act_seq_lengths)
+        # print("======================")
+        
         profiling_utils.range_pop()  # rollouts loop
 
         # return the number of steps collected
@@ -606,10 +654,12 @@ class BCOnlineTrainer(PPOTrainer):
                 
                 # collect a batch of trajectories
                 count_steps_delta = self.collect_trajectory_batch()
-                exit()
+                
 
                 # update agent once
                 action_loss = self._update_agent()
+
+                exit()
 
                 # optimize for one step
                 optimizer.zero_grad()

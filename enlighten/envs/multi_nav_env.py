@@ -25,6 +25,7 @@ from enlighten.datasets.dataset import EpisodeIterator
 
 # across scene environments
 class MultiNavEnv(NavEnv):
+    
     # config_file could be a string or a parsed config dict
     def __init__(self, config_file="imitation_learning_dt.yaml"):
         # get config
@@ -32,7 +33,7 @@ class MultiNavEnv(NavEnv):
             config_file = os.path.join(config_path, config_file)
         self.config = parse_config(config_file)
 
-        
+        self.NONE_ACTION = -2
     
         # create simulator configuration and sensors
         self.create_sim_config()
@@ -253,15 +254,25 @@ class MultiNavEnv(NavEnv):
         return obs
     
     def get_next_optimal_action(self):
-        return next(self.optimal_action_iter, None)
+        return next(self.optimal_action_iter, self.NONE_ACTION)
 
     def get_optimal_action_sequence_length(self):
         return len(self.optimal_action_seq)
 
+    # default observation is zero numpy array
+    def get_default_observation(self):
+        default_obs = {}
+        spaces = self.get_combined_goal_obs_space().spaces
+        for key, space in spaces.items():
+            default_obs[key] = np.zeros(shape=space.shape, dtype=space.dtype)
+        
+        return default_obs
+
+
     # action is an integer
     def step(self, action):
-        # if action is None:
-        #     return None, None, True, {}
+        if action is self.NONE_ACTION:
+            return self.get_default_observation(), None, True, {}
 
         # action index to action name
         action_name = self.action_mapping[action]
@@ -350,6 +361,10 @@ def test_env():
             action = env.get_next_optimal_action()
             #print(action)
             obs, reward, done, info = env.step(action)
+            #print(obs)
+            #print(env.get_combined_goal_obs_space())
+            #print(env.get_default_observation())
+            #exit()
             #print(obs["color_sensor"].shape)
             #print(obs["pointgoal"].shape)
             env.render()

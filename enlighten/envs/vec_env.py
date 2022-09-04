@@ -247,7 +247,7 @@ class VectorEnv:
 
     @property
     def num_envs(self):
-        r"""number of individual environments."""
+        r"""number of individual environments (not paused)."""
         return self._num_envs - len(self._paused)
 
     @staticmethod

@@ -124,6 +124,7 @@ def batch_obs(
     )
 
     for sensor_name in sensor_names:
+        # for each sensor, organize the tensors
         for i, obs in enumerate(observations):
             sensor = obs[sensor_name]
             if cache is None:

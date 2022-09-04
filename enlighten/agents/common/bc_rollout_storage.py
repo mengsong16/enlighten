@@ -122,7 +122,7 @@ class BCRolloutStorage:
         self.current_rollout_step_idx = 0
 
     # get a batch for training from the buffer
-    def batch_generator(self) -> TensorDict:
+    def get_training_batch(self) -> TensorDict:
         # randomly shuffle the environments
         inds = torch.randperm(self._num_envs)
         batch = self.buffer[0 : self.current_rollout_step_idx, inds]

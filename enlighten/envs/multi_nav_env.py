@@ -335,7 +335,7 @@ class MultiNavEnv(NavEnv):
         
         self.follower.reset()
 
-        print("Path follower created and reset.")      
+        #print("Path follower created and reset.")      
     
     def set_scene_id_in_config(self, new_scene):
         self.sim_config.sim_cfg.scene_id = new_scene

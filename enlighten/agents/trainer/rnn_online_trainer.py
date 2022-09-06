@@ -334,7 +334,7 @@ class BCOnlineTrainer(PPOTrainer):
 
         # action from list to tensor [B,1]
         actions = np.array(actions, dtype=int)
-        actions = torch.from_numpy(actions).to(dtype=torch.int, device=self.device)
+        actions = torch.from_numpy(actions).to(dtype=torch.long, device=self.device)
         actions = torch.unsqueeze(actions, dim=1)
 
 
@@ -407,15 +407,20 @@ class BCOnlineTrainer(PPOTrainer):
         t_update_model = time.time()
         
         # get training batch
-        observations, action_targets, prev_actions, goals, batch_sizes = self.rollouts.get_training_batch()
+        observations, action_targets, prev_actions, goals, batch_sizes = self.rollouts.get_training_batch(self.device)
+        # print(action_targets)
+        # print("==============================")
+        # print(prev_actions)
+        # print("==============================")
+        # exit()
 
         # switch agent model to training mode
         self.agent.train()
 
         # forward agent
         rnn_hidden_size = int(self.config.get('rnn_hidden_size'))
-        h_0 = torch.zeros(1, self.batch_size, rnn_hidden_size, dtype=torch.float32, device=self.device) 
-        action_preds = self.agent.forward(observations, prev_actions, goals, h_0, batch_sizes)
+        h_0 = torch.zeros(1, self.envs.num_envs, rnn_hidden_size, dtype=torch.float32, device=self.device) 
+        action_preds = self.agent.actor.forward(observations, prev_actions, goals, h_0, batch_sizes)
 
         # update agent parameters for ppo_epoch epoches
         # action loss is computed over the whole sequence
@@ -517,7 +522,7 @@ class BCOnlineTrainer(PPOTrainer):
         # print(cur_act_seq_lengths)
         # print("======================")
         # rollout length = optimal action sequence length + 1
-        self.rollouts.seq_lengths = copy.deepcopy(cur_act_seq_lengths+1)
+        self.rollouts.seq_lengths = torch.from_numpy(copy.deepcopy(cur_act_seq_lengths+1))
         
         #print(self.rollouts.seq_lengths)
 
@@ -643,7 +648,8 @@ class BCOnlineTrainer(PPOTrainer):
                             config=self.config,
                             requeue_stats=requeue_stats,
                         )    
-                    save_resume_state(state)
+                    # config here is just a parameter to extract filename
+                    save_resume_state(state, self.config)
 
                 # exit function in the middle
                 if EXIT.is_set():
@@ -655,11 +661,8 @@ class BCOnlineTrainer(PPOTrainer):
                 # collect a batch of trajectories
                 count_steps_delta = self.collect_trajectory_batch()
                 
-
                 # update agent once
                 action_loss = self._update_agent()
-
-                exit()
 
                 # optimize for one step
                 optimizer.zero_grad()

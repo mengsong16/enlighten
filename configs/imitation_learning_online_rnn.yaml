@@ -11,7 +11,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole"
 
 
 # experiments
-algorithm_name: "rnn"
+algorithm_name: "rnn_online"
 experiment_name: "rnn_bc_online_1_scene_Rancocas_whole"
 
 # dummy initial setup 
@@ -78,7 +78,7 @@ gpu_id: 1 #1
 
 # vector env (for evaluation and training)
 # amount to the number of trajectories in a batch during training
-num_environments: 4 #8 #14 #4 #2
+num_environments: 14 #4 #8 #14 #4 #2
 single_scene: false  # construct vec envs from a single scene or the dataset
 
 # dummy observation transformations 
@@ -112,9 +112,9 @@ tensorboard_dir: "tensorboard"
 save_every_updates: 10000 #40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "rnn-whole_trajectory_rel_goal_1_scene_normal-s1-20220817-181404"
+eval_experiment_folder: "rnn_bc_online_1_scene_Rancocas_whole"
 # if a list, need to ensure that checkpoint index is increasing
-eval_checkpoint_file: ["ckpt_27.pth"] 
+eval_checkpoint_file: ["ckpt.0.pth","ckpt.1.pth","ckpt.2.pth","ckpt.3.pth","ckpt.4.pth"] 
 eval_dir: "evaluation"
 test_episode_count: -1 # test all episodes in the dataset
 

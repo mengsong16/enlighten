@@ -18,6 +18,7 @@ from enlighten.agents.common.tensor_related import (
 from enlighten.datasets.il_data_gen import goal_position_to_abs_goal
 import pickle
 import matplotlib.pyplot as plt
+from enlighten.agents.models.rnn_seq_model import DDBC
 
 # evaluate an agent across scene single env
 class AcrossEnvBaseEvaluator:
@@ -112,6 +113,23 @@ class AcrossEnvBaseEvaluator:
                 supervise_value=self.config.get('supervise_value'),
                 domain_adaptation=self.config.get('domain_adaptation')
             )
+        elif self.algorithm_name == "rnn_online":
+            model = DDBC(
+                obs_channel = get_obs_channel_num(self.config),
+                obs_width = int(self.config.get("image_width")), 
+                obs_height = int(self.config.get("image_height")),
+                goal_dim=int(self.config.get("goal_dimension")),
+                goal_form=self.config.get("goal_form"),
+                act_num=int(self.config.get("action_number")),
+                max_ep_len=int(self.config.get("max_ep_len")),  
+                rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
+                obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+                goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+                act_embedding_size=int(self.config.get('act_embedding_size')), #32
+                rnn_type=self.config.get('rnn_type'),
+                supervise_value=self.config.get('supervise_value'),
+                device=self.device
+            )
         elif self.algorithm_name == "ppo":
             self.obs_transforms = get_active_obs_transforms(self.config)
             self.cache = ObservationBatchingCache()
@@ -142,6 +160,7 @@ class AcrossEnvBaseEvaluator:
         # load checkpoint
         checkpoint = torch.load(checkpoint_path)
         # load weights
+        #model.load_state_dict(checkpoint["state_dict"])
         model.load_state_dict(checkpoint["state_dict"])
 
         return model

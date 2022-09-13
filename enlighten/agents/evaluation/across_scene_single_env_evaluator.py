@@ -356,7 +356,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                     self.device,
                     int(self.config.get("goal_dimension")), 
                     self.config.get("goal_coord_system"))
-            elif self.algorithm_name == "rnn":
+            elif self.algorithm_name == "rnn_bc":
                 rnn_hidden_size = int(self.config.get("rnn_hidden_size"))
                 episode_length, success, spl = evaluate_one_episode_rnn(
                 episode,

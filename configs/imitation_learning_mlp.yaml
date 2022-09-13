@@ -1,4 +1,4 @@
-# dataset
+# for original pointgoal dataset
 dataset_type: PointNav-v1 # for pointgoal dataset
 split: val_mini  #[train, val, val_mini] # for pointgoal dataset
 dataset_path: "/dataset/pointnav_gibson_v1/{split}/{split}.json.gz" # where pointgoal episode split data store
@@ -7,12 +7,13 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_mini" #"/dataset/behavior_dataset_gibson"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
+
 
 # experiments
-algorithm_name: "dt"
-experiment_name: "test"
-log_to_wandb: true #true  # log
+algorithm_name: "mlp_bc"
+experiment_name: "abs_goal_1_scene_Rancocas_2000"
+log_to_wandb: true
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -22,7 +23,6 @@ goal_position: [4, 0, -1]
 
 # dummy for saving render images
 eval_video_option: [] #["disk", "tensorboard"]
-
 
 # robot
 forward_resolution: 0.25 # meter
@@ -67,7 +67,7 @@ slack_reward: -1.0e-4 #-1 #-1.0e-4 #-1.0e-2
 goal_reward: true # false
 stop_depend_success: true
 
-# episode termination condition
+# episode termination condition (environment)
 max_steps_per_episode: 500  # should be equal to max_ep_len
 max_collisions_per_episode: 200
 
@@ -77,44 +77,41 @@ seed: 1
 # gpu
 gpu_id: 0 #1
 
-# vector env
-num_environments: 4 #2
+# vector env (for evaluation only)
+num_environments: 14 #8 #14 #4 #2
 
-# dt
-K: 20 # context length
-embed_dim: 128
-n_layer: 3
-n_head: 8
-activation_function: 'relu'
-dropout: 0.1
-dt_max_ep_len: 500 # 4096
+
+# bc policy
+hidden_size: 1024
+hidden_layer: 2
+obs_embedding_size: 512
+goal_embedding_size: 32
+goal_form:  "abs_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
+
+# batch
+batch_mode: "transition"
 
 # training
-batch_size: 16
-learning_rate: 1.0e-4
-weight_decay: 1.0e-4
-warmup_steps: 10000
-max_iters: 400 #500 #30 #10
-num_steps_per_iter: 100 #10000
-pad_mode: "left" # ["left", "right"]
-batch_mode: "random_segment" #["random_segment", "whole_trajectory", "partial_trajectory"]
-goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
-
+batch_size: 512 #256
+learning_rate: 1.0e-3 #5.0e-4
+max_epochs: 20
 
 # evaluate during training
-eval_during_training: true
-eval_every_iterations: 40 #10 #80 #50 #10 
+eval_during_training: false
+eval_every_epochs: 2 
 eval_during_training_sample: true
-eval_during_training_splits: ["same_start_goal_val", "same_scene_val", "across_scene_val"]
-eval_use_vector_envs: false
+eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
+eval_use_vector_envs: true
 
 # save checkpoint
-save_every_iterations: 40 #50 #10 
+save_every_epochs: 2
 
 # evaluation
-eval_experiment_folder: "dt-test-s1-20220531-002932" #"dt-test-s1--distance_to_goal-20220531-105916" #"dt-test-s1-20220531-002932"
-eval_checkpoint_file: ["ckpt_10.pth"]
+eval_experiment_folder: "mlp_bc_rel_goal_1_scene_normal-s1-20220817-181404"
+eval_checkpoint_file: ["ckpt_27.pth"] 
 eval_dir: "evaluation"
+
+
 
 
 

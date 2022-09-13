@@ -2,6 +2,7 @@ import random
 import numpy as np
 import copy
 import torch
+import math
 from torch.utils.data import Dataset as TorchDataset
 from enlighten.agents.common.other import get_obs_channel_num
 import pickle
@@ -20,7 +21,7 @@ class BehaviorDataset:
         else:    
             self.device = device
         
-        self.max_ep_len = int(self.config.get("max_ep_len")) 
+         
         self.goal_dim = int(self.config.get("goal_dimension")) 
         self.obs_channel = get_obs_channel_num(self.config)
         if self.obs_channel == 0:
@@ -32,6 +33,9 @@ class BehaviorDataset:
         self.batch_mode = self.config.get("batch_mode")
         print("batch mode =====> %s"%(self.batch_mode))
 
+        if self.batch_mode == "random_segment":
+            self.max_ep_len = int(self.config.get("dt_max_ep_len"))
+
         if self.config.get("algorithm_name") == "dt":
             self.pad_mode = self.config.get("pad_mode")
             self.context_length = int(self.config.get("K"))
@@ -40,6 +44,10 @@ class BehaviorDataset:
         # load augment trajectories if necessary
         if self.config.get("use_augment_train_data"):
             self.load_augment_trajectories()
+        
+
+        # create transition indices from loaded trajectories
+        self.generate_transition_index()
 
 
     def load_trajectories(self):
@@ -59,6 +67,8 @@ class BehaviorDataset:
 
         print("Loaded %d training trajectories"%(self.num_trajectories))
 
+
+
     def load_augment_trajectories(self):
         # load augment training trajectories and use some or all of them
         dataset_path = self.config.get("behavior_dataset_path")
@@ -74,8 +84,93 @@ class BehaviorDataset:
         print("Loaded %d augment training trajectories"%(augment_traj_num))
         print("Use %d training trajectories in total"%(self.num_trajectories))
 
-    # sample a batch  
-    def get_batch(self, batch_size):
+
+    def generate_transition_index(self):
+        self.transition_index_list = []
+        self.num_steps = 0
+        for traj_index, traj in enumerate(self.trajectories):
+            trans_num = len(traj['observations']) - 1
+            traj_index_list = [traj_index] * (trans_num)
+            trans_index_list = list(range(trans_num))
+            self.transition_index_list.extend(list(zip(traj_index_list, trans_index_list)))
+            self.num_steps += len(traj['observations'])
+        
+        assert len(self.transition_index_list) == self.num_steps - len(self.trajectories), "Error: the number of transitions and steps do not match"
+
+        self.shuffle_transition_dataset()
+
+        print("Loaded %d steps"%(self.num_steps))
+        print("Loaded %d transitions"%(len(self.transition_index_list)))
+
+    def advance_index_one_transition_batch(self, batch_size):
+        stride = min(batch_size, len(self.transition_index_list) - self.transition_index)
+        batch_inds = self.transition_index_list[self.transition_index:self.transition_index+stride]
+        
+        # advance index
+        self.transition_index += stride
+
+        if self.transition_index >= len(self.transition_index_list):
+            self.transition_index = 0
+        
+        return batch_inds
+
+    def get_batch_num(self, batch_size):
+        batch_num = int(math.ceil(len(self.transition_index_list) / batch_size))
+        return batch_num
+
+    # sample a transition batch 
+    # o: (B,C,H,W)
+    # g: (B,goal_dim)
+    # a: (B)
+    # next_o: (B,C,H,W)
+    def get_transition_batch(self, batch_size):
+        batch_inds = self.advance_index_one_transition_batch(batch_size)
+        real_batch_size = len(batch_inds)
+        observation_space_shape = self.trajectories[0]['observations'][0].shape
+        rel_goal_space_shape = self.trajectories[0]['rel_goals'][0].shape
+        abs_goal_space_shape = self.trajectories[0]['abs_goals'][0].shape
+        
+        # print(observation_space_shape)
+        # print(rel_goal_space_shape)
+        # print(abs_goal_space_shape)
+        # exit()
+        o = torch.zeros(
+            real_batch_size,
+            *observation_space_shape, dtype=torch.float32, device=self.device)
+
+        rel_g = torch.zeros(
+            real_batch_size,
+            *rel_goal_space_shape, dtype=torch.float32, device=self.device)
+        
+        abs_g = torch.zeros(
+            real_batch_size,
+            *abs_goal_space_shape, dtype=torch.float32, device=self.device)
+
+        a = torch.zeros(
+            real_batch_size, dtype=torch.long, device=self.device)
+
+        next_o =  torch.zeros(
+            real_batch_size,
+            *observation_space_shape, dtype=torch.float32, device=self.device)   
+
+        for batch_index, (traj_index, step_index) in enumerate(batch_inds):
+           # memory id has changed by converting to tensor
+           a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index], dtype=torch.long, device=self.device)
+           o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index], dtype=torch.float, device=self.device)
+           next_o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index+1], dtype=torch.float, device=self.device)
+           rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index], dtype=torch.float, device=self.device)
+           abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index], dtype=torch.float, device=self.device)
+        
+        if self.goal_form == "rel_goal":
+            return o, rel_g, a, next_o
+        elif self.goal_form == "abs_goal":
+            return o, abs_g, a, next_o
+        else:
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit()  
+
+    # sample a trajectory batch  
+    def get_trajectory_batch(self, batch_size):
         if self.batch_mode == "random_segment": 
             return self.get_batch_random_segment(batch_size=batch_size)
         elif self.batch_mode == "whole_trajectory":
@@ -89,6 +184,7 @@ class BehaviorDataset:
     
 
     # sample a batch of whole trajectory or partial trajectory
+    # reorganize it to fit rnn history format
     # o: (T,C,H,W), where T is the total number of steps in the batch
     # a: (T)
     # prev_a: (T)
@@ -359,18 +455,37 @@ class BehaviorDataset:
         mp = np.zeros((1, padding_length))
 
         return op, ap, gp, dtgp, tp, mp
+    
+    def shuffle_transition_dataset(self):
+        random.shuffle(self.transition_index_list)
+        # reset transtion index pointer
+        self.transition_index = 0
+
+        print("Transition dataset shuffled")
+
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
     config_file = os.path.join(config_path, "imitation_learning_rnn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
+    batch_size = 512
+    batch_num = dataset.get_batch_num(batch_size)
     
-    for i in range(10):
-        output = dataset.get_batch(batch_size=4)
-        print(output[0].size()) # pytorch tensor
-        print(type(output[-1])) # numpy array
-        print(output[-1])
-        break
-        
+    for i in range(batch_num):
+        #output = dataset.get_trajectory_batch(batch_size=4)
+        #print(output[0].size()) # pytorch tensor
+        #print(type(output[-1])) # numpy array
+        #print(output[-1])
+        o, g, a, next_o = dataset.get_transition_batch(batch_size=batch_size)
+        # print(o.size())
+        # print(g.size())
+        # print(a.size())
+        # print(next_o.size())
+        # break
         print("Batch %d Done"%(i+1))
+        print("Batch size: %d"%(o.size()[0]))
+        print("Transition index: %d"%dataset.transition_index)
+        print("=========================")
+
+    print("Total number of batches: %d"%batch_num)

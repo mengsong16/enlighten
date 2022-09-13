@@ -18,6 +18,7 @@ class MLPEncoder(nn.Module):
             self.mlp_module.append(nn.Dropout(dropout))
         
         # hidden layer 2 to n (hidden --> hidden): linear+relu+dropout
+        # hidden_layer = n
         for _ in range(hidden_layer-1):
             self.mlp_module.extend([
                 nn.Linear(hidden_dim, hidden_dim),
@@ -28,6 +29,7 @@ class MLPEncoder(nn.Module):
                 self.mlp_module.append(nn.Dropout(dropout))
         
         # last layer n+1 (hidden --> output)
+        # hidden_layer = n
         self.mlp_module.extend([
             nn.Linear(hidden_dim, output_dim)
         ])

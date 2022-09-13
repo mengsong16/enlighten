@@ -24,7 +24,7 @@ from enlighten.agents.evaluation.across_scene_vec_env_evaluator import AcrossEnv
 from enlighten.datasets.image_dataset import ImageDataset
 
 
-# train seq2seq imitation learning
+# train behavior cloning imitation learning
 class SequenceTrainer:
     def __init__(self, config_filename):
         assert config_filename is not None, "needs config file to initialize trainer"
@@ -39,16 +39,17 @@ class SequenceTrainer:
         # set device
         self.device = get_device(self.config)
 
-        # create evaluator during training
-        # Note that only evaluator needs environment, offline training does not need
-        if self.config.get("eval_use_vector_envs"):
-            self.evaluator = AcrossEnvEvaluatorVector(eval_splits=list(self.config.get("eval_during_training_splits")),  
-            config_filename=config_filename, device=self.device) 
-        else:    
-            self.evaluator = AcrossEnvEvaluatorSingle(eval_splits=list(self.config.get("eval_during_training_splits")),  
-            config_filename=config_filename, device=self.device)
+        if self.config.get("eval_during_training"):
+            # create evaluator during training
+            # Note that only evaluator needs environment, offline training does not need
+            if self.config.get("eval_use_vector_envs"):
+                self.evaluator = AcrossEnvEvaluatorVector(eval_splits=list(self.config.get("eval_during_training_splits")),  
+                config_filename=config_filename, device=self.device) 
+            else:    
+                self.evaluator = AcrossEnvEvaluatorSingle(eval_splits=list(self.config.get("eval_during_training_splits")),  
+                config_filename=config_filename, device=self.device)
 
-    
+        
         # set experiment name
         self.set_experiment_name()
 
@@ -56,13 +57,6 @@ class SequenceTrainer:
         self.log_to_wandb = self.config.get("log_to_wandb")
         if self.log_to_wandb:
             self.init_wandb()
-        
-        # set evaluation 
-        self.eval_every_iterations = int(self.config.get("eval_every_iterations"))
-        
-        # set save checkpoint parameters
-        self.save_every_iterations = int(self.config.get("save_every_iterations"))
-
         
     
     def set_experiment_name(self):

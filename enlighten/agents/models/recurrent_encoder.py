@@ -8,7 +8,7 @@ from torch import nn as nn
 
 from enlighten.envs import ImageGoal, PointGoal, goal
 from enlighten.agents.models import build_attention_rnn_state_encoder
-from enlighten.agents.models.state_encoder import MLPEncoder
+from enlighten.agents.models.mlp_encoder import MLPEncoder
 
 import abc
 

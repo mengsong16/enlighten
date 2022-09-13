@@ -24,9 +24,15 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.image_dataset import ImageDataset
 
-class RNNTrainer(SequenceTrainer):
+class RNNBCTrainer(SequenceTrainer):
     def __init__(self, config_filename):
-        super(RNNTrainer, self).__init__(config_filename)
+        super(RNNBCTrainer, self).__init__(config_filename)
+
+        # set evaluation interval
+        self.eval_every_iterations = int(self.config.get("eval_every_iterations"))
+        
+        # set save checkpoint interval
+        self.save_every_iterations = int(self.config.get("save_every_iterations"))
 
         # use value supervision during training or not
         self.supervise_value = self.config.get('supervise_value')
@@ -66,10 +72,10 @@ class RNNTrainer(SequenceTrainer):
         # goals # (T,goal_dim)
         # batch_sizes # L
        
-        observations, action_targets, prev_actions, goals, value_targets, batch_sizes, batch_shape = self.train_dataset.get_batch(self.batch_size)
+        observations, action_targets, prev_actions, goals, value_targets, batch_sizes, batch_shape = self.train_dataset.get_trajectory_batch(self.batch_size)
         if self.domain_adaptation == True:
             source_batch_size = observations.size(0)
-            target_observations = self.target_domain_dataset.get_batch(batch_shape)
+            target_observations = self.target_domain_dataset.get_image_batch(batch_shape)
             target_batch_size = target_observations.size(0)
             # concat source and target observations
             observations = torch.cat((observations, target_observations), dim=0)
@@ -143,7 +149,7 @@ class RNNTrainer(SequenceTrainer):
         self.model = self.model.to(device=self.device)
 
         # print goal form
-        print("==========> %s"%(self.config.get("goal_form")))
+        print("goal form ==========> %s"%(self.config.get("goal_form")))
 
         # create optimizer: AdamW
         self.optimizer = torch.optim.AdamW(
@@ -184,7 +190,7 @@ class RNNTrainer(SequenceTrainer):
                 self.save_checkpoint(checkpoint_number = int((iter+1) // self.save_every_iterations))
     
     # train for one iteration
-    def train_one_iteration(self, num_steps, iter_num=0, print_logs=False):
+    def train_one_iteration(self, num_steps, iter_num, print_logs=False):
 
         train_action_losses, train_losses = [], []
         if self.supervise_value:
@@ -239,5 +245,5 @@ class RNNTrainer(SequenceTrainer):
 
     
 if __name__ == '__main__':
-    trainer = RNNTrainer(config_filename="imitation_learning_rnn.yaml")
+    trainer = RNNBCTrainer(config_filename="imitation_learning_rnn.yaml")
     trainer.train()

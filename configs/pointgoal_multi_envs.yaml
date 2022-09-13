@@ -10,7 +10,7 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole" #"/dataset/behavior_dataset_gibson_1_scene_hard_4000" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole" #"/dataset/behavior_dataset_gibson_1_scene_Rancocas_4000" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 
 # experiments
 algorithm_name: "ppo"
@@ -77,7 +77,7 @@ max_steps_per_episode: 500 #200 #500
 max_collisions_per_episode: 200 #100 #200
 
 # dummy: to be consistent with imitation learning config
-max_ep_len: 500  
+#max_ep_len: 500  
 goal_form:  "rel_goal"
 gpu_id: 0
 

@@ -7,13 +7,13 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "behavior_dataset_gibson_1_scene_hard_4000"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
 # Image training data location
 image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
-algorithm_name: "rnn"
-experiment_name: "whole_trajectory_rel_goal_1_scene_hard_4000" #"whole_trajectory_value_supervision" 
+algorithm_name: "rnn_bc"
+experiment_name: "whole_trajectory_rel_goal_1_scene_Rancocas_2000" #"whole_trajectory_value_supervision" 
 log_to_wandb: true
 
 # dummy initial setup 
@@ -88,7 +88,7 @@ obs_embedding_size: 512
 goal_embedding_size: 32
 act_embedding_size: 32
 rnn_type: 'gru'
-max_ep_len: 500 # should be consistent with the env max episode length 
+#max_ep_len: 500 # should be consistent with the env max episode length 
 
 # training
 batch_size: 4 # amount to the number of vector envs during training

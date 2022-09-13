@@ -44,8 +44,8 @@ class AcrossEnvBaseEvaluator:
         else:
             self.device = device 
 
-        # max episode length
-        self.max_ep_len = int(self.config.get("max_ep_len"))  
+        # max evaluation episode length
+        self.max_ep_len = int(self.config.get("max_steps_per_episode"))  
 
         # goal_form
         self.goal_form = self.config.get("goal_form") 
@@ -96,7 +96,7 @@ class AcrossEnvBaseEvaluator:
                 resid_pdrop=float(self.config.get('dropout')),
                 attn_pdrop=float(self.config.get('dropout')),
             )
-        elif self.algorithm_name == "rnn":
+        elif self.algorithm_name == "rnn_bc":
             model = RNNSequenceModel(
                 obs_channel = get_obs_channel_num(self.config),
                 obs_width = int(self.config.get("image_width")), 
@@ -113,7 +113,7 @@ class AcrossEnvBaseEvaluator:
                 supervise_value=self.config.get('supervise_value'),
                 domain_adaptation=self.config.get('domain_adaptation')
             )
-        elif self.algorithm_name == "rnn_online":
+        elif self.algorithm_name == "rnn_bc_online":
             model = DDBC(
                 obs_channel = get_obs_channel_num(self.config),
                 obs_width = int(self.config.get("image_width")), 

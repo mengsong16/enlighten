@@ -39,7 +39,7 @@ class ImageDataset:
 
     # sample a batch of images (T,C,H,W), where T is the total number of steps in the batch
     # T=B*K when trajectories have the same regular shape
-    def get_batch(self, batch_shape):
+    def get_image_batch(self, batch_shape):
         traj_num = batch_shape.shape[0]
         # all scenes
         scenes = list(self.images.keys())
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     config = parse_config(config_file)
     dataset = ImageDataset(config)
     for i in range(10):
-        dataset.get_batch(batch_shape=np.array([100,20,21]))
+        dataset.get_image_batch(batch_shape=np.array([100,20,21]))
 
         print("Batch %d Done"%(i+1))
         break

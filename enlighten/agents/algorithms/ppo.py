@@ -50,6 +50,7 @@ class PPO(nn.Module):
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
 
+        # use Adam as optimizer
         self.optimizer = optim.Adam(
             list(filter(lambda p: p.requires_grad, actor_critic.parameters())),
             lr=lr,

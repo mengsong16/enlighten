@@ -23,6 +23,15 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 
 class DTTrainer(SequenceTrainer):
+    def __init__(self, config_filename):
+        super(DTTrainer, self).__init__(config_filename)
+
+        # set evaluation interval
+        self.eval_every_iterations = int(self.config.get("eval_every_iterations"))
+        
+        # set save checkpoint interval
+        self.save_every_iterations = int(self.config.get("save_every_iterations"))
+
     def create_model(self):
         self.model = DecisionTransformer(
             obs_channel = get_obs_channel_num(self.config),
@@ -55,7 +64,7 @@ class DTTrainer(SequenceTrainer):
         # dtg # (B,K,1)
         # timestep # (B,K)
         # mask # (B,K)
-        observations, actions, goals, timesteps, attention_mask, batch_shape = self.train_dataset.get_batch(self.batch_size)
+        observations, actions, goals, timesteps, attention_mask, batch_shape = self.train_dataset.get_trajectory_batch(self.batch_size)
         action_targets = torch.clone(actions)
 
         # [B,K, action_num+1]
@@ -97,9 +106,9 @@ class DTTrainer(SequenceTrainer):
         self.model = self.model.to(device=self.device)
 
         # print goal form
-        print("==========> %s"%(self.config.get("goal_form")))
+        print("goal form ==========> %s"%(self.config.get("goal_form")))
 
-        # create optimizer: AdamW
+        # create optimizer: AdamW (Adam with weight decay)
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=float(self.config.get('learning_rate')),
@@ -138,7 +147,7 @@ class DTTrainer(SequenceTrainer):
                 self.save_checkpoint(checkpoint_number = int((iter+1) // self.save_every_iterations))
     
     # train for one iteration
-    def train_one_iteration(self, num_steps, iter_num=0, print_logs=False):
+    def train_one_iteration(self, num_steps, iter_num, print_logs=False):
 
         train_action_losses, train_losses = [], []
         

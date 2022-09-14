@@ -391,7 +391,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
         
         logs[f"{split_name}/total_episodes"] = success_array.len()
         logs[f"{split_name}/success_rate"] = success_array.mean()
-        logs[f"{split_name}/mean_spl"] = spl_array.mean()
+        logs[f"{split_name}/spl"] = spl_array.mean()
         #logs[f"{split_name}/mean_soft_spl"] = soft_spl_array.mean()
         
         return logs
@@ -405,17 +405,18 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
         for split_name, episodes in self.eval_dataset_episodes.items():
             logs = self.evaluate_over_one_dataset(episodes, model, sample, split_name, logs)
         
-        return logs
+        onecheckpoint_eval_results = {}
+        return logs, onecheckpoint_eval_results
 
     
 # evaluate RNN BC or PPO in a single process here
 if __name__ == "__main__":
     #eval_splits = ["same_start_goal_val", "same_scene_val", "across_scene_val"]
     eval_splits = ["same_scene_val", "across_scene_val"]
-    #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn.yaml") 
-    evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_multi_envs.yaml") 
+    #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn_bc.yaml") 
+    evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_ppo_multi_envs.yaml") 
     #evaluator.evaluate_over_checkpoints(sample=True)
-    evaluator.plot_checkpoint_graphs(checkpoint_interval_steps=500000)
+    evaluator.plot_checkpoint_graphs()
     
 
         

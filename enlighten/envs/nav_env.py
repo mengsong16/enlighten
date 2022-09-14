@@ -1385,7 +1385,7 @@ def test_export_map():
 
 if __name__ == "__main__":    
     #test_env("replica_nav_state.yaml")
-    test_env("pointgoal_baseline.yaml")
+    test_env("pointgoal_ppo_baseline.yaml")
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
     #test_rollout_storage()

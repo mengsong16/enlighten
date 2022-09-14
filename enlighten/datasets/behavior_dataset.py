@@ -466,7 +466,7 @@ class BehaviorDataset:
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
-    config_file = os.path.join(config_path, "imitation_learning_rnn.yaml")
+    config_file = os.path.join(config_path, "imitation_learning_rnn_bc.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
     batch_size = 512

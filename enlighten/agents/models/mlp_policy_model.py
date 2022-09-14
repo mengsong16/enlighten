@@ -75,10 +75,9 @@ class MLPPolicy(nn.Module):
         return input_embeddings
 
 
-    # input: B sequence of (o,a,g) of variant lengths, T steps in total
-    # input: h_0: [1, B, hidden_size]
-    # input: batch_sizes: batch_size of each step in the longest sequence
-    # output: B sequence of pred_action_logits of variant lengths, T steps in total
+    # input: observations: [B, C, H, W]
+    #        goals: [B,goal_dim]
+    # output: [B, action_number]
     # for training
     def forward(self, observations, goals):
 

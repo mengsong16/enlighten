@@ -703,5 +703,5 @@ class BCOnlineTrainer(PPOTrainer):
     
 
 if __name__ == "__main__":
-   trainer = BCOnlineTrainer(config_filename=os.path.join(config_path, "imitation_learning_online_rnn.yaml"))
+   trainer = BCOnlineTrainer(config_filename=os.path.join(config_path, "imitation_learning_online_rnn_bc.yaml"))
    trainer.train()

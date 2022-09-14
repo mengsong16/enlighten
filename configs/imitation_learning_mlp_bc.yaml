@@ -12,7 +12,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 
 # experiments
 algorithm_name: "mlp_bc"
-experiment_name: "abs_goal_1_scene_Rancocas_2000"
+experiment_name: "rel_goal_1_scene_Rancocas_2000"
 log_to_wandb: true
 
 # dummy initial setup 
@@ -75,7 +75,7 @@ max_collisions_per_episode: 200
 seed: 1
 
 # gpu
-gpu_id: 0 #1
+gpu_id: 1 #1
 
 # vector env (for evaluation only)
 num_environments: 14 #8 #14 #4 #2
@@ -86,7 +86,7 @@ hidden_size: 1024
 hidden_layer: 2
 obs_embedding_size: 512
 goal_embedding_size: 32
-goal_form:  "abs_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
+goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
 
 # batch
 batch_mode: "transition"
@@ -94,7 +94,7 @@ batch_mode: "transition"
 # training
 batch_size: 512 #256
 learning_rate: 1.0e-3 #5.0e-4
-max_epochs: 20
+max_epochs: 40
 
 # evaluate during training
 eval_during_training: false
@@ -107,8 +107,9 @@ eval_use_vector_envs: true
 save_every_epochs: 2
 
 # evaluation
-eval_experiment_folder: "mlp_bc_rel_goal_1_scene_normal-s1-20220817-181404"
-eval_checkpoint_file: ["ckpt_27.pth"] 
+eval_experiment_folder: "mlp_bc-abs_goal_1_scene_rancocas_2000-s1-20220912-201241"
+#"mlp_bc-rel_goal_1_scene_rancocas_2000-s1-20220912-201038"
+eval_checkpoint_file: ["ckpt_10.pth"] 
 eval_dir: "evaluation"
 
 

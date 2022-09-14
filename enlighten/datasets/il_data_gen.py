@@ -708,6 +708,8 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     goal_positions = []
     state_positions = []
     abs_goals = []
+    dones = []
+    rewards = []
 
     traj = {}
 
@@ -725,6 +727,9 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     abs_goals.append(abs_goal)
     state_position = np.array(env.agent.get_state().position, dtype="float32")
     state_positions.append(state_position)  # (3,)
+
+    dones.append(False) # d0=False
+    rewards.append(0.0) # r0=0
             
     for action in env.optimal_action_seq:
         obs, reward, done, info = env.step(action)
@@ -743,6 +748,9 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
         state_position = np.array(env.agent.get_state().position, dtype="float32")
         state_positions.append(state_position) # (3,)
 
+        dones.append(done) # bool
+        rewards.append(reward) # float
+
         # print(rel_goal.shape)
         # print(goal_position.shape)
         # print(state_position.shape)
@@ -757,11 +765,14 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     # print(len(goal_positions)) # n+1
     # print(len(state_positions)) # n+1
     # print(len(abs_goals)) # n+1
+    # print(len(dones)) # n+1
+    # print(len(rewards)) # n+1
     # print(len(env.optimal_action_seq)) # n
 
     # print(actions)
     # print(env.optimal_action_seq)
 
+    
     # print(actions[-1])
     # print(actions[-2])
     # print(actions[-3])
@@ -794,6 +805,8 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
                 traj["goal_positions"] = goal_positions
                 traj["state_positions"] = state_positions
                 traj["abs_goals"] = abs_goals
+                traj["dones"] = dones
+                traj["rewards"] = rewards
                 
     else:
         print("Error: shortest path not found")
@@ -1157,15 +1170,15 @@ if __name__ == "__main__":
     set_seed_except_env_seed(seed=0)
 
     # ====== test =======
-    #load_pointgoal_dataset("imitation_learning_rnn.yaml")  
-    #test_get_scene_names("imitation_learning_rnn.yaml")
-    #shortest_path_follower("imitation_learning_rnn.yaml")
+    #load_pointgoal_dataset("imitation_learning_rnn_bc.yaml")  
+    #test_get_scene_names("imitation_learning_rnn_bc.yaml")
+    #shortest_path_follower("imitation_learning_rnn_bc.yaml")
     
     # ====== generate pointgoal meta data =======
     # generate_pointgoal_dataset_meta(yaml_name="imitation_learning_dt.yaml", split="train")
     
     # ====== generate train / val /test split =======
-    # generate_behavior_dataset_meta_v1(yaml_name="imitation_learning_rnn.yaml", 
+    # generate_behavior_dataset_meta_v1(yaml_name="imitation_learning_rnn_bc.yaml", 
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson_large",
     #     train_scene_num=4, train_episode_num=3000, 
     #     across_scene_val_scene_num=2, across_scene_val_episode_num=10,
@@ -1175,7 +1188,7 @@ if __name__ == "__main__":
     #     same_scene_test_episode_num=100,
     #     same_start_goal_test_episode_num=100)
     
-    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn_bc.yaml", 
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene",
     #     train_scene_num=4, train_episode_num=2000, 
     #     same_scene_val_episode_num=400,
@@ -1184,7 +1197,7 @@ if __name__ == "__main__":
     #     same_scene_val_mini_episode_num=28,
     #     same_start_goal_val_mini_episode_num=28)
 
-    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn_bc.yaml", 
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson_72_scene",
     #     train_scene_num=72, train_episode_num=2160, #2880 2160
     #     same_scene_val_episode_num=720,
@@ -1193,7 +1206,7 @@ if __name__ == "__main__":
     #     same_scene_val_mini_episode_num=72,
     #     same_start_goal_val_mini_episode_num=72)
     
-    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn_bc.yaml", 
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
     #     train_scene_num=1, train_episode_num=2000, #2880 2160
     #     same_scene_val_episode_num=200,
@@ -1202,7 +1215,7 @@ if __name__ == "__main__":
     #     same_scene_val_mini_episode_num=20,
     #     same_start_goal_val_mini_episode_num=20)
 
-    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn.yaml", 
+    # generate_behavior_dataset_meta(yaml_name="imitation_learning_rnn_bc.yaml", 
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
     #     train_scene_num=1, train_episode_num=4000, #2880 2160
     #     same_scene_val_episode_num=200,
@@ -1211,37 +1224,37 @@ if __name__ == "__main__":
     #     same_scene_val_mini_episode_num=20,
     #     same_start_goal_val_mini_episode_num=20)
 
-    generate_behavior_dataset_meta_whole_scene(yaml_name="imitation_learning_online_rnn.yaml", 
-        behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole",
-        train_scene_num=1,
-        same_scene_val_episode_num=1000,
-        across_scene_val_mini_episode_num=28,
-        same_scene_val_mini_episode_num=30)
+    # generate_behavior_dataset_meta_whole_scene(yaml_name="imitation_learning_mlp_bc.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000",
+    #     train_scene_num=1,
+    #     same_scene_val_episode_num=1000,
+    #     across_scene_val_mini_episode_num=28,
+    #     same_scene_val_mini_episode_num=30)
 
     # ====== generate train episodes =======
-    # generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
-    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene",
-    #     split_name="train")
+    generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
+        behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000",
+        split_name="train")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(
-    #     yaml_name="imitation_learning_rnn.yaml",
+    #     yaml_name="imitation_learning_rnn_bc.yaml",
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson", 
     #     total_aug_episode_num=1000)
     
     # ====== generate train augment episodes =======
-    # generate_train_behavior_data(yaml_name="imitation_learning_rnn.yaml", 
+    # generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
     #      behavior_dataset_path="/dataset/behavior_dataset_gibson",
     #      split_name="train_aug")
 
     # ====== generate DA target domain scenes =======
-    # generate_image_dataset_scenes(yaml_name="imitation_learning_rnn.yaml", 
+    # generate_image_dataset_scenes(yaml_name="imitation_learning_rnn_bc.yaml", 
     #     behavior_dataset_path="/dataset/behavior_dataset_gibson", 
     #     image_dataset_path="/dataset/image_dataset_gibson", 
     #     scene_number=50)
     
     # ====== generate DA target domain images =======
-    # generate_image_dataset_data(yaml_name="pointgoal_baseline.yaml", 
+    # generate_image_dataset_data(yaml_name="pointgoal_ppo_baseline.yaml", 
     #     image_dataset_path="/dataset/image_dataset_gibson", 
     #     image_number_per_scene=200)
 

@@ -10,6 +10,7 @@ from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
 from enlighten.agents.models.decision_transformer import DecisionTransformer
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
+from enlighten.agents.models.mlp_policy_model import MLPPolicy
 from enlighten.agents.evaluation.ppo_eval import *
 from enlighten.agents.common.tensor_related import (
     ObservationBatchingCache,
@@ -142,6 +143,19 @@ class AcrossEnvBaseEvaluator:
                 obs_transforms=self.obs_transforms,
                 checkpoint_file=checkpoint_file)
             return model
+        elif self.algorithm_name == "mlp_bc":
+            model = MLPPolicy(
+            obs_channel = get_obs_channel_num(self.config),
+            obs_width = int(self.config.get("image_width")), 
+            obs_height = int(self.config.get("image_height")),
+            goal_dim=int(self.config.get("goal_dimension")),
+            goal_form=self.config.get("goal_form"),
+            act_num=int(self.config.get("action_number")),
+            obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+            goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+            hidden_size=int(self.config.get('hidden_size')),
+            hidden_layer=int(self.config.get('hidden_layer'))
+        )
         else:
             print("Error: undefined algorithm name: %s"%(self.algorithm_name))
             exit()
@@ -165,6 +179,7 @@ class AcrossEnvBaseEvaluator:
 
         return model
     
+
     def extract_int_from_string(self, r):
         s = ''.join(x for x in r if x.isdigit())
         return int(s)
@@ -184,28 +199,43 @@ class AcrossEnvBaseEvaluator:
         sort_indices = np.argsort(np.array(checkpoint_indices, dtype=np.int32))
         checkpoint_files = [checkpoint_files[i] for i in sort_indices]
         
-        eval_results = {}
+        success_rate = {}
+        spl = {}
+
+        for split_name in self.eval_splits:
+            success_rate[split_name] = []
+            spl[split_name] = []
+
         for checkpoint_file in checkpoint_files:
             print("================== %s evaluation Start ==================="%(checkpoint_file))
-            logs = self.evaluate_over_datasets(checkpoint_file=checkpoint_file, model=None, sample=sample)
-            index = self.extract_int_from_string(checkpoint_file)
-            eval_results[index] = logs
+            logs, current_checkpoint_results = self.evaluate_over_datasets(checkpoint_file=checkpoint_file, model=None, sample=sample)
+
+            # record current checkpoint result
+            for split_name in self.eval_splits:
+                success_rate[split_name].append(current_checkpoint_results[split_name]["success_rate"])
+                spl[split_name].append(current_checkpoint_results[split_name]["spl"])            
+
 
             self.print_metrics(logs, self.eval_splits)
             self.save_eval_logs(logs, self.eval_splits, checkpoint_file)
             print("================== %s evaluation Done ==================="%(checkpoint_file))
         
-        # dumpt results
-        # get save folder
-        save_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
-        if not os.path.exists(save_folder):
-            os.mkdir(save_folder)
+        # dump results
+        dump_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
+        if not os.path.exists(dump_folder):
+            os.mkdir(dump_folder)
         
-        save_name =  "all_eval_results.pickle"
-        with open(os.path.join(save_folder, save_name), 'wb') as handle:
-            pickle.dump(eval_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(os.path.join(dump_folder, "success_rate.pickle"), 'wb') as handle:
+            pickle.dump(success_rate, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
-        print("Results saved to all_eval_results.pickle")
+        with open(os.path.join(dump_folder, "spl.pickle"), 'wb') as handle:
+            pickle.dump(spl, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+        with open(os.path.join(dump_folder, "checkpoint_list.pickle"), 'wb') as handle:
+            pickle.dump(checkpoint_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+        print("Evaluated checkpoints: %s"%str(checkpoint_indices))
+        print("Done")
 
     def get_metric_string(self, logs, eval_splits):
         print_str_dict = {}
@@ -214,7 +244,7 @@ class AcrossEnvBaseEvaluator:
             print_str += "================== %s ======================\n"%(split_name)
             print_str += "Episodes in total: %d\n"%(logs[f"{split_name}/total_episodes"])
             print_str += "Success rate: %.4f\n"%(logs[f"{split_name}/success_rate"])
-            print_str += "SPL mean: %.4f\n"%(logs[f"{split_name}/mean_spl"])
+            print_str += "SPL: %.4f\n"%(logs[f"{split_name}/spl"])
             #print("Soft SPL mean: %f"%(logs[f"{split_name}/mean_soft_spl"]))
             print_str += "==============================================\n"
 
@@ -246,7 +276,7 @@ class AcrossEnvBaseEvaluator:
 
         print("Saved evaluation file: %s"%(txt_name)) 
 
-    def plot_checkpoint_one_graph(self, x, curves, eval_metric, save_folder):
+    def plot_checkpoint_one_graph(self, x, curves, eval_metric, save_folder, x_unit):
         # replace "_" with space
         eval_metric_name = eval_metric.replace("_", " ")
 
@@ -259,7 +289,7 @@ class AcrossEnvBaseEvaluator:
         plt.xlim(xmin=0)
 
         # naming the x axis
-        plt.xlabel('number of environment steps')
+        plt.xlabel('number of %s'%(x_unit))
        
         # naming the y axis
         plt.ylabel(eval_metric_name)
@@ -276,36 +306,46 @@ class AcrossEnvBaseEvaluator:
 
         plt.close()  
 
-    def plot_checkpoint_graphs(self, checkpoint_interval_steps):
+    def plot_checkpoint_graphs(self):
+
+        if self.config.get("algorithm_name") == "mlp_bc":
+            checkpoint_interval = int(self.config.get("save_every_epochs"))
+            x_unit = "epochs"
+        elif "rnn_bc" in self.config.get("algorithm_name"):
+            checkpoint_interval = int(self.config.get("save_every_iterations")) * int(self.config.get("num_steps_per_iter"))
+            x_unit = "updates"
+        elif "ppo" in self.config.get("algorithm_name"):
+            if int(self.config.get("checkpoint_interval")) >= 0:
+                checkpoint_interval = int(self.config.get("checkpoint_interval"))
+            else:
+                checkpoint_interval = int(int(self.config.get("total_num_steps")) / int(self.config.get("num_checkpoints")))
+            x_unit = "environment steps"
+        else:
+            print("Error: undefined algorithm")
+            exit()
+
         load_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
 
-        eval_result_path = os.path.join(load_folder, "all_eval_results.pickle")
-        print("Loading evaluation results from %s"%(eval_result_path))
-        with open(eval_result_path, 'rb') as f:
-            eval_results = pickle.load(f)
+        checkpoint_index_path = os.path.join(load_folder, "checkpoint_list.pickle")
+        print("Loading checkpoint indices from %s"%(checkpoint_index_path))
+        with open(checkpoint_index_path, 'rb') as f:
+            checkpoint_index_array = pickle.load(f)
+            # convert start indexing from 0 to 1
+            checkpoint_index_array = np.array(checkpoint_index_array, dtype=int) + 1
 
-        #print(eval_results)
-        
-        # x axis values
-        # eval_results.keys() are checkpoint index starting from 0
-        # change it to starting from 1
-        x = (np.array(list(eval_results.keys())) + 1) * checkpoint_interval_steps
-        
+        # x axis values 
+        x = checkpoint_index_array * checkpoint_interval
 
-        eval_metrics = ["success_rate", "mean_spl"]
+        eval_metrics = ["success_rate", "spl"]
         for eval_metric in eval_metrics:
-            curves = {}
-            for eval_split in self.eval_splits:
-                for checkpoint_id, value in eval_results.items():
-                    for eval_key, eval_value in value.items():
-                        if eval_metric in eval_key and eval_split in eval_key:
-                            if eval_split not in curves:
-                                curves[eval_split] = [eval_value]
-                            else:
-                                curves[eval_split].append(eval_value)
+            # load results
+            eval_result_path = os.path.join(load_folder, "%s.pickle"%(eval_metric))
+            print("Loading evaluation results from %s"%(eval_result_path))
+            with open(eval_result_path, 'rb') as f:
+                eval_results = pickle.load(f)
             
-            
-            self.plot_checkpoint_one_graph(x, curves, eval_metric, load_folder)
+            curves = eval_results
+            self.plot_checkpoint_one_graph(x, curves, eval_metric, load_folder, x_unit)
 
         print("Done.")
 

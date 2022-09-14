@@ -123,7 +123,7 @@ class MLPBCTrainer(SequenceTrainer):
                     logs = self.eval_during_training(logs=logs, print_logs=True)
                     # add eval point index to evaluation logs [index starting from 1]
                     eval_point_index = (epoch+1) // self.eval_every_epochs
-                    # log evaluation checkpoint index
+                    # log evaluation checkpoint index, index starting from 1
                     logs['checkpoints/eval_checkpoints'] = eval_point_index
                     
             
@@ -134,9 +134,9 @@ class MLPBCTrainer(SequenceTrainer):
             
             # save checkpoint
             # do not save at step 0
-            # checkpoint index starts from 1
+            # checkpoint index starts from 0
             if (epoch+1) % self.save_every_epochs == 0:
-                self.save_checkpoint(checkpoint_number = int((epoch+1) // self.save_every_epochs))
+                self.save_checkpoint(checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1)
     
     # train for one epoch
     def train_one_epoch(self, epoch_num, print_logs=False):
@@ -191,5 +191,5 @@ class MLPBCTrainer(SequenceTrainer):
 
     
 if __name__ == '__main__':
-    trainer = MLPBCTrainer(config_filename="imitation_learning_mlp.yaml")
+    trainer = MLPBCTrainer(config_filename="imitation_learning_mlp_bc.yaml")
     trainer.train()

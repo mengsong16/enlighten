@@ -1512,9 +1512,18 @@ class PPOTrainer(BaseRLTrainer):
         plt.close()  
 
     def plot_checkpoint_graphs(self):
-        checkpoint_interval_steps = int(int(self.config.get("total_num_steps")) / int(self.config.get("num_checkpoints")))
+        checkpoint_interval = int(int(self.config.get("total_num_steps")) / int(self.config.get("num_checkpoints")))
         load_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
 
+        checkpoint_index_path = os.path.join(load_folder, "checkpoint_list.pickle")
+        print("Loading checkpoint indices from %s"%(checkpoint_index_path))
+        with open(checkpoint_index_path, 'rb') as f:
+            checkpoint_index_array = pickle.load(f)
+            # convert start indexing from 0 to 1
+            checkpoint_index_array = np.array(checkpoint_index_array, dtype=int) + 1
+
+        # x axis values 
+        x = checkpoint_index_array * checkpoint_interval
 
         eval_metrics = ["success_rate", "spl"]
         for eval_metric in eval_metrics:
@@ -1524,14 +1533,6 @@ class PPOTrainer(BaseRLTrainer):
             with open(eval_result_path, 'rb') as f:
                 eval_results = pickle.load(f)
             
-            
-            
-            first_curve = list(eval_results.values())[0]
-            total_checkpoint_num = len(first_curve)
-                
-            # x axis values: checkpoint index starting from 1
-            x = (np.array(list(range(total_checkpoint_num)), dtype=int) + 1) * checkpoint_interval_steps
-
             curves = eval_results
             self.plot_checkpoint_one_graph(x, curves, eval_metric, load_folder)
 
@@ -1539,7 +1540,7 @@ class PPOTrainer(BaseRLTrainer):
 
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
-   trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_multi_envs.yaml"), resume_training=False)
+   trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_ppo_multi_envs.yaml"), resume_training=False)
    #trainer.train()
    #trainer.eval()
    trainer.plot_checkpoint_graphs()

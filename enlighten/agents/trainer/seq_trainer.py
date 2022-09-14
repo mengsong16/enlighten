@@ -108,7 +108,7 @@ class SequenceTrainer:
         self.model.eval()
         
         # evaluate
-        outputs = self.evaluator.evaluate_over_datasets(model=self.model, sample=self.config.get("eval_during_training_sample"))
+        outputs, _ = self.evaluator.evaluate_over_datasets(model=self.model, sample=self.config.get("eval_during_training_sample"))
         for k, v in outputs.items():
             logs[f'evaluation/{k}'] = v
 

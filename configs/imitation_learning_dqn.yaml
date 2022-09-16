@@ -11,7 +11,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 
 
 # experiments
-algorithm_name: "mlp_bc"
+algorithm_name: "offline_dqn"
 experiment_name: "rel_goal_1_scene_Rancocas_2000"
 log_to_wandb: true
 
@@ -80,10 +80,9 @@ gpu_id: 1 #1
 # vector env (for evaluation only)
 num_environments: 14 #8 #14 #4 #2
 
-
-# bc policy
+# q network
 hidden_size: 512 #1024
-hidden_layer: 1
+hidden_layer: 2
 obs_embedding_size: 512
 goal_embedding_size: 32
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
@@ -95,11 +94,14 @@ batch_mode: "transition"
 batch_size: 512 #256
 learning_rate: 5.0e-4 #1.0e-3 #5.0e-4
 max_epochs: 40
+gamma: 0.99
+target_update_every_updates: 10
+soft_target_tau: 1.0
 
 # evaluate during training
 eval_during_training: false
 eval_every_epochs: 2 
-eval_during_training_sample: true
+eval_during_training_sample: false # dummy
 eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
 eval_use_vector_envs: true
 

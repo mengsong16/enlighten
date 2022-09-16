@@ -8,7 +8,7 @@ from torch import nn as nn
 
 from enlighten.envs import ImageGoal, PointGoal, goal
 from enlighten.agents.models import build_attention_rnn_state_encoder
-from enlighten.agents.models.mlp_encoder import MLPEncoder
+from enlighten.agents.models.mlp_network import MLPNetwork
 
 import abc
 
@@ -163,7 +163,7 @@ class RecurrentVisualEncoder(Net):
                 input_state_size  += self.goal_input_size
     
                    
-            self.state_embed_encoder = MLPEncoder(input_dim=input_state_size, output_dim=hidden_size)
+            self.state_embed_encoder = MLPNetwork(input_dim=input_state_size, output_dim=hidden_size)
             # state output size is equal to hidden size of RNN
             visual_state_encoder_output_size = hidden_size
         # visual encoder
@@ -208,7 +208,7 @@ class RecurrentVisualEncoder(Net):
                 self.state_encoder_layer = 2    
             
             if self.state_encoder_layer > 0:
-                self.state_encoder = MLPEncoder(input_dim=visual_state_encoder_output_size+other_state_encoder_input_size, 
+                self.state_encoder = MLPNetwork(input_dim=visual_state_encoder_output_size+other_state_encoder_input_size, 
                     hidden_layer=self.state_encoder_layer, output_dim=hidden_size)  
             else:
                 self.state_encoder = None     

@@ -20,6 +20,7 @@ from enlighten.datasets.il_data_gen import goal_position_to_abs_goal
 import pickle
 import matplotlib.pyplot as plt
 from enlighten.agents.models.rnn_seq_model import DDBC
+from enlighten.agents.models.q_network import QNetwork
 
 # evaluate an agent across scene single env
 class AcrossEnvBaseEvaluator:
@@ -156,6 +157,19 @@ class AcrossEnvBaseEvaluator:
             hidden_size=int(self.config.get('hidden_size')),
             hidden_layer=int(self.config.get('hidden_layer'))
         )
+        elif "dqn" in self.algorithm_name:
+            model = QNetwork(
+            obs_channel = get_obs_channel_num(self.config),
+            obs_width = int(self.config.get("image_width")), 
+            obs_height = int(self.config.get("image_height")),
+            goal_dim=int(self.config.get("goal_dimension")),
+            goal_form=self.config.get("goal_form"),
+            act_num=int(self.config.get("action_number")),
+            obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+            goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+            hidden_size=int(self.config.get('hidden_size')),
+            hidden_layer=int(self.config.get('hidden_layer'))
+        )
         else:
             print("Error: undefined algorithm name: %s"%(self.algorithm_name))
             exit()
@@ -179,7 +193,6 @@ class AcrossEnvBaseEvaluator:
 
         return model
     
-
     def extract_int_from_string(self, r):
         s = ''.join(x for x in r if x.isdigit())
         return int(s)

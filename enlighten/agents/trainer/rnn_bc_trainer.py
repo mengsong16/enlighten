@@ -172,7 +172,7 @@ class RNNBCTrainer(SequenceTrainer):
             if self.config.get('eval_during_training') and self.eval_every_iterations > 0:
                 # do not eval at step 0
                 if (iter+1) % self.eval_every_iterations == 0:
-                    logs = self.eval_during_training(logs=logs, print_logs=True)
+                    logs = self.eval_during_training(model=self.model, logs=logs, print_logs=True)
                     # add eval point index to evaluation logs, index starting from 1
                     eval_point_index = (iter+1) // self.eval_every_iterations
                     logs['checkpoints/eval_checkpoints'] = eval_point_index
@@ -187,7 +187,7 @@ class RNNBCTrainer(SequenceTrainer):
             # do not save at step 0
             # checkpoint index starts from 0
             if (iter+1) % self.save_every_iterations == 0:
-                self.save_checkpoint(checkpoint_number = int((iter+1) // self.save_every_iterations) - 1)
+                self.save_checkpoint(model=self.model, checkpoint_number = int((iter+1) // self.save_every_iterations) - 1)
     
     # train for one iteration
     def train_one_iteration(self, num_steps, iter_num, print_logs=False):

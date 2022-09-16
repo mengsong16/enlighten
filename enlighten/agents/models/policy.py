@@ -4,7 +4,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 import abc
-from enlighten.agents.models.mlp_encoder import MLPEncoder
+from enlighten.agents.models.mlp_network import MLPNetwork
 
 import torch
 from gym import spaces

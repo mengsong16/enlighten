@@ -148,10 +148,25 @@ class BehaviorDataset:
 
         a = torch.zeros(
             real_batch_size, dtype=torch.long, device=self.device)
+        
+        r = torch.zeros(
+            real_batch_size, dtype=torch.float, device=self.device)
+
+        
+        d = torch.zeros(
+            real_batch_size, dtype=torch.bool, device=self.device)
 
         next_o =  torch.zeros(
             real_batch_size,
             *observation_space_shape, dtype=torch.float32, device=self.device)   
+        
+        next_rel_g = torch.zeros(
+            real_batch_size,
+            *rel_goal_space_shape, dtype=torch.float32, device=self.device)
+        
+        next_abs_g = torch.zeros(
+            real_batch_size,
+            *abs_goal_space_shape, dtype=torch.float32, device=self.device)
 
         for batch_index, (traj_index, step_index) in enumerate(batch_inds):
            # memory id has changed by converting to tensor
@@ -160,11 +175,15 @@ class BehaviorDataset:
            next_o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index+1], dtype=torch.float, device=self.device)
            rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index], dtype=torch.float, device=self.device)
            abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index], dtype=torch.float, device=self.device)
+           r[batch_index] = torch.tensor(self.trajectories[traj_index]['rewards'][step_index+1], dtype=torch.float, device=self.device)
+           d[batch_index] = torch.tensor(self.trajectories[traj_index]['dones'][step_index+1], dtype=torch.bool, device=self.device)
+           next_rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index+1], dtype=torch.float, device=self.device)
+           next_abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index+1], dtype=torch.float, device=self.device)
         
         if self.goal_form == "rel_goal":
-            return o, rel_g, a, next_o
+            return o, rel_g, a, r, next_o, next_rel_g, d
         elif self.goal_form == "abs_goal":
-            return o, abs_g, a, next_o
+            return o, abs_g, a, r, next_o, next_abs_g, d
         else:
             print("Undefined goal form: %s"%(self.goal_form))
             exit()  
@@ -477,12 +496,14 @@ if __name__ == "__main__":
         #print(output[0].size()) # pytorch tensor
         #print(type(output[-1])) # numpy array
         #print(output[-1])
-        o, g, a, next_o = dataset.get_transition_batch(batch_size=batch_size)
+        o, g, a, r, next_o, next_g, d = dataset.get_transition_batch(batch_size=batch_size)
+        #print(dataset.trajectories[0]["dones"][-1])
+        #print(dataset.trajectories[0]["rewards"][-1])
         # print(o.size())
         # print(g.size())
         # print(a.size())
         # print(next_o.size())
-        # break
+        #break
         print("Batch %d Done"%(i+1))
         print("Batch size: %d"%(o.size()[0]))
         print("Transition index: %d"%dataset.transition_index)

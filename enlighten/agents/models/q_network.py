@@ -7,7 +7,7 @@ from enlighten.agents.models.dt_encoder import ObservationEncoder, DistanceToGoa
 from enlighten.agents.models.mlp_network import MLPNetwork
 
 
-class MLPPolicy(nn.Module):
+class QNetwork(nn.Module):
 
     def __init__(
             self,
@@ -48,13 +48,10 @@ class MLPPolicy(nn.Module):
     
         self.obs_encoder = ObservationEncoder(obs_channel, obs_embedding_size)
         
-        self.policy = MLPNetwork(input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+        self.q_network = MLPNetwork(input_dim=self.obs_embedding_size+self.goal_embedding_size, 
             output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
         
-        # acton logits --> action prob
-        self.softmax = nn.Softmax(dim=-1)
-
-
+    
     def encoder_forward(self, observations, goals):
         # (T,C,H,W) ==> (T,obs_embedding_size)
         observation_embeddings = self.obs_encoder(observations)
@@ -87,35 +84,23 @@ class MLPPolicy(nn.Module):
         # embed each input modality with a different head
         input_embeddings = self.encoder_forward(observations, goals)
         
-        # feed the input embeddings into the mlp policy
+        # feed the input embeddings into the mlp q function
         # output: [B, act_num]
-        pred_action_logits = self.policy(input_embeddings)
+        q_values = self.q_network(input_embeddings)
 
-        return pred_action_logits
+        return q_values
 
     # input: observations: [B, C, H, W]
     #        goals: [B,goal_dim]
     # output: actions: [B,1]  
     # for evaluation
-    def get_action(self, observations, goals, sample):
+    def get_action(self, observations, goals):
         # forward the sequence with no grad
         with torch.no_grad():
             # embed each input modality with a different head
-            pred_action_logits = self.forward(observations, goals)
-
-            # apply softmax to convert to probabilities
-            # probs: [B, action_num]
-            probs = self.softmax(pred_action_logits)
-
+            q_values = self.forward(observations, goals)
             
-            # sample from the distribution or take the most likely
-            if sample:
-                # each row is an independent distribution, draw 1 sample per distribution
-                actions = torch.multinomial(probs, num_samples=1)
-            else:
-                _, actions = torch.topk(probs, k=1, dim=-1)
+            actions = torch.argmax(q_values, dim=1, keepdim=True)
             
-            #print(actions.size())
-            #print("=========")
         
         return actions

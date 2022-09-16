@@ -83,7 +83,7 @@ class SequenceTrainer:
     
     
     # save checkpoint
-    def save_checkpoint(self, checkpoint_number):
+    def save_checkpoint(self, model, checkpoint_number):
         
         folder_name = self.project_name + "-" + self.group_name + "-" + self.experiment_name
         folder_path = os.path.join(checkpoints_path, folder_name)
@@ -91,7 +91,7 @@ class SequenceTrainer:
             os.makedirs(folder_path)
         # save agent weights and config
         checkpoint = {
-            "state_dict": self.model.state_dict(),
+            "state_dict": model.state_dict(),
             "config": self.config,
         }
 
@@ -101,14 +101,14 @@ class SequenceTrainer:
         print(f"Checkpoint {checkpoint_number} saved.")
     
     # evaluate during training
-    def eval_during_training(self, logs={}, print_logs=False):
+    def eval_during_training(self, model, logs={}, print_logs=False):
         eval_start = time.time()
 
         # switch model to evaluation mode
-        self.model.eval()
+        model.eval()
         
         # evaluate
-        outputs, _ = self.evaluator.evaluate_over_datasets(model=self.model, sample=self.config.get("eval_during_training_sample"))
+        outputs, _ = self.evaluator.evaluate_over_datasets(model=model, sample=self.config.get("eval_during_training_sample"))
         for k, v in outputs.items():
             logs[f'evaluation/{k}'] = v
 

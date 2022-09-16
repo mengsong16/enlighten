@@ -133,7 +133,7 @@ class DTTrainer(SequenceTrainer):
             # evaluate
             if self.config.get('eval_during_training') and self.eval_every_iterations > 0:
                 if (iter+1) % self.eval_every_iterations == 0:
-                    logs = self.eval_during_training(logs=logs, print_logs=True)
+                    logs = self.eval_during_training(model=self.model, logs=logs, print_logs=True)
                     # add checkpoint index to evaluation logs
                     checkpoint_index = (iter+1) // self.eval_every_iterations
                     logs['checkpoints/eval_checkpoints'] = checkpoint_index
@@ -144,7 +144,7 @@ class DTTrainer(SequenceTrainer):
             
             # save checkpoint
             if (iter+1) % self.save_every_iterations == 0:
-                self.save_checkpoint(checkpoint_number = int((iter+1) // self.save_every_iterations))
+                self.save_checkpoint(model=self.model, checkpoint_number = int((iter+1) // self.save_every_iterations))
     
     # train for one iteration
     def train_one_iteration(self, num_steps, iter_num, print_logs=False):

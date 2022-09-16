@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 from gym import spaces
 
-class MLPEncoder(nn.Module):
+class MLPNetwork(nn.Module):
     def __init__(self, input_dim, output_dim, hidden_dim=512, hidden_layer=2, dropout=0):
-        super(MLPEncoder, self).__init__()
+        super(MLPNetwork, self).__init__()
         
         # mlp module
         assert hidden_layer >= 1, "Error: Must have at least one hidden layers"
@@ -18,7 +18,6 @@ class MLPEncoder(nn.Module):
             self.mlp_module.append(nn.Dropout(dropout))
         
         # hidden layer 2 to n (hidden --> hidden): linear+relu+dropout
-        # hidden_layer = n
         for _ in range(hidden_layer-1):
             self.mlp_module.extend([
                 nn.Linear(hidden_dim, hidden_dim),

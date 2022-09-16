@@ -15,7 +15,7 @@ from torch import nn
 from tqdm import tqdm
 
 
-from enlighten.agents.models.mlp_policy_model import MLPPolicy
+from enlighten.agents.models.q_network import QNetwork
 from enlighten.agents.trainer.seq_trainer import SequenceTrainer
 from enlighten.utils.path import *
 from enlighten.utils.config_utils import parse_config
@@ -26,9 +26,9 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.image_dataset import ImageDataset
 
-class MLPBCTrainer(SequenceTrainer):
+class DQNTrainer(SequenceTrainer):
     def __init__(self, config_filename):
-        super(MLPBCTrainer, self).__init__(config_filename)
+        super(DQNTrainer, self).__init__(config_filename)
 
         # set evaluation interval
         self.eval_every_epochs = int(self.config.get("eval_every_epochs"))
@@ -36,9 +36,16 @@ class MLPBCTrainer(SequenceTrainer):
         # set save checkpoint interval
         self.save_every_epochs = int(self.config.get("save_every_epochs"))
 
+        # gamma
+        self.gamma = float(self.config.get("gamma"))
 
+        # target q parameters
+        self.target_update_every_updates = int(self.config.get("target_update_every_updates"))
+        self.soft_target_tau = float(self.config.get("soft_target_tau"))
+
+    # double Q
     def create_model(self):
-        self.model = MLPPolicy(
+        self.q_network = QNetwork(
             obs_channel = get_obs_channel_num(self.config),
             obs_width = int(self.config.get("image_width")), 
             obs_height = int(self.config.get("image_height")),
@@ -51,36 +58,72 @@ class MLPBCTrainer(SequenceTrainer):
             hidden_layer=int(self.config.get('hidden_layer'))
         )
 
+        self.target_q_network = QNetwork(
+            obs_channel = get_obs_channel_num(self.config),
+            obs_width = int(self.config.get("image_width")), 
+            obs_height = int(self.config.get("image_height")),
+            goal_dim=int(self.config.get("goal_dimension")),
+            goal_form=self.config.get("goal_form"),
+            act_num=int(self.config.get("action_number")),
+            obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+            goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+            hidden_size=int(self.config.get('hidden_size')),
+            hidden_layer=int(self.config.get('hidden_layer'))
+        )
+
+        # load the weights into the target networks
+        self.target_q_network.load_state_dict(self.q_network.state_dict())
+
+    # polyak update
+    # tau = 1: 100% copy from source to target
+    def soft_update_from_to(self, source, target, tau):
+        for target_param, param in zip(target.parameters(), source.parameters()):
+            target_param.data.copy_(
+                target_param.data * (1.0 - tau) + param.data * tau
+            )
+        
     # train for one update
     def train_one_update(self):
 
-        # switch model to training mode
-        self.model.train()
+        # switch model mode
+        self.q_network.train()
+        self.target_q_network.eval()
         
         # (next)observations # (B,C,H,W)
-        # action_targets # (B)
+        # actions # (B)
+        # rewards # (B)
         # goals # (B,goal_dim)
-        observations, goals, action_targets, rewards, next_observations = self.train_dataset.get_transition_batch(self.batch_size)
+        observations, goals, actions, rewards, next_observations, next_goals, dones = self.train_dataset.get_transition_batch(self.batch_size)
         
-        # forward model
-        action_preds = self.model.forward(observations, goals)
+        # compute target Q
+        with torch.no_grad():
+            Q_targets_next, _ = torch.max(self.target_q_network(next_observations, next_goals).detach(), 1) #[B]
+            Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones.int())) # dones: bool to int
+            Q_targets = Q_targets.detach() #[B]
+        
+        # compute predicted Q
+        Q_predicted = torch.gather(self.q_network(observations, goals),
+                                    dim=1,
+                                    index=actions.long().unsqueeze(1)).squeeze(1) # [B]
 
-        # action_preds: [B, action_num]
-        # action_target are ground truth action indices (not one-hot vectors)
-        action_loss =  F.cross_entropy(action_preds, action_targets)
-            
-        #print(loss) # a single float number
+        # compute Q loss
+        q_loss = F.mse_loss(Q_predicted, Q_targets) # a single float number
 
+        # optimize Q network
         self.optimizer.zero_grad()
+    
+        q_loss.backward()
         
-        # compute weight gradients
-        action_loss.backward()
-        
-        # optimize for one step
         self.optimizer.step()
         
+        # record q loss
         loss_dict = {}
-        loss_dict["action_loss"] = action_loss.detach().cpu().item()
+        loss_dict["q_loss"] = q_loss.detach().cpu().item()
+
+        # soft update target Q network (update when total updates == 0)
+        if self.updates_done % self.target_update_every_updates == 0:
+            self.soft_update_from_to(
+                self.q_network, self.target_q_network, self.soft_target_tau)
 
         # the number of updates ++
         self.updates_done += 1
@@ -95,14 +138,15 @@ class MLPBCTrainer(SequenceTrainer):
         
         # create model and move it to the correct device
         self.create_model()
-        self.model = self.model.to(device=self.device)
+        self.q_network = self.q_network.to(device=self.device)
+        self.target_q_network = self.target_q_network.to(device=self.device)
 
         # print goal form
         print("goal form ==========> %s"%(self.config.get("goal_form")))
 
         # create optimizer: Adam
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
+            self.q_network.parameters(),
             lr=float(self.config.get('learning_rate'))
         )
         
@@ -121,7 +165,7 @@ class MLPBCTrainer(SequenceTrainer):
             if self.config.get('eval_during_training') and self.eval_every_epochs > 0:
                 # do not eval at step 0
                 if (epoch+1) % self.eval_every_epochs == 0:
-                    logs = self.eval_during_training(model=self.model, logs=logs, print_logs=True)
+                    logs = self.eval_during_training(model=self.q_network, logs=logs, print_logs=True)
                     # add eval point index to evaluation logs [index starting from 1]
                     eval_point_index = (epoch+1) // self.eval_every_epochs
                     # log evaluation checkpoint index, index starting from 1
@@ -137,23 +181,23 @@ class MLPBCTrainer(SequenceTrainer):
             # do not save at step 0
             # checkpoint index starts from 0
             if (epoch+1) % self.save_every_epochs == 0:
-                self.save_checkpoint(model=self.model, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1)
+                self.save_checkpoint(model=self.q_network, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1)
     
     # train for one epoch
     def train_one_epoch(self, epoch_num, print_logs=False):
 
-        train_action_losses = []
+        train_q_losses = []
         
         logs = dict()
 
         train_start = time.time()
 
         # switch model to training mode
-        self.model.train()
+        self.q_network.train()
         # shuffle training set
         self.train_dataset.shuffle_transition_dataset()
         
-        # how many batches each epoch contains
+        # how many batches each epoch contains: 239
         batch_num = self.train_dataset.get_batch_num(self.batch_size)
 
         # train for n batches
@@ -161,15 +205,14 @@ class MLPBCTrainer(SequenceTrainer):
             loss_dict = self.train_one_update()
 
             # record losses
-            train_action_losses.append(loss_dict["action_loss"])
-
+            train_q_losses.append(loss_dict["q_loss"]) 
 
         logs['time/training'] = time.time() - train_start
         logs['time/total'] = time.time() - self.start_time
 
-        logs['training/train_action_loss_mean'] = np.mean(train_action_losses)
+        logs['training/train_q_loss_mean'] = np.mean(train_q_losses)
 
-        logs['training/train_action_loss_std'] = np.std(train_action_losses)
+        logs['training/train_q_loss_std'] = np.std(train_q_losses)
 
         logs['epoch'] = epoch_num
         logs['update'] = self.updates_done
@@ -188,5 +231,5 @@ class MLPBCTrainer(SequenceTrainer):
 
     
 if __name__ == '__main__':
-    trainer = MLPBCTrainer(config_filename="imitation_learning_mlp_bc.yaml")
+    trainer = DQNTrainer(config_filename="imitation_learning_dqn.yaml")
     trainer.train()

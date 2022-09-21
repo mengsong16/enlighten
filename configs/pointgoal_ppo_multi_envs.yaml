@@ -76,8 +76,7 @@ stop_depend_success: true #true
 max_steps_per_episode: 500 #200 #500
 max_collisions_per_episode: 200 #100 #200
 
-# dummy: to be consistent with imitation learning config
-#max_ep_len: 500  
+# dummy: to be consistent with imitation learning config 
 goal_form:  "rel_goal"
 gpu_id: 0
 

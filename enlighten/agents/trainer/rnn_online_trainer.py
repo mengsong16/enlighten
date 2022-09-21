@@ -122,8 +122,7 @@ class BCOnlineTrainer(PPOTrainer):
             obs_height = int(self.config.get("image_height")),
             goal_dim=int(self.config.get("goal_dimension")),
             goal_form=self.config.get("goal_form"),
-            act_num=int(self.config.get("action_number")),
-            max_ep_len=int(self.config.get("max_ep_len")),  
+            act_num=int(self.config.get("action_number")), 
             rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32

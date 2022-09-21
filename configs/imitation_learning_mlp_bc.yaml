@@ -9,10 +9,9 @@ scenes_dir: "/dataset"  # where mesh data store
 # BC training data location
 behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
 
-
 # experiments
 algorithm_name: "mlp_bc"
-experiment_name: "rel_goal_1_scene_Rancocas_2000"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_epoch_200"
 log_to_wandb: true
 
 # dummy initial setup 
@@ -68,20 +67,20 @@ goal_reward: true # false
 stop_depend_success: true
 
 # episode termination condition (environment)
-max_steps_per_episode: 500  # should be equal to max_ep_len
+max_steps_per_episode: 500  # used as the longest evaluation steps
 max_collisions_per_episode: 200
 
 # seed
 seed: 1
 
 # gpu
-gpu_id: 1 #1
+gpu_id: 0 #1
 
 # vector env (for evaluation only)
 num_environments: 14 #8 #14 #4 #2
 
 
-# bc policy
+# bc mlp policy
 hidden_size: 512 #1024
 hidden_layer: 1
 obs_embedding_size: 512
@@ -94,7 +93,7 @@ batch_mode: "transition"
 # training
 batch_size: 512 #256
 learning_rate: 5.0e-4 #1.0e-3 #5.0e-4
-max_epochs: 40
+max_epochs: 200
 
 # evaluate during training
 eval_during_training: false

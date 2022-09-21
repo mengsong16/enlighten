@@ -68,7 +68,7 @@ goal_reward: true # false
 stop_depend_success: true
 
 # episode termination condition (environment)
-max_steps_per_episode: 500  # should be equal to max_ep_len
+max_steps_per_episode: 500  # used as the longest evaluation steps
 max_collisions_per_episode: 200
 
 # seed
@@ -82,7 +82,7 @@ num_environments: 14 #8 #14 #4 #2
 
 # q network
 hidden_size: 512 #1024
-hidden_layer: 2
+hidden_layer: 1 #2
 obs_embedding_size: 512
 goal_embedding_size: 32
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
@@ -109,7 +109,7 @@ eval_use_vector_envs: true
 save_every_epochs: 2
 
 # evaluation
-eval_experiment_folder: "mlp_bc-rel_goal_1_scene_rancocas_2000-s1-20220915-032806_512_1_40"
+eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000-s1-20220916-143257"
 eval_checkpoint_file: ["ckpt_19.pth"] 
 eval_dir: "evaluation"
 

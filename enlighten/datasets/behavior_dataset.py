@@ -40,11 +40,14 @@ class BehaviorDataset:
             self.pad_mode = self.config.get("pad_mode")
             self.context_length = int(self.config.get("K"))
         
+        # load trajectories in the dataset
         self.load_trajectories()
         # load augment trajectories if necessary
         if self.config.get("use_augment_train_data"):
             self.load_augment_trajectories()
         
+        # create trajectory indices from loaded trajectories
+        self.generate_trajectory_index()
 
         # create transition indices from loaded trajectories
         self.generate_transition_index()
@@ -101,6 +104,10 @@ class BehaviorDataset:
 
         print("Loaded %d steps"%(self.num_steps))
         print("Loaded %d transitions"%(len(self.transition_index_list)))
+    
+    def generate_trajectory_index(self):
+        self.trajectory_index_list = list(range(self.num_trajectories))
+        self.shuffle_trajectory_dataset()
 
     def advance_index_one_transition_batch(self, batch_size):
         stride = min(batch_size, len(self.transition_index_list) - self.transition_index)
@@ -113,9 +120,27 @@ class BehaviorDataset:
             self.transition_index = 0
         
         return batch_inds
+    
+    def advance_index_one_trajectory_batch(self, batch_size):
+        stride = min(batch_size, len(self.trajectory_index_list) - self.trajectory_index)
+        batch_inds = self.trajectory_index_list[self.trajectory_index:self.trajectory_index+stride]
+        
+        # advance index
+        self.trajectory_index += stride
 
-    def get_batch_num(self, batch_size):
+        if self.trajectory_index >= len(self.trajectory_index_list):
+            self.trajectory_index = 0
+        
+        return batch_inds
+
+    # 239 batches for 2000 trajectories for batch size 512
+    def get_transition_batch_num(self, batch_size):
         batch_num = int(math.ceil(len(self.transition_index_list) / batch_size))
+        return batch_num
+    
+    # 500 batches for 2000 trajectories for batch size 4
+    def get_trajectory_batch_num(self, batch_size):
+        batch_num = int(math.ceil(len(self.trajectory_index_list) / batch_size))
         return batch_num
 
     # sample a transition batch 
@@ -212,14 +237,18 @@ class BehaviorDataset:
     # ag: (T,goal_dim)
     def get_batch_unequal_trajectory(self, batch_size, whole_trajectory):
         # sample batch_size trajectories from the trajectory pool with replacement
-        batch_inds = np.random.choice(
-            np.arange(self.num_trajectories),
-            size=batch_size,
-            replace=True
-        )
+        # batch_inds = np.random.choice(
+        #     np.arange(self.num_trajectories),
+        #     size=batch_size,
+        #     replace=True
+        # )
+
+        batch_inds = self.advance_index_one_trajectory_batch(batch_size)
+        # real batch size
+        real_batch_size = len(batch_inds)
 
         o, a, g, dtg, ag, prev_a, seq_lengths = [], [], [], [], [], [], []
-        for i in range(batch_size):
+        for i in range(real_batch_size):
             # current trajectory
             traj = self.trajectories[int(batch_inds[i])]
             # starting index
@@ -335,15 +364,19 @@ class BehaviorDataset:
     # sample a batch of segments of length K
     def get_batch_random_segment(self, batch_size):
         # sample batch_size trajectories from the trajectory pool with replacement
-        batch_inds = np.random.choice(
-            np.arange(self.num_trajectories),
-            size=batch_size,
-            replace=True
-        )
+        # batch_inds = np.random.choice(
+        #     np.arange(self.num_trajectories),
+        #     size=batch_size,
+        #     replace=True
+        # )
+        batch_inds = self.advance_index_one_trajectory_batch(batch_size)
+        # real batch size
+        real_batch_size = len(batch_inds)
+
         # organize a batch into observation, action, goal, distance to goal, timestep, mask
         # each element in the new batch is a trjectory segment, max_len: segment length which will be used to train sequence model
         o, a, g, dtg, timesteps, mask = [], [], [], [], [], []
-        for i in range(batch_size):
+        for i in range(real_batch_size):
             # current trajectory
             traj = self.trajectories[int(batch_inds[i])]
             # randomly pick a segment of context length from current trajectory starting from index si
@@ -447,7 +480,7 @@ class BehaviorDataset:
         # print(timesteps.size()) # (B,K)
         # print(mask.size()) # (B,K)
         
-        batch_shape = np.array([self.context_length] * batch_size, dtype=np.int32)
+        batch_shape = np.array([self.context_length] * real_batch_size, dtype=np.int32)
 
         if self.goal_form == "rel_goal":
             return o, a, g, timesteps, mask, batch_shape
@@ -481,6 +514,13 @@ class BehaviorDataset:
         self.transition_index = 0
 
         print("Transition dataset shuffled")
+    
+    def shuffle_trajectory_dataset(self):
+        random.shuffle(self.trajectory_index_list)
+        # reset transtion index pointer
+        self.trajectory_index = 0
+
+        print("Trajectory dataset shuffled")
 
 
 if __name__ == "__main__":
@@ -488,15 +528,18 @@ if __name__ == "__main__":
     config_file = os.path.join(config_path, "imitation_learning_rnn_bc.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
-    batch_size = 512
-    batch_num = dataset.get_batch_num(batch_size)
+    #batch_size = 512
+    batch_size = 4
+    transition_batch_num = dataset.get_transition_batch_num(batch_size)
+    trajectory_batch_num = dataset.get_trajectory_batch_num(batch_size)
     
-    for i in range(batch_num):
-        #output = dataset.get_trajectory_batch(batch_size=4)
+    #for i in range(transition_batch_num):
+    for i in range(trajectory_batch_num):
+        output = dataset.get_trajectory_batch(batch_size=batch_size)
         #print(output[0].size()) # pytorch tensor
         #print(type(output[-1])) # numpy array
         #print(output[-1])
-        o, g, a, r, next_o, next_g, d = dataset.get_transition_batch(batch_size=batch_size)
+        #o, g, a, r, next_o, next_g, d = dataset.get_transition_batch(batch_size=batch_size)
         #print(dataset.trajectories[0]["dones"][-1])
         #print(dataset.trajectories[0]["rewards"][-1])
         # print(o.size())
@@ -505,8 +548,10 @@ if __name__ == "__main__":
         # print(next_o.size())
         #break
         print("Batch %d Done"%(i+1))
-        print("Batch size: %d"%(o.size()[0]))
-        print("Transition index: %d"%dataset.transition_index)
+        #print("Batch size: %d"%(o.size()[0]))
+        #print("Transition index: %d"%dataset.transition_index)
+        print("Trajectory index: %d"%dataset.trajectory_index)
         print("=========================")
 
-    print("Total number of batches: %d"%batch_num)
+    #print("Total number of transition batches: %d"%transition_batch_num)
+    print("Total number of trajectory batches: %d"%trajectory_batch_num)

@@ -109,7 +109,6 @@ class RNNSequenceModel(nn.Module):
             goal_dim,
             goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
             act_num,
-            max_ep_len,
             obs_embedding_size, #512
             goal_embedding_size, #32
             act_embedding_size, #32
@@ -126,7 +125,6 @@ class RNNSequenceModel(nn.Module):
         self.goal_dim = goal_dim
         self.act_num = act_num
         self.goal_form = goal_form
-        self.max_ep_len = max_ep_len
         
         self.rnn_hidden_size = rnn_hidden_size
         self.obs_embedding_size = obs_embedding_size
@@ -314,7 +312,6 @@ class DDBC(nn.Module):
             goal_dim,
             goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
             act_num,
-            max_ep_len,
             obs_embedding_size, #512
             goal_embedding_size, #32
             act_embedding_size, #32
@@ -331,7 +328,6 @@ class DDBC(nn.Module):
             goal_dim,
             goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
             act_num,
-            max_ep_len,
             obs_embedding_size, #512
             goal_embedding_size, #32
             act_embedding_size, #32

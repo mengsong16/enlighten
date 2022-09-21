@@ -68,7 +68,7 @@ goal_reward: true # false
 stop_depend_success: true
 
 # episode termination condition
-max_steps_per_episode: 500  # should be equal to max_ep_len
+max_steps_per_episode: 500 
 max_collisions_per_episode: 200
 
 # seed

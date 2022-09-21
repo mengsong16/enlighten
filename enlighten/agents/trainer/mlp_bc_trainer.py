@@ -60,8 +60,7 @@ class MLPBCTrainer(SequenceTrainer):
         # (next)observations # (B,C,H,W)
         # action_targets # (B)
         # goals # (B,goal_dim)
-        observations, goals, action_targets, rewards, next_observations = self.train_dataset.get_transition_batch(self.batch_size)
-        
+        observations, goals, action_targets, rewards, next_observations, next_goals, dones = self.train_dataset.get_transition_batch(self.batch_size)
         # forward model
         action_preds = self.model.forward(observations, goals)
 
@@ -112,7 +111,6 @@ class MLPBCTrainer(SequenceTrainer):
 
         # train for max_epochs
         # each epoch iterate over the whole training sets
-    
         self.updates_done = 0
         for epoch in range(int(self.config.get('max_epochs'))):
             logs = self.train_one_epoch(epoch_num=epoch+1, print_logs=True)
@@ -154,7 +152,7 @@ class MLPBCTrainer(SequenceTrainer):
         self.train_dataset.shuffle_transition_dataset()
         
         # how many batches each epoch contains
-        batch_num = self.train_dataset.get_batch_num(self.batch_size)
+        batch_num = self.train_dataset.get_transition_batch_num(self.batch_size)
 
         # train for n batches
         for _ in tqdm(range(batch_num)):

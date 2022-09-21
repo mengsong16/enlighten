@@ -198,7 +198,7 @@ class DQNTrainer(SequenceTrainer):
         self.train_dataset.shuffle_transition_dataset()
         
         # how many batches each epoch contains: 239
-        batch_num = self.train_dataset.get_batch_num(self.batch_size)
+        batch_num = self.train_dataset.get_transition_batch_num(self.batch_size)
 
         # train for n batches
         for _ in tqdm(range(batch_num)):

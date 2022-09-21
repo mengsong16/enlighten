@@ -13,7 +13,7 @@ image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
 algorithm_name: "rnn_bc"
-experiment_name: "whole_trajectory_rel_goal_1_scene_Rancocas_2000" #"whole_trajectory_value_supervision" 
+experiment_name: "rel_goal_1_scene_Rancocas_2000_epoch_200" #"whole_trajectory_value_supervision" 
 log_to_wandb: true
 
 # dummy initial setup 
@@ -70,7 +70,7 @@ goal_reward: true # false
 stop_depend_success: true
 
 # episode termination condition (environment)
-max_steps_per_episode: 500  # should be equal to max_ep_len
+max_steps_per_episode: 500
 max_collisions_per_episode: 200
 
 # seed
@@ -82,35 +82,36 @@ gpu_id: 1 #1
 # vector env (for evaluation only)
 num_environments: 14 #8 #14 #4 #2
 
-# rnn
+# bc rnn policy
 rnn_hidden_size: 512
 obs_embedding_size: 512
 goal_embedding_size: 32
 act_embedding_size: 32
 rnn_type: 'gru'
-#max_ep_len: 500 # should be consistent with the env max episode length 
+goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
+
+# batch
+batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
 
 # training
 batch_size: 4 # amount to the number of vector envs during training
-learning_rate: 1.0e-4
-weight_decay: 1.0e-4
-max_iters: 3000 #2000 #1000 #800 #400 #500 #30 #10
-num_steps_per_iter: 100 #10000
-batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
-goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
+learning_rate: 5.0e-4 #1.0e-4
+#weight_decay: 1.0e-4
+max_epochs: 200 #2000 #1000 #800 #400 #500 #30 #10
+#num_steps_per_iter: 100 #10000
 supervise_value: false # true
 use_augment_train_data: false #true
 domain_adaptation: false #true
 
 # evaluate during training
-eval_during_training: true
-eval_every_iterations: 100 #100 #40 #80 #50 #10 
+eval_during_training: false
+eval_every_epochs: 2 #100 #40 #80 #50 #10 
 eval_during_training_sample: true
 eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
 eval_use_vector_envs: true #true
 
 # save checkpoint
-save_every_iterations: 100 #40 #50 #10 
+save_every_epochs: 2 #40 #50 #10 
 
 # evaluation
 eval_experiment_folder: "rnn-whole_trajectory_rel_goal_1_scene_normal-s1-20220817-181404"

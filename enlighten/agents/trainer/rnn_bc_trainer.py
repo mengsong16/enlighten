@@ -12,6 +12,7 @@ import datetime
 import time
 from torch.nn import functional as F
 from torch import nn
+from tqdm import tqdm
 
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
 from enlighten.agents.trainer.seq_trainer import SequenceTrainer
@@ -29,10 +30,10 @@ class RNNBCTrainer(SequenceTrainer):
         super(RNNBCTrainer, self).__init__(config_filename)
 
         # set evaluation interval
-        self.eval_every_iterations = int(self.config.get("eval_every_iterations"))
+        self.eval_every_epochs = int(self.config.get("eval_every_epochs"))
         
         # set save checkpoint interval
-        self.save_every_iterations = int(self.config.get("save_every_iterations"))
+        self.save_every_epochs = int(self.config.get("save_every_epochs"))
 
         # use value supervision during training or not
         self.supervise_value = self.config.get('supervise_value')
@@ -49,8 +50,7 @@ class RNNBCTrainer(SequenceTrainer):
             obs_height = int(self.config.get("image_height")),
             goal_dim=int(self.config.get("goal_dimension")),
             goal_form=self.config.get("goal_form"),
-            act_num=int(self.config.get("action_number")),
-            max_ep_len=int(self.config.get("max_ep_len")),  
+            act_num=int(self.config.get("action_number")),  
             rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
@@ -60,8 +60,8 @@ class RNNBCTrainer(SequenceTrainer):
             domain_adaptation=self.config.get('domain_adaptation')
         )
 
-    # train for one step
-    def train_one_step(self):
+    # train for one update
+    def train_one_update(self):
 
         # switch model to training mode
         self.model.train()
@@ -134,6 +134,9 @@ class RNNBCTrainer(SequenceTrainer):
         if self.domain_adaptation == True:
             loss_dict["adv_loss"] = adv_loss.detach().cpu().item() 
         
+        # the number of updates ++
+        self.updates_done += 1
+
         return loss_dict    
 
     # self.config.get: config of wandb
@@ -152,29 +155,37 @@ class RNNBCTrainer(SequenceTrainer):
         print("goal form ==========> %s"%(self.config.get("goal_form")))
 
         # create optimizer: AdamW
-        self.optimizer = torch.optim.AdamW(
+        # self.optimizer = torch.optim.AdamW(
+        #     self.model.parameters(),
+        #     lr=float(self.config.get('learning_rate')),
+        #     weight_decay=float(self.config.get('weight_decay')),
+        # )
+        # self.scheduler = None
+
+        # create optimizer: Adam
+        self.optimizer = torch.optim.Adam(
             self.model.parameters(),
-            lr=float(self.config.get('learning_rate')),
-            weight_decay=float(self.config.get('weight_decay')),
+            lr=float(self.config.get('learning_rate'))
         )
-        self.scheduler = None
         
         # start training
         self.batch_size = int(self.config.get('batch_size'))
         self.start_time = time.time()
 
-        # train for max_iters iterations
-        # each iteration includes num_steps_per_iter steps
-        for iter in range(int(self.config.get('max_iters'))):
-            logs = self.train_one_iteration(num_steps=int(self.config.get('num_steps_per_iter')), iter_num=iter+1, print_logs=True)
+        # train for max_epochs
+        # each epoch iterate over the whole training sets
+        self.updates_done = 0
+        for epoch in range(int(self.config.get('max_epochs'))):
+            logs = self.train_one_epoch(epoch_num=epoch+1, print_logs=True)
             
             # evaluate
-            if self.config.get('eval_during_training') and self.eval_every_iterations > 0:
+            if self.config.get('eval_during_training') and self.eval_every_epochs > 0:
                 # do not eval at step 0
-                if (iter+1) % self.eval_every_iterations == 0:
+                if (epoch+1) % self.eval_every_epochs == 0:
                     logs = self.eval_during_training(model=self.model, logs=logs, print_logs=True)
                     # add eval point index to evaluation logs, index starting from 1
-                    eval_point_index = (iter+1) // self.eval_every_iterations
+                    eval_point_index = (epoch+1) // self.eval_every_epochs
+                    # log evaluation checkpoint index, index starting from 1
                     logs['checkpoints/eval_checkpoints'] = eval_point_index
                     
             
@@ -186,11 +197,11 @@ class RNNBCTrainer(SequenceTrainer):
             # save checkpoint
             # do not save at step 0
             # checkpoint index starts from 0
-            if (iter+1) % self.save_every_iterations == 0:
-                self.save_checkpoint(model=self.model, checkpoint_number = int((iter+1) // self.save_every_iterations) - 1)
+            if (epoch+1) % self.save_every_epochs == 0:
+                self.save_checkpoint(model=self.model, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1)
     
-    # train for one iteration
-    def train_one_iteration(self, num_steps, iter_num, print_logs=False):
+    # train for one epoch
+    def train_one_epoch(self, epoch_num, print_logs=False):
 
         train_action_losses, train_losses = [], []
         if self.supervise_value:
@@ -206,10 +217,17 @@ class RNNBCTrainer(SequenceTrainer):
         # switch model to training mode
         self.model.train()
 
-        # train for num_steps
-        for _ in range(num_steps):
-            loss_dict = self.train_one_step()
+        # shuffle training set
+        self.train_dataset.shuffle_trajectory_dataset()
 
+        # how many batches each epoch contains: 500
+        batch_num = self.train_dataset.get_trajectory_batch_num(self.batch_size)
+
+        # train for n batches
+        for _ in tqdm(range(batch_num)):
+            loss_dict = self.train_one_update()
+
+            # record losses
             train_losses.append(loss_dict["loss"]) 
             train_action_losses.append(loss_dict["action_loss"])
 
@@ -219,14 +237,17 @@ class RNNBCTrainer(SequenceTrainer):
                 train_da_losses.append(loss_dict["adv_loss"]) 
 
             # step learning rate scheduler at each training step
-            if self.scheduler is not None:
-                self.scheduler.step()
+            # if self.scheduler is not None:
+            #     self.scheduler.step()
 
         logs['time/training'] = time.time() - train_start
         logs['time/total'] = time.time() - self.start_time
 
         logs['training/train_loss_mean'] = np.mean(train_losses)
         logs['training/train_action_loss_mean'] = np.mean(train_action_losses)
+
+        logs['epoch'] = epoch_num
+        logs['update'] = self.updates_done
 
         if self.supervise_value:
             logs['training/train_value_loss_mean'] = np.mean(train_value_losses)
@@ -237,7 +258,7 @@ class RNNBCTrainer(SequenceTrainer):
 
         if print_logs:
             print('=' * 80)
-            print(f'Iteration {iter_num}')
+            print(f'Epoch {epoch_num}')
             for k, v in logs.items():
                 print(f'{k}: {v}')
 

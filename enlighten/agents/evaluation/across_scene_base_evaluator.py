@@ -87,7 +87,7 @@ class AcrossEnvBaseEvaluator:
                 goal_form=self.config.get("goal_form"),
                 act_num=int(self.config.get("action_number")),
                 context_length=int(self.config.get('K')),
-                max_ep_len=int(self.config.get("max_ep_len")),  
+                max_ep_len=int(self.config.get("dt_max_ep_len")),  
                 pad_mode = str(self.config.get("pad_mode")),
                 hidden_size=int(self.config.get('embed_dim')), # parameters starting from here will be passed to gpt2
                 n_layer=int(self.config.get('n_layer')),
@@ -106,7 +106,6 @@ class AcrossEnvBaseEvaluator:
                 goal_dim=int(self.config.get("goal_dimension")),
                 goal_form=self.config.get("goal_form"),
                 act_num=int(self.config.get("action_number")),
-                max_ep_len=int(self.config.get("max_ep_len")),  
                 rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
                 obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
                 goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
@@ -123,7 +122,6 @@ class AcrossEnvBaseEvaluator:
                 goal_dim=int(self.config.get("goal_dimension")),
                 goal_form=self.config.get("goal_form"),
                 act_num=int(self.config.get("action_number")),
-                max_ep_len=int(self.config.get("max_ep_len")),  
                 rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
                 obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
                 goal_embedding_size=int(self.config.get('goal_embedding_size')), #32

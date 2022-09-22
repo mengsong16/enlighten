@@ -49,10 +49,16 @@ class AcrossEnvBaseEvaluator:
         # max evaluation episode length
         self.max_ep_len = int(self.config.get("max_steps_per_episode"))  
 
-        # goal_form
+        # goal form
         self.goal_form = self.config.get("goal_form") 
         if self.goal_form not in ["rel_goal", "distance_to_goal", "abs_goal"]:
             print("Undefined goal form: %s"%(self.goal_form))
+            exit()
+        
+        # state form
+        self.state_form = self.config.get("state_form", "observation") 
+        if self.state_form not in ["state", "observation"]:
+            print("Undefined state form: %s"%(self.goal_form))
             exit()
         
         # algorithm

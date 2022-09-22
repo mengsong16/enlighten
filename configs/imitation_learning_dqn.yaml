@@ -13,7 +13,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 # experiments
 algorithm_name: "offline_dqn"
 experiment_name: "rel_goal_1_scene_Rancocas_2000_state_epoch_100"
-log_to_wandb: true
+log_to_wandb: true #true
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -101,7 +101,7 @@ soft_target_tau: 1.0
 
 # evaluate during training
 eval_during_training: true #false
-eval_every_epochs: 5 
+eval_every_epochs: 5 #5 
 eval_during_training_sample: false # dummy
 eval_during_training_splits: ["same_start_goal_val_mini"] #["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
 eval_use_vector_envs: true

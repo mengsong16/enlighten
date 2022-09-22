@@ -725,7 +725,8 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     abs_goal = goal_position_to_abs_goal(goal_position,
             goal_dimension, goal_coord_system) # (2,) or (3,)
     abs_goals.append(abs_goal)
-    state_position = np.array(env.agent.get_state().position, dtype="float32")
+    #state_position = np.array(env.agent.get_state().position, dtype="float32")
+    state_position = np.array(obs["state_sensor"], dtype="float32")
     state_positions.append(state_position)  # (3,)
 
     dones.append(False) # d0=False
@@ -745,7 +746,10 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
         abs_goal = goal_position_to_abs_goal(goal_position,
             goal_dimension, goal_coord_system) # (2,) or (3,)
         abs_goals.append(abs_goal)
-        state_position = np.array(env.agent.get_state().position, dtype="float32")
+        #state_position = np.array(env.agent.get_state().position, dtype="float32")
+        state_position = np.array(obs["state_sensor"], dtype="float32")
+        # print(state_position.shape)
+        # print(state_position)
         state_positions.append(state_position) # (3,)
 
         dones.append(done) # bool

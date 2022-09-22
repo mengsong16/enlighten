@@ -30,8 +30,11 @@ class BehaviorDataset:
         self.obs_width = int(self.config.get("image_width")) 
         self.obs_height = int(self.config.get("image_height"))
         self.goal_form = self.config.get("goal_form")
+        print("goal form =====> %s"%(self.goal_form))
         self.batch_mode = self.config.get("batch_mode")
         print("batch mode =====> %s"%(self.batch_mode))
+        self.state_form = self.config.get("state_form", "observation")
+        print("state form =====> %s"%(self.state_form))
 
         if self.batch_mode == "random_segment":
             self.max_ep_len = int(self.config.get("dt_max_ep_len"))
@@ -148,12 +151,16 @@ class BehaviorDataset:
     # g: (B,goal_dim)
     # a: (B)
     # next_o: (B,C,H,W)
+    # next_g: (B,goal_dim)
+    # next_a: (B)
+    # d: (B)
     def get_transition_batch(self, batch_size):
         batch_inds = self.advance_index_one_transition_batch(batch_size)
         real_batch_size = len(batch_inds)
         observation_space_shape = self.trajectories[0]['observations'][0].shape
         rel_goal_space_shape = self.trajectories[0]['rel_goals'][0].shape
         abs_goal_space_shape = self.trajectories[0]['abs_goals'][0].shape
+        state_space_shape = self.trajectories[0]['state_positions'][0].shape
         
         # print(observation_space_shape)
         # print(rel_goal_space_shape)
@@ -162,6 +169,10 @@ class BehaviorDataset:
         o = torch.zeros(
             real_batch_size,
             *observation_space_shape, dtype=torch.float32, device=self.device)
+        
+        s = torch.zeros(
+            real_batch_size,
+            *state_space_shape, dtype=torch.float32, device=self.device)
 
         rel_g = torch.zeros(
             real_batch_size,
@@ -183,7 +194,11 @@ class BehaviorDataset:
 
         next_o =  torch.zeros(
             real_batch_size,
-            *observation_space_shape, dtype=torch.float32, device=self.device)   
+            *observation_space_shape, dtype=torch.float32, device=self.device) 
+
+        next_s = torch.zeros(
+            real_batch_size,
+            *state_space_shape, dtype=torch.float32, device=self.device)  
         
         next_rel_g = torch.zeros(
             real_batch_size,
@@ -192,26 +207,46 @@ class BehaviorDataset:
         next_abs_g = torch.zeros(
             real_batch_size,
             *abs_goal_space_shape, dtype=torch.float32, device=self.device)
+        
+        next_a = torch.zeros(
+            real_batch_size, dtype=torch.long, device=self.device)
 
         for batch_index, (traj_index, step_index) in enumerate(batch_inds):
            # memory id has changed by converting to tensor
            a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index], dtype=torch.long, device=self.device)
            o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index], dtype=torch.float, device=self.device)
+           s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index], dtype=torch.float, device=self.device)
            next_o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index+1], dtype=torch.float, device=self.device)
+           next_s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index+1], dtype=torch.float, device=self.device)
            rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index], dtype=torch.float, device=self.device)
            abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index], dtype=torch.float, device=self.device)
            r[batch_index] = torch.tensor(self.trajectories[traj_index]['rewards'][step_index+1], dtype=torch.float, device=self.device)
            d[batch_index] = torch.tensor(self.trajectories[traj_index]['dones'][step_index+1], dtype=torch.bool, device=self.device)
            next_rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index+1], dtype=torch.float, device=self.device)
            next_abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index+1], dtype=torch.float, device=self.device)
+           next_a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index+1], dtype=torch.long, device=self.device)
         
         if self.goal_form == "rel_goal":
-            return o, rel_g, a, r, next_o, next_rel_g, d
+            output_goal = rel_g
+            output_next_goal = next_rel_g
         elif self.goal_form == "abs_goal":
-            return o, abs_g, a, r, next_o, next_abs_g, d
+            output_goal = abs_g
+            output_next_goal = next_abs_g
         else:
             print("Undefined goal form: %s"%(self.goal_form))
             exit()  
+        
+        if self.state_form == "state":
+            output_obs = s
+            output_next_obs = next_s
+        elif self.state_form == "observation":
+            output_obs = o
+            output_next_obs = next_o
+        else:
+            print("Undefined state form: %s"%(self.state_form))
+            exit()
+        
+        return output_obs, output_goal, a, r, output_next_obs, output_next_goal, d, next_a
 
     # sample a trajectory batch  
     def get_trajectory_batch(self, batch_size):
@@ -525,33 +560,34 @@ class BehaviorDataset:
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
-    config_file = os.path.join(config_path, "imitation_learning_rnn_bc.yaml")
+    config_file = os.path.join(config_path, "imitation_learning_dqn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
-    #batch_size = 512
-    batch_size = 4
+    batch_size = 512
+    #batch_size = 4
     transition_batch_num = dataset.get_transition_batch_num(batch_size)
-    trajectory_batch_num = dataset.get_trajectory_batch_num(batch_size)
+    #trajectory_batch_num = dataset.get_trajectory_batch_num(batch_size)
     
-    #for i in range(transition_batch_num):
-    for i in range(trajectory_batch_num):
-        output = dataset.get_trajectory_batch(batch_size=batch_size)
+    for i in range(transition_batch_num):
+    #for i in range(trajectory_batch_num):
+        #output = dataset.get_trajectory_batch(batch_size=batch_size)
         #print(output[0].size()) # pytorch tensor
         #print(type(output[-1])) # numpy array
         #print(output[-1])
-        #o, g, a, r, next_o, next_g, d = dataset.get_transition_batch(batch_size=batch_size)
+        o, g, a, r, next_o, next_g, d, next_a = dataset.get_transition_batch(batch_size=batch_size)
         #print(dataset.trajectories[0]["dones"][-1])
         #print(dataset.trajectories[0]["rewards"][-1])
-        # print(o.size())
+        #print(o.size())
+        #break
         # print(g.size())
         # print(a.size())
         # print(next_o.size())
         #break
         print("Batch %d Done"%(i+1))
         #print("Batch size: %d"%(o.size()[0]))
-        #print("Transition index: %d"%dataset.transition_index)
-        print("Trajectory index: %d"%dataset.trajectory_index)
+        print("Transition index: %d"%dataset.transition_index)
+        #print("Trajectory index: %d"%dataset.trajectory_index)
         print("=========================")
 
-    #print("Total number of transition batches: %d"%transition_batch_num)
-    print("Total number of trajectory batches: %d"%trajectory_batch_num)
+    print("Total number of transition batches: %d"%transition_batch_num)
+    #print("Total number of trajectory batches: %d"%trajectory_batch_num)

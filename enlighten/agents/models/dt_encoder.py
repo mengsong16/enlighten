@@ -32,7 +32,7 @@ class ObservationEncoder(nn.Module):
 
         self.fc_output_size = output_size
         
-        # create model and initialize
+        # create Resnet model and initialize
         self.create_model(baseplanes, 
             ngroups,
             make_backbone=resnet18)

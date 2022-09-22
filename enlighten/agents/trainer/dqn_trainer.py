@@ -43,7 +43,7 @@ class DQNTrainer(SequenceTrainer):
         self.target_update_every_updates = int(self.config.get("target_update_every_updates"))
         self.soft_target_tau = float(self.config.get("soft_target_tau"))
 
-    # double Q
+
     def create_model(self):
         self.q_network = QNetwork(
             obs_channel = get_obs_channel_num(self.config),
@@ -55,7 +55,9 @@ class DQNTrainer(SequenceTrainer):
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
             hidden_size=int(self.config.get('hidden_size')),
-            hidden_layer=int(self.config.get('hidden_layer'))
+            hidden_layer=int(self.config.get('hidden_layer')),
+            state_form=self.config.get('state_form'),
+            state_dimension=int(self.config.get('state_dimension'))
         )
 
         self.target_q_network = QNetwork(
@@ -68,7 +70,9 @@ class DQNTrainer(SequenceTrainer):
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
             hidden_size=int(self.config.get('hidden_size')),
-            hidden_layer=int(self.config.get('hidden_layer'))
+            hidden_layer=int(self.config.get('hidden_layer')),
+            state_form=self.config.get('state_form'),
+            state_dimension=int(self.config.get('state_dimension'))
         )
 
         # load the weights into the target networks
@@ -93,12 +97,19 @@ class DQNTrainer(SequenceTrainer):
         # actions # (B)
         # rewards # (B)
         # goals # (B,goal_dim)
-        observations, goals, actions, rewards, next_observations, next_goals, dones = self.train_dataset.get_transition_batch(self.batch_size)
+        # dones # (B)
+        observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions = self.train_dataset.get_transition_batch(self.batch_size)
         
         # compute target Q
         with torch.no_grad():
-            Q_targets_next, _ = torch.max(self.target_q_network(next_observations, next_goals).detach(), 1) #[B]
-            Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones.int())) # dones: bool to int
+            # Q_targets_next, _ = torch.max(self.target_q_network(next_observations, next_goals).detach(), 1) #[B]
+            # Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones.int())) # dones: bool to int
+            
+            Q_targets_next = self.target_q_network(next_observations, next_goals).detach()
+            Q_target_best_next = torch.gather(Q_targets_next,
+                                    dim=1,
+                                    index=next_actions.long().unsqueeze(1)).squeeze(1) # [B]
+            Q_targets = rewards + (self.gamma * Q_target_best_next * (1 - dones.int()))
             Q_targets = Q_targets.detach() #[B]
         
         # compute predicted Q

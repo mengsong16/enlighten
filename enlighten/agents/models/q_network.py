@@ -14,13 +14,15 @@ class QNetwork(nn.Module):
             obs_channel,
             obs_width,
             obs_height,
-            goal_dim,
+            goal_dim, # 2
             goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
             act_num,
             obs_embedding_size, #512
             goal_embedding_size, #32
             hidden_size, #512
-            hidden_layer #2
+            hidden_layer, #2
+            state_form,
+            state_dimension #2
     ):
         super().__init__()
         
@@ -46,11 +48,17 @@ class QNetwork(nn.Module):
             print("Undefined goal form: %s"%(self.goal_form))
             exit()    
     
-        self.obs_encoder = ObservationEncoder(obs_channel, obs_embedding_size)
-        
-        self.q_network = MLPNetwork(input_dim=self.obs_embedding_size+self.goal_embedding_size, 
-            output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
-        
+        self.state_form = state_form
+        self.state_dimension = state_dimension
+        if self.state_form == "observation":
+            self.obs_encoder = ObservationEncoder(obs_channel, obs_embedding_size)
+            
+            self.q_network = MLPNetwork(input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+                output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
+        else:
+            self.q_network = MLPNetwork(input_dim=self.state_dimension+self.goal_dim, 
+                output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
+            
     
     def encoder_forward(self, observations, goals):
         # (T,C,H,W) ==> (T,obs_embedding_size)
@@ -81,12 +89,16 @@ class QNetwork(nn.Module):
         # print(observations.size()) # (T,C,H,W)
         # print(goals.size()) # (T,goal_dim)
 
-        # embed each input modality with a different head
-        input_embeddings = self.encoder_forward(observations, goals)
-        
-        # feed the input embeddings into the mlp q function
-        # output: [B, act_num]
-        q_values = self.q_network(input_embeddings)
+        if self.state_form == "observation":
+            # embed each input modality with a different head
+            input_embeddings = self.encoder_forward(observations, goals)
+            
+            # feed the input embeddings into the mlp q function
+            # output: [B, act_num]
+            q_values = self.q_network(input_embeddings)
+        else:
+            concat_inputs = torch.cat((observations, goals), dim=1)
+            q_values = self.q_network(concat_inputs)
 
         return q_values
 

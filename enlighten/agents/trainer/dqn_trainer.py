@@ -268,14 +268,14 @@ class DQNTrainer(SequenceTrainer):
         logs['time/training'] = time.time() - train_start
         logs['time/total'] = time.time() - self.start_time
 
-        logs['training/train_q_loss_mean'] = np.mean(train_q_losses)
-        logs['training/train_q_loss_std'] = np.std(train_q_losses)
+        logs['training/q_loss_mean'] = np.mean(train_q_losses)
+        logs['training/q_loss_std'] = np.std(train_q_losses)
 
         if self.with_bc_loss:
-            logs['training/train_bc_loss_mean'] = np.mean(train_bc_losses)
-            logs['training/train_bc_loss_std'] = np.std(train_bc_losses)
-            logs['training/total_bc_loss_mean'] = np.mean(train_total_losses)
-            logs['training/total_bc_loss_std'] = np.std(train_total_losses)
+            logs['training/bc_loss_mean'] = np.mean(train_bc_losses)
+            logs['training/bc_loss_std'] = np.std(train_bc_losses)
+            logs['training/total_loss_mean'] = np.mean(train_total_losses)
+            logs['training/total_loss_std'] = np.std(train_total_losses)
 
         logs['epoch'] = epoch_num
         logs['update'] = self.updates_done

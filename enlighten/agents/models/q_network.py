@@ -58,6 +58,7 @@ class QNetwork(nn.Module):
         else:
             self.q_network = MLPNetwork(input_dim=self.state_dimension+self.goal_dim, 
                 output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
+        
             
     
     def encoder_forward(self, observations, goals):

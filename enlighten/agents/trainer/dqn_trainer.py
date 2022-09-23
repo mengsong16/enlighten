@@ -43,6 +43,18 @@ class DQNTrainer(SequenceTrainer):
         self.target_update_every_updates = int(self.config.get("target_update_every_updates"))
         self.soft_target_tau = float(self.config.get("soft_target_tau"))
 
+        # q learning type
+        self.q_learning_type = self.config.get("q_learning_type")
+        print("q learning type =====> %s"%(self.q_learning_type))
+
+
+        # with bc loss
+        self.with_bc_loss = self.config.get("with_bc_loss")
+        print("with bc loss =====> %s"%(self.with_bc_loss))
+
+        if self.with_bc_loss:
+            self.alpha = float(self.config.get("alpha"))
+
 
     def create_model(self):
         self.q_network = QNetwork(
@@ -91,7 +103,7 @@ class DQNTrainer(SequenceTrainer):
 
         # switch model mode
         self.q_network.train()
-        self.target_q_network.eval()
+        self.target_q_network.train()
         
         # (next)observations # (B,C,H,W)
         # actions # (B)
@@ -102,14 +114,26 @@ class DQNTrainer(SequenceTrainer):
         
         # compute target Q
         with torch.no_grad():
-            # Q_targets_next, _ = torch.max(self.target_q_network(next_observations, next_goals).detach(), 1) #[B]
-            # Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones.int())) # dones: bool to int
-            
-            Q_targets_next = self.target_q_network(next_observations, next_goals).detach()
-            Q_target_best_next = torch.gather(Q_targets_next,
+            if self.q_learning_type == "dqn":
+                Q_target_best_next, _ = torch.max(self.target_q_network(next_observations, next_goals).detach(), 1) #[B] 
+            elif self.q_learning_type == "double_q":
+                next_best_actions = torch.argmax(self.q_network(next_observations, next_goals), dim=1)
+                Q_targets_next = self.target_q_network(next_observations, next_goals)
+                Q_target_best_next = torch.gather(Q_targets_next,
                                     dim=1,
-                                    index=next_actions.long().unsqueeze(1)).squeeze(1) # [B]
-            Q_targets = rewards + (self.gamma * Q_target_best_next * (1 - dones.int()))
+                                    index=next_best_actions.long().unsqueeze(1)).squeeze(1).detach()
+                
+            elif self.q_learning_type == "no_max":
+                Q_targets_next = self.target_q_network(next_observations, next_goals).detach()
+                Q_target_best_next = torch.gather(Q_targets_next,
+                                        dim=1,
+                                        index=next_actions.long().unsqueeze(1)).squeeze(1) # [B]
+                
+            else:
+                print("Error: unimplemented q learning type: %s"%(self.q_learning_type))
+                exit()
+            
+            Q_targets = rewards + self.gamma * Q_target_best_next * (1.0 - dones.float()) # dones: bool to float
             Q_targets = Q_targets.detach() #[B]
         
         # compute predicted Q
@@ -117,19 +141,34 @@ class DQNTrainer(SequenceTrainer):
                                     dim=1,
                                     index=actions.long().unsqueeze(1)).squeeze(1) # [B]
 
+        
         # compute Q loss
         q_loss = F.mse_loss(Q_predicted, Q_targets) # a single float number
+        
+        # compute lambda
+        if self.with_bc_loss:
+            lmbda = self.alpha / Q_predicted.abs().mean().detach()
+        else:
+            lmbda = 1.0
+        
+        # total loss
+        loss = lmbda * q_loss
 
+        if self.with_bc_loss:
+            action_preds = self.q_network.forward(observations, goals)
+            action_loss =  F.cross_entropy(action_preds, actions)
+            loss += action_loss
+        
         # optimize Q network
         self.optimizer.zero_grad()
-    
-        q_loss.backward()
-        
+        loss.backward()
         self.optimizer.step()
         
-        # record q loss
+        # record losses
         loss_dict = {}
         loss_dict["q_loss"] = q_loss.detach().cpu().item()
+        loss_dict["bc_loss"] = action_loss.detach().cpu().item()
+        loss_dict["loss"] = loss.detach().cpu().item()
 
         # soft update target Q network (update when total updates == 0)
         if self.updates_done % self.target_update_every_updates == 0:
@@ -198,6 +237,10 @@ class DQNTrainer(SequenceTrainer):
     def train_one_epoch(self, epoch_num, print_logs=False):
 
         train_q_losses = []
+
+        if self.with_bc_loss:
+            train_total_losses = []
+            train_bc_losses = []
         
         logs = dict()
 
@@ -217,13 +260,22 @@ class DQNTrainer(SequenceTrainer):
 
             # record losses
             train_q_losses.append(loss_dict["q_loss"]) 
+            if self.with_bc_loss:
+                train_bc_losses.append(loss_dict["bc_loss"])
+                train_total_losses.append(loss_dict["loss"])
+                
 
         logs['time/training'] = time.time() - train_start
         logs['time/total'] = time.time() - self.start_time
 
         logs['training/train_q_loss_mean'] = np.mean(train_q_losses)
-
         logs['training/train_q_loss_std'] = np.std(train_q_losses)
+
+        if self.with_bc_loss:
+            logs['training/train_bc_loss_mean'] = np.mean(train_bc_losses)
+            logs['training/train_bc_loss_std'] = np.std(train_bc_losses)
+            logs['training/total_bc_loss_mean'] = np.mean(train_total_losses)
+            logs['training/total_bc_loss_std'] = np.std(train_total_losses)
 
         logs['epoch'] = epoch_num
         logs['update'] = self.updates_done

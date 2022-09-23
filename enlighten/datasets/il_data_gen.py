@@ -713,7 +713,7 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
 
     traj = {}
 
-    # add (s0, g0)
+    # add (s0, g0, d0, r0)
     obs = env.reset(episode=episode, plan_shortest_path=True)
     obs_array = extract_observation(obs, env.observation_space.spaces)
     observations.append(obs_array) # (channel, height, width)
@@ -734,7 +734,7 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
             
     for action in env.optimal_action_seq:
         obs, reward, done, info = env.step(action)
-        # add (s_i, a_{i-1}, g_i)
+        # add (s_i, a_{i-1}, g_i, d_i, r_i)
         obs_array = extract_observation(obs, env.observation_space.spaces)
         observations.append(obs_array) # (channel, height, width)
         actions.append(action) # integer

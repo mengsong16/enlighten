@@ -20,7 +20,10 @@ class MLPPolicy(nn.Module):
             obs_embedding_size, #512
             goal_embedding_size, #32
             hidden_size, #512
-            hidden_layer #2
+            hidden_layer, #2
+            state_form,
+            state_dimension #2
+
     ):
         super().__init__()
         
@@ -46,11 +49,18 @@ class MLPPolicy(nn.Module):
             print("Undefined goal form: %s"%(self.goal_form))
             exit()    
     
-        self.obs_encoder = ObservationEncoder(obs_channel, obs_embedding_size)
+        self.state_form = state_form
+        self.state_dimension = state_dimension
+
+        if self.state_form == "observation":
+            self.obs_encoder = ObservationEncoder(obs_channel, obs_embedding_size)
         
-        self.policy = MLPNetwork(input_dim=self.obs_embedding_size+self.goal_embedding_size, 
-            output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
-        
+            self.policy = MLPNetwork(input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+                output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
+        else:
+            self.policy = MLPNetwork(input_dim=self.state_dimension+self.goal_dim, 
+                output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
+
         # acton logits --> action prob
         self.softmax = nn.Softmax(dim=-1)
 
@@ -84,12 +94,17 @@ class MLPPolicy(nn.Module):
         # print(observations.size()) # (T,C,H,W)
         # print(goals.size()) # (T,goal_dim)
 
-        # embed each input modality with a different head
-        input_embeddings = self.encoder_forward(observations, goals)
-        
-        # feed the input embeddings into the mlp policy
-        # output: [B, act_num]
-        pred_action_logits = self.policy(input_embeddings)
+        if self.state_form == "observation":
+            # embed each input modality with a different head
+            input_embeddings = self.encoder_forward(observations, goals)
+            
+            # feed the input embeddings into the mlp policy
+            # output: [B, act_num]
+            pred_action_logits = self.policy(input_embeddings)
+        else:
+            concat_inputs = torch.cat((observations, goals), dim=1)
+            pred_action_logits = self.policy(concat_inputs)
+
 
         return pred_action_logits
 

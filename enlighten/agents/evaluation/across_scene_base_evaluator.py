@@ -159,7 +159,9 @@ class AcrossEnvBaseEvaluator:
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
             hidden_size=int(self.config.get('hidden_size')),
-            hidden_layer=int(self.config.get('hidden_layer'))
+            hidden_layer=int(self.config.get('hidden_layer')),
+            state_form=self.config.get('state_form'),
+            state_dimension=int(self.config.get('state_dimension'))
         )
         elif "dqn" in self.algorithm_name:
             model = QNetwork(

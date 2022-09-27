@@ -114,8 +114,8 @@ eval_use_vector_envs: true #true
 save_every_epochs: 2 #40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "rnn-whole_trajectory_rel_goal_1_scene_normal-s1-20220817-181404"
-eval_checkpoint_file: ["ckpt_27.pth"] 
+eval_experiment_folder: "rnn_bc-rel_goal_1_scene_rancocas_2000_epoch_200-s1-20220920-222524"
+eval_checkpoint_file: ["ckpt_99.pth"] 
 eval_dir: "evaluation"
 
 

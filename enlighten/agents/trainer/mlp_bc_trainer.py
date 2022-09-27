@@ -48,7 +48,9 @@ class MLPBCTrainer(SequenceTrainer):
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
             hidden_size=int(self.config.get('hidden_size')),
-            hidden_layer=int(self.config.get('hidden_layer'))
+            hidden_layer=int(self.config.get('hidden_layer')),
+            state_form=self.config.get('state_form'),
+            state_dimension=int(self.config.get('state_dimension'))
         )
 
     # train for one update
@@ -97,7 +99,7 @@ class MLPBCTrainer(SequenceTrainer):
         self.model = self.model.to(device=self.device)
 
         # print goal form
-        print("goal form ==========> %s"%(self.config.get("goal_form")))
+        #print("goal form ==========> %s"%(self.config.get("goal_form")))
 
         # create optimizer: Adam
         self.optimizer = torch.optim.Adam(

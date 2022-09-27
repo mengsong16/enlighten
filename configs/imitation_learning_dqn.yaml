@@ -88,17 +88,19 @@ goal_embedding_size: 32
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
 state_form: "state" # ["state", "observation"]
 
+
 # batch
 batch_mode: "transition"
 
 # training
 q_learning_type: "no_max" #["dqn", "double_q", "no_max"]
+reward_type: "original" #["original", "minus_one_zero"]
 with_bc_loss: true
 batch_size: 512 #256
 learning_rate: 3.0e-4 #1.0e-3 #5.0e-4
 max_epochs: 100
 gamma: 0.99
-target_update_every_updates: 100 #50 #100 #50 #1 #10
+target_update_every_updates: 1 #100 #50 #100 #50 #1 #10
 soft_target_tau: 1.0
 alpha: 1 #2.5 # weight of q loss
 

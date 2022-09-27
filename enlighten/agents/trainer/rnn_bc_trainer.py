@@ -152,7 +152,7 @@ class RNNBCTrainer(SequenceTrainer):
         self.model = self.model.to(device=self.device)
 
         # print goal form
-        print("goal form ==========> %s"%(self.config.get("goal_form")))
+        #print("goal form ==========> %s"%(self.config.get("goal_form")))
 
         # create optimizer: AdamW
         # self.optimizer = torch.optim.AdamW(

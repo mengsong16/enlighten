@@ -35,6 +35,10 @@ class BehaviorDataset:
         print("batch mode =====> %s"%(self.batch_mode))
         self.state_form = self.config.get("state_form", "observation")
         print("state form =====> %s"%(self.state_form))
+        # reward type
+        self.reward_type = self.config.get("reward_type", "original")
+        print("reward type =====> %s"%(self.reward_type))
+
 
         if self.batch_mode == "random_segment":
             self.max_ep_len = int(self.config.get("dt_max_ep_len"))
@@ -212,20 +216,30 @@ class BehaviorDataset:
             real_batch_size, dtype=torch.long, device=self.device)
 
         for batch_index, (traj_index, step_index) in enumerate(batch_inds):
-           # memory id has changed by converting to tensor
-           a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index], dtype=torch.long, device=self.device)
-           o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index], dtype=torch.float, device=self.device)
-           s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index], dtype=torch.float, device=self.device)
-           next_o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index+1], dtype=torch.float, device=self.device)
-           next_s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index+1], dtype=torch.float, device=self.device)
-           rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index], dtype=torch.float, device=self.device)
-           abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index], dtype=torch.float, device=self.device)
-           r[batch_index] = torch.tensor(self.trajectories[traj_index]['rewards'][step_index+1], dtype=torch.float, device=self.device)
-           d[batch_index] = torch.tensor(self.trajectories[traj_index]['dones'][step_index+1], dtype=torch.bool, device=self.device)
-           next_rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index+1], dtype=torch.float, device=self.device)
-           next_abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index+1], dtype=torch.float, device=self.device)
-           next_a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index+1], dtype=torch.long, device=self.device)
-        
+            # memory id has changed by converting to tensor
+            a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index], dtype=torch.long, device=self.device)
+            o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index], dtype=torch.float, device=self.device)
+            s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index], dtype=torch.float, device=self.device)
+            next_o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index+1], dtype=torch.float, device=self.device)
+            next_s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index+1], dtype=torch.float, device=self.device)
+            rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index], dtype=torch.float, device=self.device)
+            abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index], dtype=torch.float, device=self.device)
+            done = self.trajectories[traj_index]['dones'][step_index+1]
+            d[batch_index] = torch.tensor(done, dtype=torch.bool, device=self.device)
+            if self.reward_type == "original":
+                r[batch_index] = torch.tensor(self.trajectories[traj_index]['rewards'][step_index+1], dtype=torch.float, device=self.device)
+            elif self.reward_type == "minus_one_zero":
+                if done:
+                    r[batch_index] = torch.tensor(0, dtype=torch.float, device=self.device)
+                else:
+                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device)
+            else:
+                print("Error: undefined reward type: %s"%(self.reward_type))
+                exit()
+            next_rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index+1], dtype=torch.float, device=self.device)
+            next_abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index+1], dtype=torch.float, device=self.device)
+            next_a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index+1], dtype=torch.long, device=self.device)
+
         if self.goal_form == "rel_goal":
             output_goal = rel_g
             output_next_goal = next_rel_g

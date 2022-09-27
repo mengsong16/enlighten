@@ -39,6 +39,7 @@ class DQNTrainer(SequenceTrainer):
         # gamma
         self.gamma = float(self.config.get("gamma"))
 
+        
         # target q parameters
         self.target_update_every_updates = int(self.config.get("target_update_every_updates"))
         self.soft_target_tau = float(self.config.get("soft_target_tau"))
@@ -111,7 +112,8 @@ class DQNTrainer(SequenceTrainer):
         # goals # (B,goal_dim)
         # dones # (B)
         observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions = self.train_dataset.get_transition_batch(self.batch_size)
-        
+
+
         # compute target Q
         with torch.no_grad():
             if self.q_learning_type == "dqn":
@@ -147,7 +149,8 @@ class DQNTrainer(SequenceTrainer):
         
         # compute lambda
         if self.with_bc_loss:
-            lmbda = self.alpha / Q_predicted.abs().mean().detach()
+            #lmbda = self.alpha / Q_predicted.abs().mean().detach()
+            lmbda = self.alpha
         else:
             lmbda = 1.0
         
@@ -192,7 +195,7 @@ class DQNTrainer(SequenceTrainer):
         self.target_q_network = self.target_q_network.to(device=self.device)
 
         # print goal form
-        print("goal form ==========> %s"%(self.config.get("goal_form")))
+        #print("goal form ==========> %s"%(self.config.get("goal_form")))
 
         # create optimizer: Adam
         self.optimizer = torch.optim.Adam(

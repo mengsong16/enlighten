@@ -55,6 +55,12 @@ class DQNTrainer(SequenceTrainer):
 
         if self.with_bc_loss:
             self.alpha = float(self.config.get("alpha"))
+        
+        # reward type
+        self.reward_type = self.config.get("reward_type")
+
+        # number of actions
+        self.action_number = int(self.config.get("action_number"))
 
 
     def create_model(self):
@@ -100,7 +106,7 @@ class DQNTrainer(SequenceTrainer):
             )
         
     # train for one update
-    def train_one_update(self):
+    def train_one_update_others(self):
 
         # switch model mode
         self.q_network.train()
@@ -183,6 +189,86 @@ class DQNTrainer(SequenceTrainer):
 
         return loss_dict    
 
+    # generate best action randomly
+    def is_best_action_random_generator(self, batch_size):
+        p = 1.0 / float(self.action_number)
+        
+        # [0,1)
+        prob_array = torch.rand(batch_size, device=self.device)
+        is_best_action_array = (prob_array <= p)
+
+        return is_best_action_array
+
+    # train for one update (our algorithm)
+    def train_one_update_ours(self):
+        assert self.reward_type == "minus_one_zero", "Error: our algorithm assumes reward type to be minus one zero"
+        
+        # switch model mode
+        self.q_network.train()
+        
+        # (next)observations # (B,C,H,W)
+        # actions # (B)
+        # rewards # (B)
+        # goals # (B,goal_dim)
+        # dones # (B)
+        observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions = self.train_dataset.get_transition_batch(self.batch_size)
+
+        # sample best or non best actions
+        batch_size = observations.size()[0]
+        best_action_indices = self.is_best_action_random_generator(batch_size)
+        non_best_action_indices = ~best_action_indices
+        non_best_action_num = torch.count_nonzero(non_best_action_indices).item()
+
+        # compute target Q
+        Q_targets_next = self.q_network(next_observations, next_goals)
+        Q_target_best_next = torch.gather(Q_targets_next,
+                            dim=1,
+                            index=next_actions.long().unsqueeze(1)).squeeze(1) # [B]
+
+        Q_targets = torch.zeros(batch_size, dtype=torch.float32, device=self.device)
+
+        
+        # target Q: best action
+        Q_targets[best_action_indices] = rewards[best_action_indices] + self.gamma * Q_target_best_next[best_action_indices] * (1.0 - dones.float()[best_action_indices]) 
+        
+        # target Q: non best action
+        non_best_rewards = (1+self.gamma)*(-1.0*torch.ones(non_best_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_best_action_indices]
+        Q_targets[non_best_action_indices] = non_best_rewards + pow(self.gamma, 3) * Q_target_best_next[non_best_action_indices] * (1.0 - dones.float()[non_best_action_indices])
+            
+        
+        # compute predicted Q
+        Q_predicted = torch.zeros(batch_size, dtype=torch.float32, device=self.device)
+        # Q_output: [B, action_num]
+        Q_output = self.q_network(observations, goals)
+        # predicted Q: best action
+        Q_predicted[best_action_indices] = torch.gather(Q_output[best_action_indices,:],
+                                    dim=1,
+                                    index=actions.long()[best_action_indices].unsqueeze(1))
+        # predicted Q: non best action
+        Q_predicted[non_best_action_indices] = torch.gather(Q_output[non_best_action_indices,:],
+                                    dim=1,
+                                    index=actions.long()[best_action_indices].unsqueeze(1))
+        # [B,1] -> [B]
+        Q_predicted = Q_predicted.squeeze(1) 
+        # compute Q loss
+        q_loss = F.mse_loss(Q_predicted, Q_targets) # a single float number
+        
+    
+        # optimize Q network
+        self.optimizer.zero_grad()
+        q_loss.backward()
+        self.optimizer.step()
+        
+        # record losses
+        loss_dict = {}
+        loss_dict["q_loss"] = q_loss.detach().cpu().item()
+        
+        
+        # the number of updates ++
+        self.updates_done += 1
+
+        return loss_dict
+
     # self.config.get: config of wandb
     def train(self):
         # load behavior training data
@@ -259,7 +345,10 @@ class DQNTrainer(SequenceTrainer):
 
         # train for n batches
         for _ in tqdm(range(batch_num)):
-            loss_dict = self.train_one_update()
+            if self.q_learning_type == "ours":
+                loss_dict = self.train_one_update_ours()
+            else:    
+                loss_dict = self.train_one_update_others()
 
             # record losses
             train_q_losses.append(loss_dict["q_loss"]) 

@@ -12,7 +12,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 
 # experiments
 algorithm_name: "offline_dqn"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_state_no_max_bc"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_state_ours"
 log_to_wandb: true #true
 
 # dummy initial setup 
@@ -75,7 +75,7 @@ max_collisions_per_episode: 200
 seed: 1
 
 # gpu
-gpu_id: 1 #1
+gpu_id: 0 #1
 
 # vector env (for evaluation only)
 num_environments: 10 #14 #8 #14 #4 #2
@@ -93,16 +93,16 @@ state_form: "state" # ["state", "observation"]
 batch_mode: "transition"
 
 # training
-q_learning_type: "no_max" #["dqn", "double_q", "no_max"]
-reward_type: "original" #["original", "minus_one_zero"]
-with_bc_loss: true
+q_learning_type: "ours" #["dqn", "double_q", "no_max", "ours"]
+reward_type: "minus_one_zero" #["original", "minus_one_zero"]
 batch_size: 512 #256
 learning_rate: 3.0e-4 #1.0e-3 #5.0e-4
 max_epochs: 100
 gamma: 0.99
 target_update_every_updates: 1 #100 #50 #100 #50 #1 #10
 soft_target_tau: 1.0
-alpha: 1 #2.5 # weight of q loss
+with_bc_loss: false
+alpha: 1 #2.5 # weight of q loss against bc loss
 
 # evaluate during training
 eval_during_training: true #false

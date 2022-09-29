@@ -38,7 +38,14 @@ class BehaviorDataset:
         # reward type
         self.reward_type = self.config.get("reward_type", "original")
         print("reward type =====> %s"%(self.reward_type))
-
+        
+        # augment transition dataset with relabeled actions
+        self.relabel_actions = False
+        algorithm_name = self.config.get("algorithm_name")
+        if "dqn" in algorithm_name:
+            if self.config.get("q_learning_type") == "ours":
+                self.relabel_actions = True
+        print("relabel_actions: %s"%(self.relabel_actions))
 
         if self.batch_mode == "random_segment":
             self.max_ep_len = int(self.config.get("dt_max_ep_len"))
@@ -94,8 +101,7 @@ class BehaviorDataset:
         print("Loaded %d augment training trajectories"%(augment_traj_num))
         print("Use %d training trajectories in total"%(self.num_trajectories))
 
-
-    def generate_transition_index(self):
+    def generate_original_transition_index(self):
         self.transition_index_list = []
         self.num_steps = 0
         for traj_index, traj in enumerate(self.trajectories):
@@ -106,10 +112,44 @@ class BehaviorDataset:
             self.num_steps += len(traj['observations'])
         
         assert len(self.transition_index_list) == self.num_steps - len(self.trajectories), "Error: the number of transitions and steps do not match"
+    
+    def generate_relabel_action_transition_index(self):
+        self.action_num = int(self.config.get("action_number"))
+
+        self.transition_index_list = []
+        self.num_steps = 0
+        for traj_index, traj in enumerate(self.trajectories):
+            # current trajectory
+            trans_num = len(traj['observations']) - 1
+            traj_index_list = [traj_index] * (trans_num * self.action_num)
+            trans_index_list = []
+            relabel_action_list = []
+            optimal_action_list = []
+            for trans_index in list(range(trans_num)):
+                # current transition
+                for action_index in list(range(self.action_num)):
+                    trans_index_list.append(trans_index)
+                    relabel_action_list.append(action_index)
+                    # optimal action
+                    if traj['actions'][trans_index] == action_index:
+                        optimal_action_list.append(True)
+                    # not optimal action
+                    else:
+                        optimal_action_list.append(False)
+            self.transition_index_list.extend(list(zip(traj_index_list, trans_index_list, relabel_action_list, optimal_action_list)))
+            self.num_steps += len(traj['observations'])
+
+        assert len(self.transition_index_list) == (self.num_steps - len(self.trajectories))*self.action_num, "Error: the number of transitions and steps do not match"
+
+    def generate_transition_index(self):
+        if self.relabel_actions:
+            self.generate_relabel_action_transition_index()
+        else:
+            self.generate_original_transition_index()
 
         self.shuffle_transition_dataset()
 
-        print("Loaded %d steps"%(self.num_steps))
+        print("Loaded %d actual environment steps"%(self.num_steps)) # real interaction steps
         print("Loaded %d transitions"%(len(self.transition_index_list)))
     
     def generate_trajectory_index(self):
@@ -159,6 +199,12 @@ class BehaviorDataset:
     # next_a: (B)
     # d: (B)
     def get_transition_batch(self, batch_size):
+        if self.relabel_actions:
+            return self.get_relabel_action_transition_batch(batch_size)
+        else:
+            return self.get_original_transition_batch(batch_size)
+    
+    def get_original_transition_batch(self, batch_size):
         batch_inds = self.advance_index_one_transition_batch(batch_size)
         real_batch_size = len(batch_inds)
         observation_space_shape = self.trajectories[0]['observations'][0].shape
@@ -260,7 +306,117 @@ class BehaviorDataset:
             print("Undefined state form: %s"%(self.state_form))
             exit()
         
-        return output_obs, output_goal, a, r, output_next_obs, output_next_goal, d, next_a
+        return output_obs, output_goal, a, r, output_next_obs, output_next_goal, d, next_a, None
+
+    def get_relabel_action_transition_batch(self, batch_size):
+        batch_inds = self.advance_index_one_transition_batch(batch_size)
+        real_batch_size = len(batch_inds)
+        observation_space_shape = self.trajectories[0]['observations'][0].shape
+        rel_goal_space_shape = self.trajectories[0]['rel_goals'][0].shape
+        abs_goal_space_shape = self.trajectories[0]['abs_goals'][0].shape
+        state_space_shape = self.trajectories[0]['state_positions'][0].shape
+        
+        # print(observation_space_shape)
+        # print(rel_goal_space_shape)
+        # print(abs_goal_space_shape)
+        # exit()
+        o = torch.zeros(
+            real_batch_size,
+            *observation_space_shape, dtype=torch.float32, device=self.device)
+        
+        s = torch.zeros(
+            real_batch_size,
+            *state_space_shape, dtype=torch.float32, device=self.device)
+
+        rel_g = torch.zeros(
+            real_batch_size,
+            *rel_goal_space_shape, dtype=torch.float32, device=self.device)
+        
+        abs_g = torch.zeros(
+            real_batch_size,
+            *abs_goal_space_shape, dtype=torch.float32, device=self.device)
+
+        a = torch.zeros(
+            real_batch_size, dtype=torch.long, device=self.device)
+        
+        r = torch.zeros(
+            real_batch_size, dtype=torch.float, device=self.device)
+
+        d = torch.zeros(
+            real_batch_size, dtype=torch.bool, device=self.device)
+        
+        optimal_actions = torch.zeros(
+            real_batch_size, dtype=torch.bool, device=self.device)
+
+        next_o =  torch.zeros(
+            real_batch_size,
+            *observation_space_shape, dtype=torch.float32, device=self.device) 
+
+        next_s = torch.zeros(
+            real_batch_size,
+            *state_space_shape, dtype=torch.float32, device=self.device)  
+        
+        next_rel_g = torch.zeros(
+            real_batch_size,
+            *rel_goal_space_shape, dtype=torch.float32, device=self.device)
+        
+        next_abs_g = torch.zeros(
+            real_batch_size,
+            *abs_goal_space_shape, dtype=torch.float32, device=self.device)
+        
+        next_a = torch.zeros(
+            real_batch_size, dtype=torch.long, device=self.device)
+
+        for batch_index, (traj_index, step_index, relabel_action, optimal_action) in enumerate(batch_inds):
+            # memory id has changed by converting to tensor
+            # use relabel action instead of original action
+            a[batch_index] = torch.tensor(relabel_action, dtype=torch.long, device=self.device)
+            optimal_actions[batch_index] = torch.tensor(optimal_action, dtype=torch.bool, device=self.device)
+            
+            o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index], dtype=torch.float, device=self.device)
+            s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index], dtype=torch.float, device=self.device)
+            next_o[batch_index] = torch.tensor(self.trajectories[traj_index]['observations'][step_index+1], dtype=torch.float, device=self.device)
+            next_s[batch_index] = torch.tensor(self.trajectories[traj_index]['state_positions'][step_index+1], dtype=torch.float, device=self.device)
+            rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index], dtype=torch.float, device=self.device)
+            abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index], dtype=torch.float, device=self.device)
+            done = self.trajectories[traj_index]['dones'][step_index+1]
+            d[batch_index] = torch.tensor(done, dtype=torch.bool, device=self.device)
+            if self.reward_type == "original":
+                r[batch_index] = torch.tensor(self.trajectories[traj_index]['rewards'][step_index+1], dtype=torch.float, device=self.device)
+            elif self.reward_type == "minus_one_zero":
+                if done:
+                    r[batch_index] = torch.tensor(0, dtype=torch.float, device=self.device)
+                else:
+                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device)
+            else:
+                print("Error: undefined reward type: %s"%(self.reward_type))
+                exit()
+            next_rel_g[batch_index] = torch.tensor(self.trajectories[traj_index]['rel_goals'][step_index+1], dtype=torch.float, device=self.device)
+            next_abs_g[batch_index] = torch.tensor(self.trajectories[traj_index]['abs_goals'][step_index+1], dtype=torch.float, device=self.device)
+            next_a[batch_index] = torch.tensor(self.trajectories[traj_index]['actions'][step_index+1], dtype=torch.long, device=self.device)
+
+        if self.goal_form == "rel_goal":
+            output_goal = rel_g
+            output_next_goal = next_rel_g
+        elif self.goal_form == "abs_goal":
+            output_goal = abs_g
+            output_next_goal = next_abs_g
+        else:
+            print("Undefined goal form: %s"%(self.goal_form))
+            exit()  
+        
+        if self.state_form == "state":
+            output_obs = s
+            output_next_obs = next_s
+        elif self.state_form == "observation":
+            output_obs = o
+            output_next_obs = next_o
+        else:
+            print("Undefined state form: %s"%(self.state_form))
+            exit()
+        
+        return output_obs, output_goal, a, r, output_next_obs, output_next_goal, d, next_a, optimal_actions
+
 
     # sample a trajectory batch  
     def get_trajectory_batch(self, batch_size):
@@ -577,6 +733,7 @@ if __name__ == "__main__":
     config_file = os.path.join(config_path, "imitation_learning_dqn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
+
     batch_size = 512
     #batch_size = 4
     transition_batch_num = dataset.get_transition_batch_num(batch_size)
@@ -588,7 +745,7 @@ if __name__ == "__main__":
         #print(output[0].size()) # pytorch tensor
         #print(type(output[-1])) # numpy array
         #print(output[-1])
-        o, g, a, r, next_o, next_g, d, next_a = dataset.get_transition_batch(batch_size=batch_size)
+        o, g, a, r, next_o, next_g, d, next_a, optimal_action = dataset.get_transition_batch(batch_size=batch_size)
         #print(dataset.trajectories[0]["dones"][-1])
         #print(dataset.trajectories[0]["rewards"][-1])
         #print(o.size())
@@ -603,5 +760,6 @@ if __name__ == "__main__":
         #print("Trajectory index: %d"%dataset.trajectory_index)
         print("=========================")
 
+    print("Batch size: %d"%(batch_size))
     print("Total number of transition batches: %d"%transition_batch_num)
     #print("Total number of trajectory batches: %d"%trajectory_batch_num)

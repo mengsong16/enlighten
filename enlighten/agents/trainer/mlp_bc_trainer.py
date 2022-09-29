@@ -62,7 +62,7 @@ class MLPBCTrainer(SequenceTrainer):
         # (next)observations # (B,C,H,W)
         # action_targets # (B)
         # goals # (B,goal_dim)
-        observations, goals, action_targets, rewards, next_observations, next_goals, dones, next_actions = self.train_dataset.get_transition_batch(self.batch_size)
+        observations, goals, action_targets, rewards, next_observations, next_goals, dones, next_actions, optimal_action = self.train_dataset.get_transition_batch(self.batch_size)
         # forward model
         action_preds = self.model.forward(observations, goals)
 

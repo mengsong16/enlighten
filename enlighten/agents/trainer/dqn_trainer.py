@@ -117,7 +117,7 @@ class DQNTrainer(SequenceTrainer):
         # rewards # (B)
         # goals # (B,goal_dim)
         # dones # (B)
-        observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions = self.train_dataset.get_transition_batch(self.batch_size)
+        observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions, optimal_action = self.train_dataset.get_transition_batch(self.batch_size)
 
 
         # compute target Q
@@ -211,49 +211,39 @@ class DQNTrainer(SequenceTrainer):
         # rewards # (B)
         # goals # (B,goal_dim)
         # dones # (B)
-        observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions = self.train_dataset.get_transition_batch(self.batch_size)
-
-        # sample best or non best actions
-        batch_size = observations.size()[0]
-        best_action_indices = self.is_best_action_random_generator(batch_size)
-        non_best_action_indices = ~best_action_indices
-        non_best_action_num = torch.count_nonzero(non_best_action_indices).item()
+        observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions, optimal_actions = self.train_dataset.get_transition_batch(self.batch_size)
 
         # compute target Q
-        Q_targets_next = self.q_network(next_observations, next_goals)
-        Q_target_best_next = torch.gather(Q_targets_next,
-                            dim=1,
-                            index=next_actions.long().unsqueeze(1)).squeeze(1) # [B]
+        with torch.no_grad():
+            batch_size = observations.size()[0]
+            non_optimal_actions = ~optimal_actions
+            non_optimal_action_num = torch.count_nonzero(non_optimal_actions).item()
 
-        Q_targets = torch.zeros(batch_size, dtype=torch.float32, device=self.device)
 
-        
-        # target Q: best action
-        Q_targets[best_action_indices] = rewards[best_action_indices] + self.gamma * Q_target_best_next[best_action_indices] * (1.0 - dones.float()[best_action_indices]) 
-        
-        # target Q: non best action
-        non_best_rewards = (1+self.gamma)*(-1.0*torch.ones(non_best_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_best_action_indices]
-        Q_targets[non_best_action_indices] = non_best_rewards + pow(self.gamma, 3) * Q_target_best_next[non_best_action_indices] * (1.0 - dones.float()[non_best_action_indices])
+            Q_targets_next = self.q_network(next_observations, next_goals)
+            Q_target_best_next = torch.gather(Q_targets_next,
+                                dim=1,
+                                index=next_actions.long().unsqueeze(1)).squeeze(1) # [B]
+
+            Q_targets = torch.zeros(batch_size, dtype=torch.float32, device=self.device)
+
+            # target Q: optimal action
+            Q_targets[optimal_actions] = rewards[optimal_actions] + self.gamma * Q_target_best_next[optimal_actions] * (1.0 - dones.float()[optimal_actions]) 
             
+            # target Q: non optimal action
+            non_optimal_rewards = (1+self.gamma)*(-1.0*torch.ones(non_optimal_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_optimal_actions]
+            Q_targets[non_optimal_actions] = non_optimal_rewards + pow(self.gamma, 3) * Q_target_best_next[non_optimal_actions] * (1.0 - dones.float()[non_optimal_actions])
+                
         
         # compute predicted Q
-        Q_predicted = torch.zeros(batch_size, dtype=torch.float32, device=self.device)
-        # Q_output: [B, action_num]
-        Q_output = self.q_network(observations, goals)
-        # predicted Q: best action
-        Q_predicted[best_action_indices] = torch.gather(Q_output[best_action_indices,:],
-                                    dim=1,
-                                    index=actions.long()[best_action_indices].unsqueeze(1))
-        # predicted Q: non best action
-        Q_predicted[non_best_action_indices] = torch.gather(Q_output[non_best_action_indices,:],
-                                    dim=1,
-                                    index=actions.long()[best_action_indices].unsqueeze(1))
         # [B,1] -> [B]
-        Q_predicted = Q_predicted.squeeze(1) 
+        Q_predicted = torch.gather(self.q_network(observations, goals),
+                                    dim=1,
+                                    index=actions.long().unsqueeze(1)).squeeze(1) 
+
         # compute Q loss
         q_loss = F.mse_loss(Q_predicted, Q_targets) # a single float number
         
-    
         # optimize Q network
         self.optimizer.zero_grad()
         q_loss.backward()

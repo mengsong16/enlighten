@@ -220,7 +220,7 @@ class DQNTrainer(SequenceTrainer):
             non_optimal_action_num = torch.count_nonzero(non_optimal_actions).item()
 
 
-            Q_targets_next = self.q_network(next_observations, next_goals)
+            Q_targets_next = self.q_network(next_observations, next_goals).detach()
             Q_target_best_next = torch.gather(Q_targets_next,
                                 dim=1,
                                 index=next_actions.long().unsqueeze(1)).squeeze(1) # [B]
@@ -234,7 +234,8 @@ class DQNTrainer(SequenceTrainer):
             non_optimal_rewards = (1+self.gamma)*(-1.0*torch.ones(non_optimal_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_optimal_actions]
             Q_targets[non_optimal_actions] = non_optimal_rewards + pow(self.gamma, 3) * Q_target_best_next[non_optimal_actions] * (1.0 - dones.float()[non_optimal_actions])
                 
-        
+            Q_targets = Q_targets.detach() #[B]
+            
         # compute predicted Q
         # [B,1] -> [B]
         Q_predicted = torch.gather(self.q_network(observations, goals),

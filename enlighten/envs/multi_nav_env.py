@@ -340,8 +340,9 @@ class MultiNavEnv(NavEnv):
     def set_scene_id_in_config(self, new_scene):
         self.sim_config.sim_cfg.scene_id = new_scene
 
-def test_env():
-    env = MultiNavEnv(config_file="imitation_learning_rnn_bc.yaml")
+def test_env(config_file="imitation_learning_rnn_bc.yaml"):
+    env = MultiNavEnv(config_file=config_file)
+    
     
     for i in range(1):
         obs = env.reset(plan_shortest_path=True)
@@ -377,4 +378,4 @@ def test_env():
 
 
 if __name__ == "__main__":    
-    test_env()
+    test_env(config_file="imitation_learning_dqn.yaml")

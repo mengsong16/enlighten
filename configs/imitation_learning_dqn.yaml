@@ -12,7 +12,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 
 # experiments
 algorithm_name: "offline_dqn"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_state_ours"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_ours"
 log_to_wandb: true #true
 
 # dummy initial setup 
@@ -75,18 +75,18 @@ max_collisions_per_episode: 200
 seed: 1
 
 # gpu
-gpu_id: 0 #1
+gpu_id: 1 #1
 
 # vector env (for evaluation only)
 num_environments: 10 #14 #8 #14 #4 #2
 
 # q network
 hidden_size: 512 #1024
-hidden_layer: 2 #1 #2
+hidden_layer: 1 #1 #2
 obs_embedding_size: 512
 goal_embedding_size: 32
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
-state_form: "state" # ["state", "observation"]
+state_form: "observation" # ["state", "observation"]
 
 
 # batch
@@ -97,7 +97,7 @@ q_learning_type: "ours" #["dqn", "double_q", "no_max", "ours"]
 reward_type: "minus_one_zero" #["original", "minus_one_zero"]
 batch_size: 512 #256
 learning_rate: 3.0e-4 #1.0e-3 #5.0e-4
-max_epochs: 100
+max_epochs: 400
 gamma: 0.99
 target_update_every_updates: 1 #100 #50 #100 #50 #1 #10
 soft_target_tau: 1.0
@@ -115,7 +115,7 @@ eval_use_vector_envs: true
 save_every_epochs: 5
 
 # evaluation
-eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000-s1-20220916-143257"
+eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000_state_ours-s1-20220928-224433"
 eval_checkpoint_file: ["ckpt_19.pth"] 
 eval_dir: "evaluation"
 

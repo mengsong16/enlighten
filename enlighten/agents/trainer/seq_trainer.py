@@ -91,7 +91,8 @@ class SequenceTrainer:
             os.makedirs(folder_path)
         # save agent weights and config
         checkpoint = {
-            "state_dict": model.state_dict(),
+            "model_state_dict": model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
             "config": self.config,
         }
 

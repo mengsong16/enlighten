@@ -579,7 +579,7 @@ class NavEnv(gym.Env):
     # initialize at the beginning of each episode
     # may need to fix y coordinate of start and goal position
     def set_start_goal_once(self):
-        self.random_goal = self.config.get('random_goal') 
+        self.random_goal = self.config.get('random_goal', False) 
 
         # fixed goal
         if not self.random_goal: 
@@ -603,7 +603,7 @@ class NavEnv(gym.Env):
             else:
                 print("Error: navmesh is not available so is not able to set random goal point")      
 
-        self.random_start = self.config.get('random_start')
+        self.random_start = self.config.get('random_start', False)
 
         # fixed start
         if not self.random_start:
@@ -947,8 +947,20 @@ class NavEnv(gym.Env):
         return found_path, geodesic_distance, path_points
 
     def get_env_bounds(self):
-        # 2*3 array
-        return self.sim.pathfinder.get_bounds()
+        # 2*3 array ([min, max], [x,y,z])
+        # x - length
+        # y - height
+        # z - width
+        if self.sim.pathfinder.is_loaded:
+            scene_bounds = self.sim.pathfinder.get_bounds()
+            print("================ scene bounds ===================")
+            scene_size = scene_bounds[1] - scene_bounds[0]
+            print("Lengths: [%.2f, %.2f]"%(scene_size[0], scene_size[2]))
+            print("Height: %.2f"%(scene_size[1]))
+            print("=================================================")
+        else:
+            print("Error: pathfinder is not loaded")
+        
 
     # from current position to goal
     def get_optimal_trajectory(self):
@@ -1202,11 +1214,14 @@ def save_goal_image(img, current_episode):
 def test_env(yaml_name):
     #if gym_env:
     env =  NavEnv(config_file=os.path.join(config_path, yaml_name),
-        scene_id="/dataset/gibson/Silas.glb")
-    
+        #scene_id="/dataset/gibson/Silas.glb")
+        scene_id="/dataset/gibson/Rancocas.glb")
     #else:
     #    env = create_garage_env()
-    
+
+    #env.get_env_bounds()
+    #exit()
+
     for episode in range(20):
         print("***********************************")
         print('Episode: {}'.format(episode))
@@ -1383,9 +1398,11 @@ def test_export_map():
     #env.export_map_array(save_file_name="replica-room0.npy")
     env.export_map_array(save_file_name="replica-apt1.npy")
 
+
+
 if __name__ == "__main__":    
-    #test_env("replica_nav_state.yaml")
-    test_env("pointgoal_ppo_baseline.yaml")
+    test_env("replica_nav_state.yaml")
+    #test_env("pointgoal_ppo_baseline.yaml")
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
     #test_rollout_storage()

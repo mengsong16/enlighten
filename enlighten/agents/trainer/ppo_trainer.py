@@ -1541,6 +1541,6 @@ class PPOTrainer(BaseRLTrainer):
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_ppo_multi_envs.yaml"), resume_training=False)
-   #trainer.train()
+   trainer.train()
    #trainer.eval()
-   trainer.plot_checkpoint_graphs()
+   #trainer.plot_checkpoint_graphs()

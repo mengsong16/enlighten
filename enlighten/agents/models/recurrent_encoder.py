@@ -162,7 +162,7 @@ class RecurrentVisualEncoder(Net):
             elif self.goal_format == "imagegoal":
                 input_state_size  += self.goal_input_size
     
-                   
+            # state encoder: 2 hidden layer MLP
             self.state_embed_encoder = MLPNetwork(input_dim=input_state_size, output_dim=hidden_size)
             # state output size is equal to hidden size of RNN
             visual_state_encoder_output_size = hidden_size
@@ -202,14 +202,15 @@ class RecurrentVisualEncoder(Net):
         # mlp policy    
         else:
             # create MLP model
-            if self.state_only:
+            if self.state_only:  # state is coordinate, we only need a state encoder, then concatenate with value and policy heads
                 self.state_encoder_layer = 0
             else:
-                self.state_encoder_layer = 2    
-            
+                #self.state_encoder_layer = 2 # 2 hidden layer (3 layers) MLP   
+                self.state_encoder_layer = 1
+
             if self.state_encoder_layer > 0:
                 self.state_encoder = MLPNetwork(input_dim=visual_state_encoder_output_size+other_state_encoder_input_size, 
-                    hidden_layer=self.state_encoder_layer, output_dim=hidden_size)  
+                    hidden_layer=self.state_encoder_layer-1, output_dim=hidden_size)  
             else:
                 self.state_encoder = None     
 

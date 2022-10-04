@@ -8,33 +8,47 @@ class MLPNetwork(nn.Module):
         super(MLPNetwork, self).__init__()
         
         # mlp module
-        assert hidden_layer >= 1, "Error: Must have at least one hidden layers"
-        # hidden layer 1 (input --> hidden): linear+relu+dropout
-        self.mlp_module = [
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU()]
-
-        if dropout > 0:    
-            self.mlp_module.append(nn.Dropout(dropout))
         
-        # hidden layer 2 to n (hidden --> hidden): linear+relu+dropout
-        for _ in range(hidden_layer-1):
-            self.mlp_module.extend([
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU()
-            ])
+        #assert hidden_layer >= 1, "Error: Must have at least one hidden layers"
+        if hidden_layer >= 1:
+            # hidden layer 1 (input --> hidden): linear+relu+dropout
+            self.mlp_module = [
+                nn.Linear(input_dim, hidden_dim),
+                nn.ReLU()]
 
             if dropout > 0:    
                 self.mlp_module.append(nn.Dropout(dropout))
-        
-        # last layer n+1 (hidden --> output)
-        # hidden_layer = n
-        self.mlp_module.extend([
-            nn.Linear(hidden_dim, output_dim)
-        ])
+            
+            # hidden layer 2 to n (hidden --> hidden): linear+relu+dropout
+            for _ in range(hidden_layer-1):
+                self.mlp_module.extend([
+                    nn.Linear(hidden_dim, hidden_dim),
+                    nn.ReLU()
+                ])
 
-        self.mlp_module = nn.Sequential(*self.mlp_module)
-    
+                if dropout > 0:    
+                    self.mlp_module.append(nn.Dropout(dropout))
+            
+            # last layer n+1 (hidden --> output)
+            # hidden_layer = n
+            self.mlp_module.extend([
+                nn.Linear(hidden_dim, output_dim)
+            ])
+
+            self.mlp_module = nn.Sequential(*self.mlp_module)
+        elif hidden_layer == 0: # no hidden layer
+            self.mlp_module = [
+                nn.Linear(input_dim, output_dim),
+                nn.ReLU()]
+
+            if dropout > 0:    
+                self.mlp_module.append(nn.Dropout(dropout))
+            
+            self.mlp_module = nn.Sequential(*self.mlp_module)
+        else:
+            print("Error: the number of hidden layers < 0")
+            exit()
+
     def get_device(self):
         return next(self.parameters()).device
 

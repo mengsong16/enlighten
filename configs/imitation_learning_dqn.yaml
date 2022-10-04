@@ -78,7 +78,7 @@ seed: 1
 gpu_id: 1 #1
 
 # vector env (for evaluation only)
-num_environments: 10 #14 #8 #14 #4 #2
+num_environments: 14 #10 #14 #8 #14 #4 #2
 
 # q network
 hidden_size: 512 #1024
@@ -115,8 +115,8 @@ eval_use_vector_envs: true
 save_every_epochs: 5
 
 # evaluation
-eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000_state_ours-s1-20220928-224433"
-eval_checkpoint_file: ["ckpt_19.pth"] 
+eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000_observation_ours-s1-20220930-143915"
+eval_checkpoint_file: ["ckpt_55.pth"] 
 eval_dir: "evaluation"
 
 

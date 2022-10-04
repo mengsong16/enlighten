@@ -196,8 +196,8 @@ class AcrossEnvBaseEvaluator:
         # load checkpoint
         checkpoint = torch.load(checkpoint_path)
         # load weights
-        #model.load_state_dict(checkpoint["state_dict"])
-        model.load_state_dict(checkpoint["state_dict"])
+        #model.load_state_dict(checkpoint["model_state_dict"])
+        model.load_state_dict(checkpoint["model_state_dict"])
 
         return model
     

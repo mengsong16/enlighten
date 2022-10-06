@@ -112,6 +112,7 @@ class PPOTrainer(BaseRLTrainer):
         self._is_distributed = get_distrib_size()[2] > 1
         self._obs_batching_cache = ObservationBatchingCache()
 
+
     @property
     def obs_space(self):
         if self._obs_space is None and self.envs is not None:
@@ -1197,7 +1198,7 @@ class PPOTrainer(BaseRLTrainer):
         
         # save evaluation results to txt
         if save_text_results:
-            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
+            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
             if not os.path.exists(video_path):
                 os.mkdir(video_path)
 
@@ -1211,7 +1212,7 @@ class PPOTrainer(BaseRLTrainer):
         video_name = f"ckpt-{checkpoint_idx}"
 
         if "disk" in list(self.config.get("eval_video_option")):
-            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
+            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
             if not os.path.exists(video_path):
                 os.makedirs(video_path)
 
@@ -1273,6 +1274,7 @@ class PPOTrainer(BaseRLTrainer):
         checkpoint_path=None
     ) -> None:
         
+
         if self._is_distributed:
             raise RuntimeError("Evaluation does not support distributed mode")
 
@@ -1288,6 +1290,7 @@ class PPOTrainer(BaseRLTrainer):
             device=self.device,
             obs_transforms=obs_transforms,
             checkpoint_file=checkpoint_path)
+        self.rnn_policy = self.config.get("rnn_policy")
         
         # set model to eval mode
         model.eval()
@@ -1428,6 +1431,7 @@ class PPOTrainer(BaseRLTrainer):
                 prev_actions,
                 batch,
                 rgb_frames_placeholder,
+                self.rnn_policy,
             )
             
         # evaluation has done, collect and record metrics
@@ -1469,7 +1473,7 @@ class PPOTrainer(BaseRLTrainer):
     
         # save evaluation results to txt
         if save_text_results:
-            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
+            video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
             if not os.path.exists(video_path):
                 os.mkdir(video_path)
 
@@ -1541,6 +1545,6 @@ class PPOTrainer(BaseRLTrainer):
 if __name__ == "__main__":
    #trainer = PPOTrainer(config_filename=os.path.join(config_path, "replica_nav_state.yaml"), resume_training=False)
    trainer = PPOTrainer(config_filename=os.path.join(config_path, "pointgoal_ppo_multi_envs.yaml"), resume_training=False)
-   trainer.train()
-   #trainer.eval()
+   #trainer.train()
+   trainer.eval()
    #trainer.plot_checkpoint_graphs()

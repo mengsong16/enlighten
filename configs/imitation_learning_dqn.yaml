@@ -12,7 +12,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 
 # experiments
 algorithm_name: "offline_dqn"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_ours"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_ours_reward_scale_10"
 log_to_wandb: true #true
 
 # dummy initial setup 
@@ -77,8 +77,8 @@ seed: 1
 # gpu
 gpu_id: 1 #1
 
-# vector env (for evaluation only)
-num_environments: 14 #10 #14 #8 #14 #4 #2
+# vector env (for evaluation only) train 10, evaluate 14
+num_environments: 10 #10 #14 #8 #14 #4 #2
 
 # q network
 hidden_size: 512 #1024
@@ -95,6 +95,7 @@ batch_mode: "transition"
 # training
 q_learning_type: "ours" #["dqn", "double_q", "no_max", "ours"]
 reward_type: "minus_one_zero" #["original", "minus_one_zero"]
+reward_scale: 10 #10
 batch_size: 512 #256
 learning_rate: 3.0e-4 #1.0e-3 #5.0e-4
 max_epochs: 400
@@ -102,17 +103,17 @@ gamma: 0.99
 target_update_every_updates: 1 #100 #50 #100 #50 #1 #10
 soft_target_tau: 1.0
 with_bc_loss: false
-alpha: 1 #2.5 # weight of q loss against bc loss
+q_bc_weight: 1 #2.5 # weight of q loss against bc loss
 
 # evaluate during training
 eval_during_training: true #false
-eval_every_epochs: 5 #5 
+eval_every_epochs: 10 #5 #5 
 eval_during_training_sample: false # dummy
 eval_during_training_splits: ["same_start_goal_val_mini"] #["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
 eval_use_vector_envs: true
 
 # save checkpoint
-save_every_epochs: 5
+save_every_epochs: 10 #5
 
 # evaluation
 eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000_observation_ours-s1-20220930-143915"

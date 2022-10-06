@@ -54,10 +54,13 @@ class DQNTrainer(SequenceTrainer):
         print("with bc loss =====> %s"%(self.with_bc_loss))
 
         if self.with_bc_loss:
-            self.alpha = float(self.config.get("alpha"))
+            self.q_bc_weight = float(self.config.get("q_bc_weight"))
         
         # reward type
         self.reward_type = self.config.get("reward_type")
+
+        # reward scale
+        self.reward_scale = float(self.config.get("reward_scale", 1.0))
 
         # number of actions
         self.action_number = int(self.config.get("action_number"))
@@ -145,7 +148,8 @@ class DQNTrainer(SequenceTrainer):
             Q_targets = Q_targets.detach() #[B]
         
         # compute predicted Q
-        Q_predicted = torch.gather(self.q_network(observations, goals),
+        Q_output = self.q_network(observations, goals)
+        Q_predicted = torch.gather(Q_output,
                                     dim=1,
                                     index=actions.long().unsqueeze(1)).squeeze(1) # [B]
 
@@ -155,8 +159,8 @@ class DQNTrainer(SequenceTrainer):
         
         # compute lambda
         if self.with_bc_loss:
-            #lmbda = self.alpha / Q_predicted.abs().mean().detach()
-            lmbda = self.alpha
+            #lmbda = self.q_bc_weight / Q_predicted.abs().mean().detach()
+            lmbda = self.q_bc_weight
         else:
             lmbda = 1.0
         
@@ -178,6 +182,13 @@ class DQNTrainer(SequenceTrainer):
         loss_dict["q_loss"] = q_loss.detach().cpu().item()
         loss_dict["bc_loss"] = action_loss.detach().cpu().item()
         loss_dict["loss"] = loss.detach().cpu().item()
+
+        # count how many actions are predicted correctly
+        with torch.no_grad():
+            predicted_actions = torch.argmax(Q_output.detach(), dim=1)
+            compare_actions = torch.eq(predicted_actions, actions)
+            action_pred_correct = torch.sum(compare_actions.int())
+            loss_dict["correct_action_num"] = action_pred_correct.detach().cpu().item()
 
         # soft update target Q network (update when total updates == 0)
         if self.updates_done % self.target_update_every_updates == 0:
@@ -213,6 +224,7 @@ class DQNTrainer(SequenceTrainer):
         # dones # (B)
         observations, goals, actions, rewards, next_observations, next_goals, dones, next_actions, optimal_actions = self.train_dataset.get_transition_batch(self.batch_size)
 
+
         # compute target Q
         with torch.no_grad():
             batch_size = observations.size()[0]
@@ -231,20 +243,21 @@ class DQNTrainer(SequenceTrainer):
             Q_targets[optimal_actions] = rewards[optimal_actions] + self.gamma * Q_target_best_next[optimal_actions] * (1.0 - dones.float()[optimal_actions]) 
             
             # target Q: non optimal action
-            non_optimal_rewards = (1+self.gamma)*(-1.0*torch.ones(non_optimal_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_optimal_actions]
+            non_optimal_rewards = (1+self.gamma)*(-1.0 * self.reward_scale * torch.ones(non_optimal_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_optimal_actions]
             Q_targets[non_optimal_actions] = non_optimal_rewards + pow(self.gamma, 3) * Q_target_best_next[non_optimal_actions] * (1.0 - dones.float()[non_optimal_actions])
                 
             Q_targets = Q_targets.detach() #[B]
             
         # compute predicted Q
         # [B,1] -> [B]
-        Q_predicted = torch.gather(self.q_network(observations, goals),
+        Q_output = self.q_network(observations, goals)
+        Q_predicted = torch.gather(Q_output,
                                     dim=1,
                                     index=actions.long().unsqueeze(1)).squeeze(1) 
 
         # compute Q loss
         q_loss = F.mse_loss(Q_predicted, Q_targets) # a single float number
-        
+
         # optimize Q network
         self.optimizer.zero_grad()
         q_loss.backward()
@@ -254,7 +267,21 @@ class DQNTrainer(SequenceTrainer):
         loss_dict = {}
         loss_dict["q_loss"] = q_loss.detach().cpu().item()
         
-        
+        # count how many actions are predicted correctly
+        with torch.no_grad():
+            predicted_actions = torch.argmax(Q_output.detach(), dim=1)
+            # print(predicted_actions)
+            # print("="*30)
+            compare_actions = torch.eq(predicted_actions, actions)
+            # print(actions)
+            # print("="*30)
+            # print(compare_actions)
+            # print("="*30)
+            action_pred_correct = torch.sum(compare_actions.int())
+            loss_dict["correct_action_num"] = action_pred_correct.detach().cpu().item()
+            # print(loss_dict["correct_action_num"])
+            # print("="*30)
+            # exit()
         # the number of updates ++
         self.updates_done += 1
 
@@ -317,6 +344,7 @@ class DQNTrainer(SequenceTrainer):
     def train_one_epoch(self, epoch_num, print_logs=False):
 
         train_q_losses = []
+        train_action_correct_nums = []
 
         if self.with_bc_loss:
             train_total_losses = []
@@ -343,6 +371,7 @@ class DQNTrainer(SequenceTrainer):
 
             # record losses
             train_q_losses.append(loss_dict["q_loss"]) 
+            train_action_correct_nums.append(loss_dict["correct_action_num"])
             if self.with_bc_loss:
                 train_bc_losses.append(loss_dict["bc_loss"])
                 train_total_losses.append(loss_dict["loss"])
@@ -353,6 +382,9 @@ class DQNTrainer(SequenceTrainer):
 
         logs['training/q_loss_mean'] = np.mean(train_q_losses)
         logs['training/q_loss_std'] = np.std(train_q_losses)
+
+        logs['training/action_accuracy'] = np.sum(train_action_correct_nums) / float(self.train_dataset.total_transition_num())
+
 
         if self.with_bc_loss:
             logs['training/bc_loss_mean'] = np.mean(train_bc_losses)

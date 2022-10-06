@@ -38,6 +38,9 @@ class BehaviorDataset:
         # reward type
         self.reward_type = self.config.get("reward_type", "original")
         print("reward type =====> %s"%(self.reward_type))
+        # reward scale [used in reward type "minus_one_zero"]
+        self.reward_scale = float(self.config.get("reward_scale", 1.0))
+        print("reward scale =====> %f"%(self.reward_scale))
         
         # augment transition dataset with relabeled actions
         self.relabel_actions = False
@@ -140,6 +143,9 @@ class BehaviorDataset:
             self.num_steps += len(traj['observations'])
 
         assert len(self.transition_index_list) == (self.num_steps - len(self.trajectories))*self.action_num, "Error: the number of transitions and steps do not match"
+
+    def total_transition_num(self):
+        return len(self.transition_index_list)
 
     def generate_transition_index(self):
         if self.relabel_actions:
@@ -278,7 +284,7 @@ class BehaviorDataset:
                 if done:
                     r[batch_index] = torch.tensor(0, dtype=torch.float, device=self.device)
                 else:
-                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device)
+                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device) * self.reward_scale
             else:
                 print("Error: undefined reward type: %s"%(self.reward_type))
                 exit()
@@ -387,7 +393,7 @@ class BehaviorDataset:
                 if done:
                     r[batch_index] = torch.tensor(0, dtype=torch.float, device=self.device)
                 else:
-                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device)
+                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device) * self.reward_scale
             else:
                 print("Error: undefined reward type: %s"%(self.reward_type))
                 exit()

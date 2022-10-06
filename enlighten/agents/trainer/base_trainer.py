@@ -106,10 +106,10 @@ class BaseTrainer:
             assert (
                 len(self.config.get("tensorboard_dir")) > 0
             ), "Must specify a tensorboard directory for video display"
-            os.makedirs(os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), exist_ok=True)
+            os.makedirs(os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("eval_experiment_folder")), exist_ok=True)
         if "disk" in self.config.get("eval_video_option"):
-            if not os.path.exists(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))):
-                os.makedirs(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name")), exist_ok=True) # exist_ok=True, won't raise any error if folder exists
+            if not os.path.exists(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))):
+                os.makedirs(os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder")), exist_ok=True) # exist_ok=True, won't raise any error if folder exists
 
         split_names = list(self.config.get("eval_splits"))
         success_rate = {}
@@ -120,14 +120,14 @@ class BaseTrainer:
             spl[split_name] = []
 
         with TensorboardWriter(
-            os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("experiment_name")), flush_secs=self.flush_secs
+            os.path.join(root_path, self.config.get("tensorboard_dir"), self.config.get("eval_experiment_folder")), flush_secs=self.flush_secs
         ) as writer:
             checkpoint_list = list(self.config.get("eval_checkpoint_file"))
             # evaluate checkpoints in the list provided in config
             if "*" not in checkpoint_list:
                 for checkpoint_filename in checkpoint_list:
                     # evaluate a single checkpoint
-                    single_checkpoint = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name"), checkpoint_filename)
+                    single_checkpoint = os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("eval_experiment_folder"), checkpoint_filename)
                     proposed_index = get_checkpoint_id(single_checkpoint)
                     if proposed_index is not None:
                         ckpt_idx = proposed_index
@@ -152,7 +152,7 @@ class BaseTrainer:
                 while True:
                     # pull out current file (a filename or None)
                     current_file = poll_checkpoint_folder(
-                        os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("experiment_name")), prev_file_ind
+                        os.path.join(root_path, self.config.get("eval_checkpoint_folder"), self.config.get("eval_experiment_folder")), prev_file_ind
                     )
                     #time.sleep(2)  # sleep for 2 secs before polling again
                     if current_file is None:
@@ -182,7 +182,7 @@ class BaseTrainer:
 
             
         # dump results
-        dump_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
+        dump_folder = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("eval_experiment_folder"))
         with open(os.path.join(dump_folder, "success_rate.pickle"), 'wb') as handle:
             pickle.dump(success_rate, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
@@ -365,6 +365,8 @@ class BaseRLTrainer(BaseTrainer):
         prev_actions: Tensor,
         batch: Dict[str, Tensor],
         rgb_frames: Union[List[List[Any]], List[List[ndarray]]],
+        rnn_policy: bool
+
     ) -> Tuple[
         Union[VectorEnv, NavEnv],
         Tensor,
@@ -383,9 +385,12 @@ class BaseRLTrainer(BaseTrainer):
 
             # only keep the indices of non-paused envs, i.e. state_index (a list of indices)
             # indexing along the batch dimensions
-            test_recurrent_hidden_states = test_recurrent_hidden_states[
-                state_index
-            ]
+            if rnn_policy:
+                test_recurrent_hidden_states = test_recurrent_hidden_states[
+                    state_index
+                ]
+            # mlp policy won't use hidden states, so it is dummy, test_recurrent_hidden_states = None
+
             not_done_masks = not_done_masks[state_index]
             current_episode_reward = current_episode_reward[state_index]
             prev_actions = prev_actions[state_index]

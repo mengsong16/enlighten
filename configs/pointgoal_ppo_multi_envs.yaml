@@ -12,6 +12,7 @@ scenes_dir: "/dataset"  # where mesh data store
 # BC training data location
 #behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole" #"/dataset/behavior_dataset_gibson_1_scene_Rancocas_4000" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
 behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"
+#behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
 
 # experiments
 algorithm_name: "ppo"
@@ -89,7 +90,7 @@ pretrained_whole_model: false
 pretrained_model_path: data/ddppo-models/gibson-2plus-resnet50.pth
 # Whether or not the visual encoder backbone will be trained
 train_encoder: true
-rnn_policy: false #true #false
+rnn_policy: false #true #false #true #false
 rnn_type: gru #gru  # lstm
 attention: false #false # true
 attention_type: caption #fc
@@ -98,8 +99,8 @@ attention_type: caption #fc
 use_double_buffered_sampler: false
 num_steps: 128  # rollout buffer length
 
-# vector env (for training and evaluation)
-num_environments: 6 #6 #4 #14 #8 #6
+# vector env (for training and evaluation, train 6, eval 14)
+num_environments: 14 #6 #6 #4 #14 #8 #6
 
 # training
 torch_gpu_id: 0
@@ -157,7 +158,7 @@ eval_checkpoint_folder: "checkpoints"
 # if eval_checkpoint_file is an existing file in eval_checkpoint_folder, eval single checkpoint
 # otherwise, eval all checkpoints in eval_checkpoint_folder
 # if a list, need to ensure that checkpoint index is increasing
-eval_checkpoint_file: ["*"] #["ckpt.8.pth","ckpt.9.pth"] 
+eval_checkpoint_file: ["ckpt.9.pth"] #["*"] #["ckpt.8.pth","ckpt.9.pth"] 
 # use checkpoint config file
 eval_use_ckpt_config: false
 # save evaluation results here
@@ -166,8 +167,8 @@ eval_dir: "evaluation"
 # -1: test on all episodes in the dataset
 # number of evaluation episodes in a single scene
 test_episode_count: -1 
-eval_splits: ["same_scene_val", "across_scene_val"] # "same_start_goal_val", 
-eval_experiment_folder: "pointgoal_baseline_multienv_1_scene_Rancocas_whole_5m" #"pointgoal_baseline_multienv_2m"
+eval_splits: ["same_scene_val", "across_scene_val", "same_start_goal_val"]
+eval_experiment_folder: "pointgoal_baseline_multienv_1_scene_Rancocas_2000_observation_mlp_5m"  #"pointgoal_baseline_multienv_1_scene_Rancocas_whole_5m" "pointgoal_baseline_multienv_4_scene_3m" 
 
 # dummy
 eval_video_option: [] #["disk", "tensorboard"]

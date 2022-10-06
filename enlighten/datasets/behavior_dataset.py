@@ -74,6 +74,7 @@ class BehaviorDataset:
         # load all trajectories from the training dataset
         dataset_path = self.config.get("behavior_dataset_path")
         self.trajectories = []
+        # collect all file parts
         for file in os.listdir(dataset_path):
             if file.endswith(".pickle") and file.startswith("train_data"):
                 current_train_dataset_path = os.path.join(dataset_path, file)
@@ -90,16 +91,21 @@ class BehaviorDataset:
 
 
     def load_augment_trajectories(self):
-        # load augment training trajectories and use some or all of them
+        # load augment training trajectories and use all of them
         dataset_path = self.config.get("behavior_dataset_path")
-        dataset_path = os.path.join(dataset_path, "train_aug_data.pickle")
-        print("Loading trajectories from %s"%(dataset_path))
-        with open(dataset_path, 'rb') as f:
-            augment_trajectories = pickle.load(f)
-            self.trajectories.extend(augment_trajectories)
+        
+        augment_traj_num = 0
+        # collect all file parts
+        for file in os.listdir(dataset_path):
+            if file.endswith(".pickle") and file.startswith("train_aug_data"):
+                current_train_aug_dataset_path = os.path.join(dataset_path, file)
+                print("Loading trajectories from %s"%(current_train_aug_dataset_path))
+                with open(current_train_aug_dataset_path, 'rb') as f:
+                    augment_trajectories_current_file = pickle.load(f)
+                    augment_traj_num += len(augment_trajectories_current_file)
+                    self.trajectories.extend(augment_trajectories_current_file)
 
-        augment_traj_num = len(augment_trajectories)
-        self.num_trajectories += augment_traj_num
+        self.num_trajectories = len(self.trajectories)
 
         print("Loaded %d augment training trajectories"%(augment_traj_num))
         print("Use %d training trajectories in total"%(self.num_trajectories))

@@ -223,7 +223,7 @@ def sample_train_episodes_v1(train_scenes, train_episode_num,
         episodes = []
         for data in pointgoal_meta[scene_id]:
             episodes.append(data["episode"])
-        # sample episodes from current scene
+        # sample episodes from current scene without replacement
         selected_episodes = random.sample(episodes, batch_size)
         # split into train, val, test scenes
         train_episodes = selected_episodes[0:train_episode_per_scene]
@@ -1032,6 +1032,37 @@ def generate_augment_episode_one_scene(scene_name, scene_episodes, env, aug_epis
     
     return augment_episodes_one_scene
 
+def episode_in_list(episode, episode_list):
+    for ep in episode_list:
+        if ep.episode_id == episode.episode_id:
+            return True
+
+    return False
+
+def exclude_episodes(all_scene_episodes, exclude_scene_episodes):
+    rest_scene_episodes = []
+    for episode in all_scene_episodes:
+        if not episode_in_list(episode=episode, episode_list=exclude_scene_episodes):
+            rest_scene_episodes.append(episode)
+    
+    assert len(all_scene_episodes) - len(exclude_scene_episodes) == len(rest_scene_episodes), "Error: scene episode exclusion is wrong"
+    return rest_scene_episodes
+
+def add_more_episode_one_scene(scene_name, pointgoal_meta, exclude_scene_episodes, aug_episode_num_per_scene):
+    # collect all episodes from current scene
+    all_scene_episodes = []
+    for data in pointgoal_meta[scene_name]:
+        all_scene_episodes.append(data["episode"])
+    
+    # exclude used episodes
+    rest_scene_episodes = exclude_episodes(all_scene_episodes, exclude_scene_episodes)
+    
+    # sample episodes from rest episodes without replacement
+    augment_scene_episodes = random.sample(rest_scene_episodes, aug_episode_num_per_scene)
+    
+    return augment_scene_episodes
+
+# augment training data with same s different g
 def generate_behavior_dataset_train_aug_meta(yaml_name, behavior_dataset_path, total_aug_episode_num):
     env = MultiNavEnv(config_file=yaml_name)
     train_episodes = load_behavior_dataset_meta(behavior_dataset_path, 'train')
@@ -1052,6 +1083,41 @@ def generate_behavior_dataset_train_aug_meta(yaml_name, behavior_dataset_path, t
         behavior_dataset_path, "train_aug")
 
     env.close()
+
+# add more training episodes, keep the original training, same scene validation set and across scene validation set
+def add_more_training_episodes(yaml_name, 
+    source_behavior_dataset_path,
+    total_aug_episode_num):
+
+    config_file=os.path.join(config_path, yaml_name)
+    config = parse_config(config_file)
+
+    train_episodes = load_behavior_dataset_meta(source_behavior_dataset_path, 'train')
+    same_scene_val_episodes = load_behavior_dataset_meta(source_behavior_dataset_path, 'same_scene_val')
+    exclude_episodes = train_episodes + same_scene_val_episodes
+    exclude_scene_episode_list = assign_episode_to_scene_behavior_dataset(exclude_episodes)
+    print("Exisiting training and validation episodes: %d"%(len(exclude_episodes)))
+    scene_list = list(exclude_scene_episode_list.keys())
+    scene_num = len(scene_list)
+    print("Exisiting scenes: %d"%(scene_num))
+    assert total_aug_episode_num % scene_num == 0, "Error: train: total augment episode number is not divisible by scene number"
+    aug_episode_num_per_scene = int(total_aug_episode_num / scene_num)
+    print("Augment each scene with %d episodes"%aug_episode_num_per_scene)
+
+    # load all episodes from pointgoal dataset
+    pointgoal_train_meta, total_train_scene_num, total_train_episode_num = load_pointgoal_dataset_meta(config=config, split="train")
+    
+    # generate augment train episodes
+    augment_train_episodes = []
+    for scene_name, exclude_scene_episodes in exclude_scene_episode_list.items():
+        augment_episodes_one_scene = add_more_episode_one_scene(scene_name, pointgoal_train_meta, exclude_scene_episodes, aug_episode_num_per_scene)
+        augment_train_episodes.extend(augment_episodes_one_scene)
+    
+    # save train_aug episode meta data
+    save_behavior_dataset_meta(augment_train_episodes, 
+        source_behavior_dataset_path, "train_aug")
+
+    print("Done")
 
 def get_scenes_not_in_behavior_dataset(yaml_name, behavior_dataset_path):
     config_file=os.path.join(config_path, yaml_name)
@@ -1236,9 +1302,25 @@ if __name__ == "__main__":
     #     same_scene_val_mini_episode_num=30)
 
     # ====== generate train episodes =======
+    # generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
+    #     behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000",
+    #     split_name="train")
+
+    # ====== add more train episodes to an existing dataset =======
+    # add_more_training_episodes(yaml_name="imitation_learning_rnn_bc.yaml", 
+    #     source_behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000",
+    #     total_aug_episode_num=2000)
+    # add_more_training_episodes(yaml_name="imitation_learning_rnn_bc.yaml", 
+    #     source_behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000",
+    #     total_aug_episode_num=2000)
+
+    # ====== generate train augment episodes =======
+    # generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000",
+    #      split_name="train_aug")
     generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
-        behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000",
-        split_name="train")
+         behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000",
+         split_name="train_aug")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(

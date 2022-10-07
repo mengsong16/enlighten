@@ -94,7 +94,7 @@ goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
 batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
 
 # training
-batch_size: 4 # amount to the number of vector envs during training
+batch_size: 2 #4 # amount to the number of vector envs during training
 optimizer: "AdamW" #["AdamW", "Adam"]
 learning_rate: 1.0e-4 #5.0e-4 #1.0e-4
 weight_decay: 1.0e-4

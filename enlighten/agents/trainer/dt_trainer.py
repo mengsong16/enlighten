@@ -133,6 +133,23 @@ class DTTrainer(SequenceTrainer):
             self.optimizer,
             lambda steps: min((steps+1)/warmup_steps, 1)
         )
+
+        # resume from the checkpoint
+        if self.resume:
+            checkpoint = self.resume_checkpoint()
+            # resume model, optimizer, scheduler
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if self.scheduler is not None:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+            if "epoch" in checkpoint.keys():
+                start_iter = checkpoint['epoch'] + 1
+            else:
+                start_iter = (self.resume_ckpt_index + 1) * self.save_every_iterations
+            print("=======> Will resume training starting from iteration index %d"%(start_iter))
+        else:
+            start_iter = 0
         
         # start training
         self.batch_size = int(self.config.get('batch_size'))
@@ -140,7 +157,7 @@ class DTTrainer(SequenceTrainer):
 
         # train for max_iters iterations
         # each iteration includes num_steps_per_iter steps
-        for iter in range(int(self.config.get('max_iters'))):
+        for iter in range(start_iter, int(self.config.get('max_iters'))):
             logs = self.train_one_iteration(num_steps=int(self.config.get('num_steps_per_iter')), iter_num=iter+1, print_logs=True)
             
             # evaluate
@@ -151,7 +168,7 @@ class DTTrainer(SequenceTrainer):
                     checkpoint_index = (iter+1) // self.eval_every_iterations
                     logs['checkpoints/eval_checkpoints'] = checkpoint_index
             
-            # log to wandb
+            # log to wandb at every iteration
             if self.log_to_wandb:
                 wandb.log(logs, step=iter)
             
@@ -163,6 +180,7 @@ class DTTrainer(SequenceTrainer):
                 self.save_checkpoint(model=self.model, checkpoint_number = int((iter+1) // self.save_every_iterations), epoch_index=iter)
     
     # train for one iteration
+    # iter_num: the number of iterations that will be done (starts from 1)
     def train_one_iteration(self, num_steps, iter_num, print_logs=False):
 
         train_action_losses, train_losses = [], []

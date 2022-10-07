@@ -181,6 +181,24 @@ class RNNBCTrainer(SequenceTrainer):
         print("======> created optimizer: %s"%(self.config.get("optimizer")))
         
         self.scheduler = None
+        
+        # resume from the checkpoint
+        if self.resume:
+            checkpoint = self.resume_checkpoint()
+            # resume model, optimizer, scheduler
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if self.scheduler is not None:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+            if "epoch" in checkpoint.keys():
+                start_epoch = checkpoint['epoch'] + 1
+            else:
+                start_epoch = (self.resume_ckpt_index + 1) * self.save_every_epochs
+            print("=======> Will resume training starting from epoch index %d"%(start_epoch))
+        else:
+            start_epoch = 0
+        
         # start training
         self.batch_size = int(self.config.get('batch_size'))
         self.start_time = time.time()
@@ -188,10 +206,10 @@ class RNNBCTrainer(SequenceTrainer):
         # train for max_epochs
         # each epoch iterate over the whole training sets
         self.updates_done = 0
-        for epoch in range(int(self.config.get('max_epochs'))):
+        for epoch in range(start_epoch, int(self.config.get('max_epochs'))):
             logs = self.train_one_epoch(epoch_num=epoch+1, print_logs=True)
             
-            # evaluate
+            # evaluate during training
             if self.config.get('eval_during_training') and self.eval_every_epochs > 0:
                 # do not eval at step 0
                 if (epoch+1) % self.eval_every_epochs == 0:
@@ -202,7 +220,7 @@ class RNNBCTrainer(SequenceTrainer):
                     logs['checkpoints/eval_checkpoints'] = eval_point_index
                     
             
-            # log current logs to wandb
+            # log to wandb at every epoch
             if self.log_to_wandb:
                 wandb.log(logs, step=epoch)
             
@@ -214,6 +232,7 @@ class RNNBCTrainer(SequenceTrainer):
                 self.save_checkpoint(model=self.model, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1, epoch_index=epoch)
     
     # train for one epoch
+    # epoch_num: the number of epochs that will be done (starts from 1)
     def train_one_epoch(self, epoch_num, print_logs=False):
 
         train_action_losses, train_losses = [], []
@@ -279,5 +298,10 @@ class RNNBCTrainer(SequenceTrainer):
 
     
 if __name__ == '__main__':
-    trainer = RNNBCTrainer(config_filename="imitation_learning_rnn_bc.yaml")
+    #trainer = RNNBCTrainer(config_filename="imitation_learning_rnn_bc.yaml")
+    trainer = RNNBCTrainer(
+        config_filename="imitation_learning_rnn_bc.yaml",
+        resume=True,
+        resume_experiment_name="s1-20221007-021313",
+        resume_ckpt_index=9)
     trainer.train()

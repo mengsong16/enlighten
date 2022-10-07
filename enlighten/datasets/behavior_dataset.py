@@ -39,8 +39,9 @@ class BehaviorDataset:
         self.reward_type = self.config.get("reward_type", "original")
         print("reward type =====> %s"%(self.reward_type))
         # reward scale [used in reward type "minus_one_zero"]
-        self.reward_scale = float(self.config.get("reward_scale", 1.0))
-        print("reward scale =====> %f"%(self.reward_scale))
+        if self.reward_type == "minus_one_zero":
+            self.reward_scale = float(self.config.get("reward_scale", 1.0))
+            print("reward scale =====> %f"%(self.reward_scale))
         
         # augment transition dataset with relabeled actions
         self.relabel_actions = False
@@ -48,7 +49,7 @@ class BehaviorDataset:
         if "dqn" in algorithm_name:
             if self.config.get("q_learning_type") == "ours":
                 self.relabel_actions = True
-        print("relabel_actions: %s"%(self.relabel_actions))
+        print("relabel actions =====> %s"%(self.relabel_actions))
 
         if self.batch_mode == "random_segment":
             self.max_ep_len = int(self.config.get("dt_max_ep_len"))
@@ -61,6 +62,7 @@ class BehaviorDataset:
         self.load_trajectories()
         # load augment trajectories if necessary
         if self.config.get("use_augment_train_data"):
+            print("=====> Use more training data")
             self.load_augment_trajectories()
         
         # create trajectory indices from loaded trajectories

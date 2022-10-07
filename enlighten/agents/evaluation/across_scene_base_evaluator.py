@@ -199,8 +199,11 @@ class AcrossEnvBaseEvaluator:
         #model.load_state_dict(checkpoint["model_state_dict"])
         if "state_dict" in checkpoint.keys():
             model.load_state_dict(checkpoint["state_dict"])
-        else:
+        elif "model_state_dict" in checkpoint.keys():
             model.load_state_dict(checkpoint["model_state_dict"])
+        else:
+            print("Error: unknown model state dict key")
+            exit()
 
         return model
     

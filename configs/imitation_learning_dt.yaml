@@ -91,6 +91,7 @@ dt_max_ep_len: 500 # 4096
 
 # training
 batch_size: 16
+optimizer: "AdamW" #["AdamW", "Adam"]
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 warmup_steps: 10000

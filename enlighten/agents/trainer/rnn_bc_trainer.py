@@ -26,8 +26,8 @@ from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.image_dataset import ImageDataset
 
 class RNNBCTrainer(SequenceTrainer):
-    def __init__(self, config_filename):
-        super(RNNBCTrainer, self).__init__(config_filename)
+    def __init__(self, config_filename, resume=False, resume_experiment_name=None, resume_ckpt_index=None):
+        super(RNNBCTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
 
         # set evaluation interval
         self.eval_every_epochs = int(self.config.get("eval_every_epochs"))
@@ -162,12 +162,25 @@ class RNNBCTrainer(SequenceTrainer):
         # )
         # self.scheduler = None
 
-        # create optimizer: Adam
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=float(self.config.get('learning_rate'))
-        )
+        # create optimizer:
+        if self.config.get("optimizer") == "AdamW":
+            self.optimizer = torch.optim.AdamW(
+                self.model.parameters(),
+                lr=float(self.config.get('learning_rate')),
+                weight_decay=float(self.config.get('weight_decay')),
+            )
+        elif self.config.get("optimizer") == "Adam":
+            self.optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=float(self.config.get('learning_rate'))
+            )
+        else:
+            print("Error: unknown optimizer: %s"%(self.config.get("optimizer")))
+            exit()
         
+        print("======> created optimizer: %s"%(self.config.get("optimizer")))
+        
+        self.scheduler = None
         # start training
         self.batch_size = int(self.config.get('batch_size'))
         self.start_time = time.time()
@@ -191,14 +204,14 @@ class RNNBCTrainer(SequenceTrainer):
             
             # log current logs to wandb
             if self.log_to_wandb:
-                wandb.log(logs)
+                wandb.log(logs, step=epoch)
             
             
             # save checkpoint
-            # do not save at step 0
+            # do not save at epoch 0
             # checkpoint index starts from 0
             if (epoch+1) % self.save_every_epochs == 0:
-                self.save_checkpoint(model=self.model, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1)
+                self.save_checkpoint(model=self.model, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1, epoch_index=epoch)
     
     # train for one epoch
     def train_one_epoch(self, epoch_num, print_logs=False):

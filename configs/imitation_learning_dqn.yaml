@@ -97,7 +97,9 @@ q_learning_type: "ours" #["dqn", "double_q", "no_max", "ours"]
 reward_type: "minus_one_zero" #["original", "minus_one_zero"]
 reward_scale: 10 #10
 batch_size: 512 #256
+optimizer: "Adam" #["AdamW", "Adam"]
 learning_rate: 3.0e-4 #1.0e-3 #5.0e-4
+weight_decay: 1.0e-4
 max_epochs: 400
 gamma: 0.99
 target_update_every_updates: 1 #100 #50 #100 #50 #1 #10

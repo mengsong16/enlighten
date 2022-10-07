@@ -27,8 +27,8 @@ from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.image_dataset import ImageDataset
 
 class DQNTrainer(SequenceTrainer):
-    def __init__(self, config_filename):
-        super(DQNTrainer, self).__init__(config_filename)
+    def __init__(self, config_filename, resume=False, resume_experiment_name=None, resume_ckpt_index=None):
+        super(DQNTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
 
         # set evaluation interval
         self.eval_every_epochs = int(self.config.get("eval_every_epochs"))
@@ -60,7 +60,8 @@ class DQNTrainer(SequenceTrainer):
         self.reward_type = self.config.get("reward_type")
 
         # reward scale
-        self.reward_scale = float(self.config.get("reward_scale", 1.0))
+        if self.reward_type == "minus_one_zero":
+            self.reward_scale = float(self.config.get("reward_scale", 1.0))
 
         # number of actions
         self.action_number = int(self.config.get("action_number"))
@@ -301,11 +302,41 @@ class DQNTrainer(SequenceTrainer):
         # print goal form
         #print("goal form ==========> %s"%(self.config.get("goal_form")))
 
-        # create optimizer: Adam
-        self.optimizer = torch.optim.Adam(
-            self.q_network.parameters(),
-            lr=float(self.config.get('learning_rate'))
-        )
+        # create optimizer: 
+        if self.config.get("optimizer") == "AdamW":
+            self.optimizer = torch.optim.AdamW(
+                self.q_network.parameters(),
+                lr=float(self.config.get('learning_rate')),
+                weight_decay=float(self.config.get('weight_decay')),
+            )
+        elif self.config.get("optimizer") == "Adam":
+            self.optimizer = torch.optim.Adam(
+                self.q_network.parameters(),
+                lr=float(self.config.get('learning_rate'))
+            )
+        else:
+            print("Error: unknown optimizer: %s"%(self.config.get("optimizer")))
+            exit()
+        
+        print("======> created optimizer: %s"%(self.config.get("optimizer")))
+        self.scheduler = None
+
+        # resume from the checkpoint
+        if self.resume:
+            checkpoint = self.resume_checkpoint()
+            # resume model, optimizer, scheduler
+            self.q_network.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if self.scheduler is not None:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+            if "epoch" in checkpoint.keys():
+                start_epoch = checkpoint['epoch'] + 1
+            else:
+                start_epoch = (self.resume_ckpt_index + 1) * self.save_every_epochs
+            print("=======> Will resume training starting from epoch index %d"%(start_epoch))
+        else:
+            start_epoch = 0
         
         # start training
         self.batch_size = int(self.config.get('batch_size'))
@@ -315,7 +346,7 @@ class DQNTrainer(SequenceTrainer):
         # each epoch iterate over the whole training sets
     
         self.updates_done = 0
-        for epoch in range(int(self.config.get('max_epochs'))):
+        for epoch in range(start_epoch, int(self.config.get('max_epochs'))):
             logs = self.train_one_epoch(epoch_num=epoch+1, print_logs=True)
             
             # evaluate during training
@@ -331,16 +362,17 @@ class DQNTrainer(SequenceTrainer):
             
             # log to wandb at every epoch
             if self.log_to_wandb:
-                wandb.log(logs)
+                wandb.log(logs, step=epoch)
             
             
             # save checkpoint
-            # do not save at step 0
+            # do not save at epoch 0
             # checkpoint index starts from 0
             if (epoch+1) % self.save_every_epochs == 0:
-                self.save_checkpoint(model=self.q_network, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1)
+                self.save_checkpoint(model=self.q_network, checkpoint_number = int((epoch+1) // self.save_every_epochs) - 1, epoch_index=epoch)
     
     # train for one epoch
+    # epoch_num: the number of epochs that will be done (starts from 1)
     def train_one_epoch(self, epoch_num, print_logs=False):
 
         train_q_losses = []
@@ -396,7 +428,7 @@ class DQNTrainer(SequenceTrainer):
         logs['update'] = self.updates_done
         
 
-        # print log at every epoch
+        # print log at the end of every epoch
         if print_logs:
             print('=' * 80)
             print(f'Epoch {epoch_num}')
@@ -409,5 +441,9 @@ class DQNTrainer(SequenceTrainer):
 
     
 if __name__ == '__main__':
-    trainer = DQNTrainer(config_filename="imitation_learning_dqn.yaml")
+    trainer = DQNTrainer(
+        config_filename="imitation_learning_dqn.yaml", 
+        resume=True,
+        resume_experiment_name="s1-20221005-174833",
+        resume_ckpt_index=10)
     trainer.train()

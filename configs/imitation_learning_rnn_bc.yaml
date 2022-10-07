@@ -13,7 +13,7 @@ image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
 algorithm_name: "rnn_bc"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_epoch_200" #"whole_trajectory_value_supervision" 
+experiment_name: "rel_goal_1_scene_Rancocas_2000_epoch_300_aug" #"whole_trajectory_value_supervision" 
 log_to_wandb: true
 
 # dummy initial setup 
@@ -77,7 +77,7 @@ max_collisions_per_episode: 200
 seed: 1
 
 # gpu
-gpu_id: 1 #1
+gpu_id: 0 #1
 
 # vector env (for evaluation only)
 num_environments: 14 #8 #14 #4 #2
@@ -95,27 +95,28 @@ batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_
 
 # training
 batch_size: 4 # amount to the number of vector envs during training
-learning_rate: 5.0e-4 #1.0e-4
-#weight_decay: 1.0e-4
-max_epochs: 200 #2000 #1000 #800 #400 #500 #30 #10
+optimizer: "AdamW" #["AdamW", "Adam"]
+learning_rate: 1.0e-4 #5.0e-4 #1.0e-4
+weight_decay: 1.0e-4
+max_epochs: 300 #2000 #1000 #800 #400 #500 #30 #10
 #num_steps_per_iter: 100 #10000
+use_augment_train_data: true #true
 supervise_value: false # true
-use_augment_train_data: false #true
 domain_adaptation: false #true
 
 # evaluate during training
 eval_during_training: false
-eval_every_epochs: 2 #100 #40 #80 #50 #10 
+eval_every_epochs: 10 #2 #100 #40 #80 #50 #10 
 eval_during_training_sample: true
 eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
 eval_use_vector_envs: true #true
 
 # save checkpoint
-save_every_epochs: 2 #40 #50 #10 
+save_every_epochs: 10 #2 #40 #50 #10 
 
 # evaluation
 eval_experiment_folder: "rnn_bc-rel_goal_1_scene_rancocas_2000_epoch_200-s1-20220920-222524"
-eval_checkpoint_file: ["ckpt_99.pth"] 
+eval_checkpoint_file: ["ckpt_60.pth", "ckpt_70.pth", "ckpt_80.pth", "ckpt_90.pth"] 
 eval_dir: "evaluation"
 
 

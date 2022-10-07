@@ -586,11 +586,23 @@ class BCOnlineTrainer(PPOTrainer):
         self._init_train()
         
         # create optimizer and scheduler
-        optimizer = torch.optim.AdamW(
-            self.agent.parameters(),
-            lr=float(self.config.get('learning_rate')),
-            weight_decay=float(self.config.get('weight_decay')),
-        )
+        if self.config.get("optimizer") == "AdamW":
+            optimizer = torch.optim.AdamW(
+                self.agent.parameters(),
+                lr=float(self.config.get('learning_rate')),
+                weight_decay=float(self.config.get('weight_decay')),
+            )
+        elif self.config.get("optimizer") == "Adam":
+            optimizer = torch.optim.Adam(
+                self.agent.parameters(),
+                lr=float(self.config.get('learning_rate'))
+            )
+        else:
+            print("Error: unknown optimizer: %s"%(self.config.get("optimizer")))
+            exit()
+        
+        print("======> created optimizer: %s"%(self.config.get("optimizer")))
+        
         scheduler = None
         
         # create tensorboard folder

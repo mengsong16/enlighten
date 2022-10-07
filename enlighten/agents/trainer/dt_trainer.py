@@ -23,8 +23,8 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 
 class DTTrainer(SequenceTrainer):
-    def __init__(self, config_filename):
-        super(DTTrainer, self).__init__(config_filename)
+    def __init__(self, config_filename, resume=False, resume_experiment_name=None, resume_ckpt_index=None):
+        super(DTTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
 
         # set evaluation interval
         self.eval_every_iterations = int(self.config.get("eval_every_iterations"))
@@ -108,12 +108,25 @@ class DTTrainer(SequenceTrainer):
         # print goal form
         #print("goal form ==========> %s"%(self.config.get("goal_form")))
 
-        # create optimizer: AdamW (Adam with weight decay)
-        self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=float(self.config.get('learning_rate')),
-            weight_decay=float(self.config.get('weight_decay')),
-        )
+        # create optimizer: 
+        # AdamW (Adam with weight decay)
+        if self.config.get("optimizer") == "AdamW":
+            self.optimizer = torch.optim.AdamW(
+                self.model.parameters(),
+                lr=float(self.config.get('learning_rate')),
+                weight_decay=float(self.config.get('weight_decay')),
+            )
+        elif self.config.get("optimizer") == "Adam":
+            self.optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=float(self.config.get('learning_rate'))
+            )
+        else:
+            print("Error: unknown optimizer: %s"%(self.config.get("optimizer")))
+            exit()
+        
+        print("======> created optimizer: %s"%(self.config.get("optimizer")))
+        
         # Within warmup_steps, use <1*lr, then use lr
         warmup_steps = int(self.config.get('warmup_steps'))
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -140,11 +153,14 @@ class DTTrainer(SequenceTrainer):
             
             # log to wandb
             if self.log_to_wandb:
-                wandb.log(logs)
+                wandb.log(logs, step=iter)
             
             # save checkpoint
+            # do not save at iter 0
+            # iter starts from 0
+            # checkpoint index starts from 1
             if (iter+1) % self.save_every_iterations == 0:
-                self.save_checkpoint(model=self.model, checkpoint_number = int((iter+1) // self.save_every_iterations))
+                self.save_checkpoint(model=self.model, checkpoint_number = int((iter+1) // self.save_every_iterations), epoch_index=iter)
     
     # train for one iteration
     def train_one_iteration(self, num_steps, iter_num, print_logs=False):

@@ -303,5 +303,5 @@ if __name__ == '__main__':
         config_filename="imitation_learning_rnn_bc.yaml",
         resume=True,
         resume_experiment_name="s1-20221007-021313",
-        resume_ckpt_index=9)
+        resume_ckpt_index=10)
     trainer.train()

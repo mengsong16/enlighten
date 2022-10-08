@@ -98,7 +98,7 @@ batch_size: 2 #4 # amount to the number of vector envs during training
 optimizer: "AdamW" #["AdamW", "Adam"]
 learning_rate: 1.0e-4 #5.0e-4 #1.0e-4
 weight_decay: 1.0e-4
-max_epochs: 300 #2000 #1000 #800 #400 #500 #30 #10
+max_epochs: 200 #2000 #1000 #800 #400 #500 #30 #10
 #num_steps_per_iter: 100 #10000
 use_augment_train_data: true #true
 supervise_value: false # true

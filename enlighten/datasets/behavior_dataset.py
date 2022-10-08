@@ -40,8 +40,9 @@ class BehaviorDataset:
         print("reward type =====> %s"%(self.reward_type))
         # reward scale [used in reward type "minus_one_zero"]
         if self.reward_type == "minus_one_zero":
-            self.reward_scale = float(self.config.get("reward_scale", 1.0))
-            print("reward scale =====> %f"%(self.reward_scale))
+            self.negative_reward_scale = float(self.config.get("negative_reward_scale", 1.0))
+            print("negative reward scale =====> %f"%(self.negative_reward_scale))
+            self.positive_reward = float(self.config.get("positive_reward", 0.0))
         
         # augment transition dataset with relabeled actions
         self.relabel_actions = False
@@ -290,9 +291,9 @@ class BehaviorDataset:
                 r[batch_index] = torch.tensor(self.trajectories[traj_index]['rewards'][step_index+1], dtype=torch.float, device=self.device)
             elif self.reward_type == "minus_one_zero":
                 if done:
-                    r[batch_index] = torch.tensor(0, dtype=torch.float, device=self.device)
+                    r[batch_index] = torch.tensor(self.positive_reward, dtype=torch.float, device=self.device)
                 else:
-                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device) * self.reward_scale
+                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device) * self.negative_reward_scale
             else:
                 print("Error: undefined reward type: %s"%(self.reward_type))
                 exit()
@@ -399,9 +400,9 @@ class BehaviorDataset:
                 r[batch_index] = torch.tensor(self.trajectories[traj_index]['rewards'][step_index+1], dtype=torch.float, device=self.device)
             elif self.reward_type == "minus_one_zero":
                 if done:
-                    r[batch_index] = torch.tensor(0, dtype=torch.float, device=self.device)
+                    r[batch_index] = torch.tensor(self.positive_reward, dtype=torch.float, device=self.device)
                 else:
-                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device) * self.reward_scale
+                    r[batch_index] = torch.tensor(-1, dtype=torch.float, device=self.device) * self.negative_reward_scale
             else:
                 print("Error: undefined reward type: %s"%(self.reward_type))
                 exit()

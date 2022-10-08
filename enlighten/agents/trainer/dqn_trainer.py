@@ -61,7 +61,7 @@ class DQNTrainer(SequenceTrainer):
 
         # reward scale
         if self.reward_type == "minus_one_zero":
-            self.reward_scale = float(self.config.get("reward_scale", 1.0))
+            self.negative_reward_scale = float(self.config.get("negative_reward_scale", 1.0))
 
         # number of actions
         self.action_number = int(self.config.get("action_number"))
@@ -244,7 +244,7 @@ class DQNTrainer(SequenceTrainer):
             Q_targets[optimal_actions] = rewards[optimal_actions] + self.gamma * Q_target_best_next[optimal_actions] * (1.0 - dones.float()[optimal_actions]) 
             
             # target Q: non optimal action
-            non_optimal_rewards = (1+self.gamma)*(-1.0 * self.reward_scale * torch.ones(non_optimal_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_optimal_actions]
+            non_optimal_rewards = (1+self.gamma)*(-1.0 * self.negative_reward_scale * torch.ones(non_optimal_action_num, device=self.device)) + pow(self.gamma, 2) * rewards[non_optimal_actions]
             Q_targets[non_optimal_actions] = non_optimal_rewards + pow(self.gamma, 3) * Q_target_best_next[non_optimal_actions] * (1.0 - dones.float()[non_optimal_actions])
                 
             Q_targets = Q_targets.detach() #[B]

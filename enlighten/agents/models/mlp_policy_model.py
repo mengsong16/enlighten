@@ -22,7 +22,8 @@ class MLPPolicy(nn.Module):
             hidden_size, #512
             hidden_layer, #2
             state_form,
-            state_dimension #2
+            state_dimension, #2
+            temperature
 
     ):
         super().__init__()
@@ -39,6 +40,10 @@ class MLPPolicy(nn.Module):
         self.obs_embedding_size = obs_embedding_size
         self.goal_embedding_size = goal_embedding_size
         self.hidden_layer = hidden_layer
+
+        self.temperature = temperature
+        print("==========> policy temperature: %f"%(self.temperature))
+
         
         # three heads for input (training): o,a,g
         if self.goal_form == "rel_goal" or self.goal_form == "abs_goal":
@@ -105,6 +110,8 @@ class MLPPolicy(nn.Module):
             concat_inputs = torch.cat((observations, goals), dim=1)
             pred_action_logits = self.policy(concat_inputs)
 
+        # add temperature
+        pred_action_logits = pred_action_logits / self.temperature
 
         return pred_action_logits
 

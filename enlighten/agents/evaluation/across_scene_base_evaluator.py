@@ -118,7 +118,8 @@ class AcrossEnvBaseEvaluator:
                 act_embedding_size=int(self.config.get('act_embedding_size')), #32
                 rnn_type=self.config.get('rnn_type'),
                 supervise_value=self.config.get('supervise_value'),
-                domain_adaptation=self.config.get('domain_adaptation')
+                domain_adaptation=self.config.get('domain_adaptation'),
+                temperature=float(self.config.get('temperature', 1.0))
             )
         elif self.algorithm_name == "rnn_bc_online":
             model = DDBC(
@@ -134,7 +135,8 @@ class AcrossEnvBaseEvaluator:
                 act_embedding_size=int(self.config.get('act_embedding_size')), #32
                 rnn_type=self.config.get('rnn_type'),
                 supervise_value=self.config.get('supervise_value'),
-                device=self.device
+                device=self.device,
+                temperature=float(self.config.get('temperature', 1.0))
             )
         elif self.algorithm_name == "ppo":
             self.obs_transforms = get_active_obs_transforms(self.config)
@@ -161,7 +163,8 @@ class AcrossEnvBaseEvaluator:
             hidden_size=int(self.config.get('hidden_size')),
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
-            state_dimension=int(self.config.get('state_dimension'))
+            state_dimension=int(self.config.get('state_dimension')),
+            temperature=float(self.config.get('temperature', 1.0))
         )
         elif "dqn" in self.algorithm_name:
             model = QNetwork(

@@ -129,7 +129,8 @@ class BCOnlineTrainer(PPOTrainer):
             act_embedding_size=int(self.config.get('act_embedding_size')), #32
             rnn_type=self.config.get('rnn_type'),
             supervise_value=self.config.get('supervise_value'),
-            device=self.device
+            device=self.device,
+            temperature=float(self.config.get('temperature', 1.0))
         )
 
     # [HEIGHT X WIDTH x CHANNEL] --> [CHANNEL x HEIGHT X WIDTH]

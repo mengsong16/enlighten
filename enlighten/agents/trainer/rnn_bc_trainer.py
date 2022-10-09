@@ -57,7 +57,8 @@ class RNNBCTrainer(SequenceTrainer):
             act_embedding_size=int(self.config.get('act_embedding_size')), #32
             rnn_type=self.config.get('rnn_type'),
             supervise_value=self.config.get('supervise_value'),
-            domain_adaptation=self.config.get('domain_adaptation')
+            domain_adaptation=self.config.get('domain_adaptation'),
+            temperature=float(self.config.get('temperature', 1.0))
         )
 
     # train for one update
@@ -298,10 +299,13 @@ class RNNBCTrainer(SequenceTrainer):
 
     
 if __name__ == '__main__':
-    #trainer = RNNBCTrainer(config_filename="imitation_learning_rnn_bc.yaml")
     trainer = RNNBCTrainer(
-        config_filename="imitation_learning_rnn_bc.yaml",
-        resume=True,
-        resume_experiment_name="s1-20221007-021313",
-        resume_ckpt_index=10)
+        config_filename="imitation_learning_rnn_bc.yaml")
+
+    # trainer = RNNBCTrainer(
+    #     config_filename="imitation_learning_rnn_bc.yaml",
+    #     resume=True,
+    #     resume_experiment_name="s1-20221007-021313",
+    #     resume_ckpt_index=10)
+    
     trainer.train()

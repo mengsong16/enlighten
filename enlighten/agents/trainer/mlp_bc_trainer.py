@@ -50,7 +50,8 @@ class MLPBCTrainer(SequenceTrainer):
             hidden_size=int(self.config.get('hidden_size')),
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
-            state_dimension=int(self.config.get('state_dimension'))
+            state_dimension=int(self.config.get('state_dimension')),
+            temperature=float(self.config.get('temperature', 1.0))
         )
 
     # train for one update

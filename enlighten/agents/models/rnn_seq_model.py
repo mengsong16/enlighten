@@ -115,7 +115,8 @@ class RNNSequenceModel(nn.Module):
             rnn_hidden_size, #512
             rnn_type,
             supervise_value,
-            domain_adaptation
+            domain_adaptation,
+            temperature,
     ):
         super().__init__()
         
@@ -132,7 +133,9 @@ class RNNSequenceModel(nn.Module):
         self.act_embedding_size = act_embedding_size
         rnn_input_size = obs_embedding_size + goal_embedding_size + act_embedding_size
 
-        
+        self.temperature = temperature
+        print("==========> policy temperature: %f"%(self.temperature))
+
         # three heads for input (training): o,a,g
         if self.goal_form == "rel_goal" or self.goal_form == "abs_goal":
             self.goal_encoder = GoalEncoder(self.goal_dim, goal_embedding_size)
@@ -223,6 +226,9 @@ class RNNSequenceModel(nn.Module):
 
         # pred_action_logits: [T, action_num]
         pred_action_logits = self.action_decoder(h_seq.data)
+        
+        # add temperature
+        pred_action_logits = pred_action_logits / self.temperature
 
         # pred_values: [T,1]
         if self.supervise_value:
@@ -318,23 +324,27 @@ class DDBC(nn.Module):
             rnn_hidden_size, #512
             rnn_type,
             supervise_value,
-            device
+            device,
+            temperature
+
     ):
         super().__init__()
 
-        self.actor = RNNSequenceModel(obs_channel,
-            obs_width,
-            obs_height,
-            goal_dim,
-            goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
-            act_num,
-            obs_embedding_size, #512
-            goal_embedding_size, #32
-            act_embedding_size, #32
-            rnn_hidden_size, #512
-            rnn_type,
-            supervise_value,
-            domain_adaptation=False)
+        self.actor = RNNSequenceModel(
+            obs_channel=obs_channel,
+            obs_width=obs_width,
+            obs_height=obs_height,
+            goal_dim=goal_dim,
+            goal_form=goal_form, # ["rel_goal", "distance_to_goal", "abs_goal"]
+            act_num=act_num,
+            rnn_hidden_size=rnn_hidden_size, #512
+            obs_embedding_size=obs_embedding_size, #512
+            goal_embedding_size=goal_embedding_size, #32
+            act_embedding_size=act_embedding_size, #32
+            rnn_type=rnn_type,
+            supervise_value=supervise_value,
+            domain_adaptation=False,
+            temperature=temperature)
         
         self.device = device
         self.actor.to(self.device)

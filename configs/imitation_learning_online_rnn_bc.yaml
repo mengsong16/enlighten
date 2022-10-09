@@ -102,6 +102,7 @@ optimizer: "AdamW" #["AdamW", "Adam"]
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 total_updates: 1000000 # start to converge at 100000
+temperature: 1.0
 
 # training log
 verbose: true # false

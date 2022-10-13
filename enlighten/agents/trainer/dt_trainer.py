@@ -23,6 +23,7 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 
 class DTTrainer(SequenceTrainer):
+    # resume_ckpt_index index starting from 0
     def __init__(self, config_filename, resume=False, resume_experiment_name=None, resume_ckpt_index=None):
         super(DTTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
 
@@ -154,6 +155,8 @@ class DTTrainer(SequenceTrainer):
         # start training
         self.batch_size = int(self.config.get('batch_size'))
         self.start_time = time.time()
+
+        print("======> Start training from epoch %d to epoch %d"%(start_iter, int(self.config.get('max_iters'))-1))
 
         # train for max_iters iterations
         # each iteration includes num_steps_per_iter steps

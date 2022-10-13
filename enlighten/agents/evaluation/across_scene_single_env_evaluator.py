@@ -102,6 +102,7 @@ def evaluate_one_episode_dt(
     # t0 is 0, shape (1,1)
     timesteps = torch.tensor(0, device=device, dtype=torch.long).reshape(1, 1)
 
+    real_act_seqs = []
     # run under policy for max_ep_len step or done
     # keep all history steps, but only use context length to predict current action
     for t in range(max_ep_len):
@@ -117,6 +118,8 @@ def evaluate_one_episode_dt(
         
         # right append new action
         action = action.detach().cpu().item()
+        real_act_seqs.append(action)
+
         new_action = torch.tensor(action, device=device, dtype=torch.long).reshape(1, 1)
         actions = torch.cat([actions, new_action], dim=1)
 
@@ -162,9 +165,9 @@ def evaluate_one_episode_dt(
     spl = env.get_spl()
     #softspl = env.get_softspl()
 
-    return episode_length, success, spl #, softspl
+    return episode_length, success, spl, real_act_seqs #, softspl
 
-# evaluate rnn for one episode
+# evaluate rnn policy for one episode
 def evaluate_one_episode_rnn(
         episode,
         env,
@@ -216,11 +219,11 @@ def evaluate_one_episode_rnn(
     # h0 is 0, shape [1, B, hidden_size]
     h = torch.zeros(1, 1, rnn_hidden_size, dtype=torch.float32, device=device) 
 
+    real_act_seqs = []
     # run under policy for max_ep_len step or done
     # keep all history steps, but only use context length to predict current action
     for t in range(max_ep_len):
         # predict according to the sequence from (s0,a0,r0) up to now (context)
-        # need to input timesteps as positional embedding
         actions, h = model.get_action(
             observations,
             actions,
@@ -233,6 +236,8 @@ def evaluate_one_episode_rnn(
 
         # get action on cpu
         actions_cpu = actions.detach().cpu().item()
+
+        real_act_seqs.append(actions_cpu)
         
         # step the env according to the action, get new observation and goal
         obs, _, done, _ = env.step(actions_cpu)
@@ -267,9 +272,119 @@ def evaluate_one_episode_rnn(
     spl = env.get_spl()
     #softspl = env.get_softspl()
 
-    return episode_length, success, spl #, softspl
+    return episode_length, success, spl, real_act_seqs #, softspl
 
-# evaluate ppo for one episode
+# evaluate mlp policy or q function for one episode
+def evaluate_one_episode_mlp_q(
+        episode,
+        env,
+        model,
+        goal_form,
+        sample,
+        max_ep_len,
+        device,
+        goal_dimension, 
+        goal_coord_system,
+        q_learning
+    ):
+
+    # turn model into eval mode and move to desired device
+    model.eval()
+    model.to(device=device)
+
+    # reset env
+    obs = env.reset(episode=episode, plan_shortest_path=False)
+    obs_array = extract_observation(obs, env.observation_space.spaces)
+    if goal_form == "rel_goal":
+        goal = np.array(obs["pointgoal"], dtype="float32")
+    elif goal_form == "distance_to_goal":
+        goal = env.get_current_distance()
+    elif goal_form == "abs_goal":
+        goal_position = np.array(env.goal_position, dtype="float32")
+        goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system) # (2,) or (3,)
+
+    # a0 is -1, shape (1)
+    actions = torch.ones((1), device=device, dtype=torch.long) * (-1)
+
+    print("Scene id: %s"%(episode.scene_id))
+    print("Goal position: %s"%(env.goal_position)) # (3,)
+    print("Start position: %s"%(env.start_position)) # (3,)
+
+    # change shape and convert to torch tensor
+    # o: (C,H,W) --> (1,C,H,W)
+    obs_array = np.expand_dims(obs_array, axis=0)
+    observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
+    # g: (goal_dim,) --> (1,goal_dim)
+    if goal_form == "rel_goal" or goal_form == "abs_goal":
+        goal = np.expand_dims(goal, axis=0)
+        goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
+    # float --> (1,1)
+    elif goal_form == "distance_to_goal":
+        goals = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1)
+
+    real_act_seqs = []
+    # run under policy for max_ep_len step or done
+    # keep all history steps, but only use context length to predict current action
+    for t in range(max_ep_len):
+        # predict according to the sequence from (s0,a0,r0) up to now (context)
+        # a = arg max q
+        if q_learning:
+            actions = model.get_action(
+                observations,
+                goals
+            )
+        # sample a according to the policy distribution
+        else:    
+            actions = model.get_action(
+                observations,
+                goals,
+                sample=sample
+            )
+        # actions: [B,1] --> [B]
+        actions = torch.squeeze(actions, 1)
+
+        # get action on cpu
+        actions_cpu = actions.detach().cpu().item()
+
+        real_act_seqs.append(actions_cpu)
+        
+        # step the env according to the action, get new observation and goal
+        obs, _, done, _ = env.step(actions_cpu)
+        obs_array = extract_observation(obs, env.observation_space.spaces)
+        if goal_form == "rel_goal":
+            goal = np.array(obs["pointgoal"], dtype="float32")
+        elif goal_form == "distance_to_goal":
+            goal = env.get_current_distance()
+        elif goal_form == "abs_goal":
+            goal_position = np.array(env.goal_position, dtype="float32")
+            goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system) # (2,) or (3,)
+
+        # change shape and convert to torch tensor
+        # (C,H,W) --> (1,C,H,W)
+        obs_array = np.expand_dims(obs_array, axis=0)
+        observations = torch.from_numpy(obs_array).to(device=device, dtype=torch.float32)
+        # (goal_dim,) --> (1,goal_dim)
+        if goal_form == "rel_goal" or goal_form == "abs_goal":
+            goal = np.expand_dims(goal, axis=0)
+            goals = torch.from_numpy(goal).to(device=device, dtype=torch.float32)
+        # float --> (1,1)
+        elif goal_form == "distance_to_goal":
+            goals = torch.tensor(goal, device=device, dtype=torch.float32).reshape(1, 1)
+
+        if done:
+            break
+
+    # collect measures
+    episode_length = env.get_current_step()
+    success = env.is_success()
+    spl = env.get_spl()
+    #softspl = env.get_softspl()
+
+    return episode_length, success, spl, real_act_seqs #, softspl
+
+# evaluate rnn-ppo for one episode
 def evaluate_one_episode_ppo(
         episode,
         env,
@@ -293,6 +408,7 @@ def evaluate_one_episode_ppo(
     print("Goal position: %s"%(env.goal_position))
     print("Start position: %s"%(env.start_position))
     
+    real_act_seqs = []
     # run under policy for max_ep_len step or done
     for t in range(max_ep_len):
         batch = get_ppo_batch(observations=[obs], 
@@ -311,6 +427,8 @@ def evaluate_one_episode_ppo(
         
         action = actions[0][0].item()
 
+        real_act_seqs.append(action)
+
         obs, _, done, _ = env.step(action)
 
         not_done_masks = torch.tensor(
@@ -327,7 +445,7 @@ def evaluate_one_episode_ppo(
     success = env.is_success()
     spl = env.get_spl()
 
-    return episode_length, success, spl
+    return episode_length, success, spl, real_act_seqs
 
 # evaluate an agent across scene single env
 class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
@@ -346,7 +464,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
             print('Episode: {}'.format(i+1))
             
             if self.algorithm_name == "dt":
-                episode_length, success, spl = evaluate_one_episode_dt(
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_dt(
                     episode,
                     self.env,
                     model,
@@ -358,7 +476,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                     self.config.get("goal_coord_system"))
             elif self.algorithm_name == "rnn_bc":
                 rnn_hidden_size = int(self.config.get("rnn_hidden_size"))
-                episode_length, success, spl = evaluate_one_episode_rnn(
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_rnn(
                 episode,
                 self.env,
                 model,
@@ -370,7 +488,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 int(self.config.get("goal_dimension")), 
                 self.config.get("goal_coord_system"))
             elif self.algorithm_name == "ppo":
-                episode_length, success, spl = evaluate_one_episode_ppo(
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_ppo(
                     episode,
                     self.env,
                     model,
@@ -379,6 +497,30 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                     self.device,
                     self.cache,
                     self.config)
+            elif self.algorithm_name == "mlp_bc":
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
+                    episode,
+                    self.env,
+                    model,
+                    self.goal_form,
+                    sample,
+                    self.max_ep_len,
+                    self.device,
+                    int(self.config.get("goal_dimension")), 
+                    self.config.get("goal_coord_system"),
+                    q_learning=False)
+            elif "dqn" in self.algorithm_name:
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
+                    episode,
+                    self.env,
+                    model,
+                    self.goal_form,
+                    sample,
+                    self.max_ep_len,
+                    self.device,
+                    int(self.config.get("goal_dimension")), 
+                    self.config.get("goal_coord_system"),
+                    q_learning=True)
             else:
                 print("Error: undefined algorithm name: %s"%(self.algorithm_name))
                 exit()
@@ -387,6 +529,10 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
             success_array.add(float(success))
             spl_array.add(spl)
             #soft_spl_array.add(softspl)
+
+            # print episode info
+            self.print_episode_info(episode_index=i, env=self.env, real_act_seqs=real_act_seqs, 
+                episode_length=episode_length, success=success, spl=spl)
         
         
         logs[f"{split_name}/total_episodes"] = success_array.len()
@@ -408,11 +554,36 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
         onecheckpoint_eval_results = {}
         return logs, onecheckpoint_eval_results
 
-    
+    def print_episode_info(episode_index, env, real_act_seqs, episode_length, success, spl):
+        same_act_seqs = False
+        if env.optimal_action_seq:
+            if success:
+                if len(real_act_seqs) == len(env.optimal_action_seq):
+                    same_flag = True
+                    for i, real_act in enumerate(real_act_seqs):
+                        if real_act != env.optimal_action_seq[i]:
+                            same_flag = False
+                            break
+                    if same_flag:
+                        same_act_seqs = True
+        
+        print("==================================")
+        print("Episode: %d"%(episode_index))
+        print("Success: %s"%(success))
+        print("SPL: %f"%(spl))
+        print("Episode length: %d"%(episode_length))
+        if success:
+            print("Same with the optimal action sequence: %s"%(same_act_seqs))
+            if not same_act_seqs:
+                print("Demonstration actions\n: %s"%env.optimal_action_seq)
+                print("Real actions\n: %s"%real_act_seqs)
+        print("==================================")
+
+
 # evaluate RNN BC or PPO in a single process here
 if __name__ == "__main__":
-    #eval_splits = ["same_start_goal_val", "same_scene_val", "across_scene_val"]
-    eval_splits = ["same_scene_val", "across_scene_val"]
+    eval_splits = ["same_start_goal_val", "same_scene_val", "across_scene_val"]
+    #eval_splits = ["same_scene_val", "across_scene_val"]
     #evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="imitation_learning_rnn_bc.yaml") 
     evaluator = AcrossEnvEvaluatorSingle(eval_splits=eval_splits, config_filename="pointgoal_ppo_multi_envs.yaml") 
     #evaluator.evaluate_over_checkpoints(sample=True)

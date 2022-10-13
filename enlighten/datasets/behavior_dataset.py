@@ -62,7 +62,7 @@ class BehaviorDataset:
         # load trajectories in the dataset
         self.load_trajectories()
         # load augment trajectories if necessary
-        if self.config.get("use_augment_train_data"):
+        if self.config.get("use_augment_train_data", False):
             print("=====> Use more training data")
             self.load_augment_trajectories()
         

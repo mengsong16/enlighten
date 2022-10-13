@@ -26,6 +26,7 @@ from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.image_dataset import ImageDataset
 
 class RNNBCTrainer(SequenceTrainer):
+    # resume_ckpt_index index starting from 0
     def __init__(self, config_filename, resume=False, resume_experiment_name=None, resume_ckpt_index=None):
         super(RNNBCTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
 
@@ -204,6 +205,7 @@ class RNNBCTrainer(SequenceTrainer):
         self.batch_size = int(self.config.get('batch_size'))
         self.start_time = time.time()
 
+        print("======> Start training from epoch %d to epoch %d"%(start_epoch, int(self.config.get('max_epochs'))-1))
         # train for max_epochs
         # each epoch iterate over the whole training sets
         self.updates_done = 0
@@ -256,7 +258,7 @@ class RNNBCTrainer(SequenceTrainer):
         # how many batches each epoch contains: 500
         batch_num = self.train_dataset.get_trajectory_batch_num(self.batch_size)
 
-        # train for n batches
+        # train for one epoch
         for _ in tqdm(range(batch_num)):
             loss_dict = self.train_one_update()
 
@@ -306,6 +308,6 @@ if __name__ == '__main__':
     #     config_filename="imitation_learning_rnn_bc.yaml",
     #     resume=True,
     #     resume_experiment_name="s1-20221007-021313",
-    #     resume_ckpt_index=10)
-    
+    #     resume_ckpt_index=12)
+
     trainer.train()

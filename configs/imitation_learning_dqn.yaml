@@ -82,7 +82,7 @@ num_environments: 10 #10 #14 #8 #14 #4 #2
 
 # q network
 hidden_size: 512 #1024
-hidden_layer: 1 #1 #2
+hidden_layer: 1 # 1 when state_form is observation, 2 when state_form is state
 obs_embedding_size: 512
 goal_embedding_size: 32
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]

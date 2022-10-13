@@ -27,6 +27,7 @@ from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.image_dataset import ImageDataset
 
 class DQNTrainer(SequenceTrainer):
+    # resume_ckpt_index index starting from 0
     def __init__(self, config_filename, resume=False, resume_experiment_name=None, resume_ckpt_index=None):
         super(DQNTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
 
@@ -342,6 +343,8 @@ class DQNTrainer(SequenceTrainer):
         self.batch_size = int(self.config.get('batch_size'))
         self.start_time = time.time()
 
+        print("======> Start training from epoch %d to epoch %d"%(start_epoch, int(self.config.get('max_epochs'))-1))
+
         # train for max_epochs
         # each epoch iterate over the whole training sets
     
@@ -394,7 +397,7 @@ class DQNTrainer(SequenceTrainer):
         # how many batches each epoch contains: 239
         batch_num = self.train_dataset.get_transition_batch_num(self.batch_size)
 
-        # train for n batches
+        # train for one epoch
         for _ in tqdm(range(batch_num)):
             if self.q_learning_type == "ours":
                 loss_dict = self.train_one_update_ours()

@@ -1318,9 +1318,15 @@ if __name__ == "__main__":
     # generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
     #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000",
     #      split_name="train_aug")
-    generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
+    
+    # generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000",
+    #      split_name="train_aug")
+    
+    # ====== regenerate train episodes =======
+    generate_train_behavior_data(yaml_name="imitation_learning_mlp_bc.yaml", 
          behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000",
-         split_name="train_aug")
+         split_name="train")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(

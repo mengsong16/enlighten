@@ -7,14 +7,15 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
+#behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
 # Image training data location
 image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
 algorithm_name: "rnn_bc"
-#experiment_name: "rel_goal_1_scene_Rancocas_2000_epoch_300_aug"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_adamw_tau_10"
+#experiment_name: "rel_goal_4_scene_Rancocas_2000_adamw_tau_1"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_adamw_tau_1"
 log_to_wandb: true
 
 # dummy initial setup 
@@ -99,12 +100,12 @@ batch_size: 4 #4 # amount to the number of vector envs during training
 optimizer: "AdamW" #["AdamW", "Adam"]
 learning_rate: 1.0e-4 #5.0e-4 #1.0e-4
 weight_decay: 1.0e-4
-max_epochs: 100 #200 #2000 #1000 #800 #400 #500 #30 #10
+max_epochs: 200 #100 #200 #2000 #1000 #800 #400 #500 #30 #10
 #num_steps_per_iter: 100 #10000
 use_augment_train_data: false #true
 supervise_value: false # true
 domain_adaptation: false #true
-temperature: 10 #1
+temperature: 1 #10 #1
 
 # evaluate during training
 eval_during_training: false
@@ -117,8 +118,8 @@ eval_use_vector_envs: true #true
 save_every_epochs: 10 #2 #40 #50 #10 
 
 # evaluation
-eval_experiment_folder: "rnn_bc-rel_goal_1_scene_rancocas_2000_epoch_200-s1-20220920-222524"
-eval_checkpoint_file: ["ckpt_60.pth", "ckpt_70.pth", "ckpt_80.pth", "ckpt_90.pth"] 
+eval_experiment_folder: "rnn_bc-rel_goal_4_scene_rancocas_2000_epoch_200_aug-s1-20221009-201558"
+eval_checkpoint_file: ["ckpt_3.pth", "ckpt_5.pth", "ckpt_10.pth", "ckpt_15.pth", "ckpt_19.pth"] 
 eval_dir: "evaluation"
 
 

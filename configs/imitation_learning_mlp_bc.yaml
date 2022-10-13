@@ -7,11 +7,12 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
+#behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
 
 # experiments
 algorithm_name: "mlp_bc"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_epoch_200_state_3_512"
+experiment_name: "rel_goal_4_scene_2000_epoch_200_adamw_obs_tau_1"
 log_to_wandb: true
 
 # dummy initial setup 
@@ -74,19 +75,18 @@ max_collisions_per_episode: 200
 seed: 1
 
 # gpu
-gpu_id: 1 #1
+gpu_id: 0 #1
 
 # vector env (for evaluation only)
 num_environments: 14 #8 #14 #4 #2
 
-
 # bc mlp policy
 hidden_size: 512 #512 #1024
-hidden_layer: 3 #2 #1
+hidden_layer: 1 # 1 when state_form is observation, 2 when state_form is state
 obs_embedding_size: 512
 goal_embedding_size: 32
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
-state_form: "state" # ["state", "observation"]
+state_form: "observation" # ["state", "observation"]
 
 # batch
 batch_mode: "transition"
@@ -98,16 +98,17 @@ learning_rate: 1.0e-4 #5.0e-4 #1.0e-3 #1.0e-4
 weight_decay: 1.0e-4
 max_epochs: 200
 temperature: 1.0
+use_augment_train_data: false
 
 # evaluate during training
 eval_during_training: false
-eval_every_epochs: 2 
+eval_every_epochs: 10 #2 
 eval_during_training_sample: true
 eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
 eval_use_vector_envs: true
 
 # save checkpoint
-save_every_epochs: 2
+save_every_epochs: 10 #2
 
 # evaluation
 eval_experiment_folder: "mlp_bc-rel_goal_1_scene_rancocas_2000_epoch_200_state_3_512-s1-20220927-145008"

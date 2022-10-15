@@ -7,16 +7,16 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-#behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_5_actions"  # where imitation learning dataset store
+#behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
 # Image training data location
 image_dataset_path: "/dataset/image_dataset_gibson"
 
 # experiments
 algorithm_name: "rnn_bc"
 #experiment_name: "rel_goal_4_scene_Rancocas_2000_adamw_tau_1"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_adamw_tau_1"
-log_to_wandb: true
+experiment_name: "rel_goal_1_scene_Rancocas_2000_adamw_tau_1_5_actions"
+log_to_wandb: false #true
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -31,7 +31,7 @@ eval_video_option: [] #["disk", "tensorboard"]
 # robot
 forward_resolution: 0.25 # meter
 rotate_resolution: 10 # degree
-action_number: 4
+action_number: 5 #[4,5,6]
 
 # observation space (env)
 state_sensor: true

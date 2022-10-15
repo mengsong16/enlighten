@@ -73,6 +73,8 @@ class MultiNavEnv(NavEnv):
         # automatically replay episode if not None
         self.episode_iterator = None 
         self.current_episode = None
+
+        print("======> Number of actions in the environment: %s"%(str(self.action_space.n)))
         
     def set_episode_dataset(self, episodes):
         self.episode_iterator = EpisodeIterator(episodes=episodes, seed=int(self.config.get('seed')))

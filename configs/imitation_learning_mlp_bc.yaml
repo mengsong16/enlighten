@@ -7,8 +7,8 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-#behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
+#behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
 
 # experiments
 algorithm_name: "mlp_bc"
@@ -111,8 +111,8 @@ eval_use_vector_envs: true
 save_every_epochs: 10 #2
 
 # evaluation
-eval_experiment_folder: "mlp_bc-rel_goal_1_scene_rancocas_2000_epoch_200_state_3_512-s1-20220927-145008"
-eval_checkpoint_file: ["ckpt_99.pth"] 
+eval_experiment_folder: "mlp_bc-rel_goal_1_scene_rancocas_2000_epoch_200_adamw_obs_tau_1-s1-20221013-013959"
+eval_checkpoint_file: ["ckpt_3.pth", "ckpt_5.pth", "ckpt_10.pth", "ckpt_15.pth", "ckpt_19.pth"] 
 eval_dir: "evaluation"
 
 

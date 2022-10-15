@@ -183,6 +183,7 @@ class StopSpec:
 
 @habitat_sim.registry.register_move_fn(body_action=True)
 class Stop(habitat_sim.SceneNodeControl):
+    # no move
     def __call__(
         self, scene_node: habitat_sim.SceneNode, actuation_spec: StopSpec
     ):
@@ -323,26 +324,64 @@ class NavEnv(gym.Env):
         return habitat_sim.Configuration(sim_config, [agent_cfg]), sensors
 
     def create_sim_action_space(self):
-        self.action_mapping = ["stop", "move_forward", "turn_left", "turn_right", "look_up", "look_down"]
-        action_space = {
-            "stop": habitat_sim.agent.ActionSpec("stop", habitat_sim.agent.ActuationSpec(amount=0.0)),
-            "move_forward": habitat_sim.agent.ActionSpec(
-                "move_forward", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("forward_resolution")))  # move -a meter along z axis (translate along local frame)
-            ),
-            "turn_left": habitat_sim.agent.ActionSpec(
-                "turn_left", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate a degree along y axis (rotate along local frame) 
-            ),
-            "turn_right": habitat_sim.agent.ActionSpec(
-                "turn_right", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) # rotate -a degree along y axis (rotate along local frame)
-            ),
-            
-        }
-
-        if int(self.config.get("action_number")) == 6:
-            # rotate a degree along x axis (rotate along local frame)
-            action_space["look_up"] = habitat_sim.agent.ActionSpec("look_up", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))))
-            # rotate -a degree along x axis (rotate along local frame)
-            action_space["look_down"] = habitat_sim.agent.ActionSpec("look_down", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))))
+        if int(self.config.get("action_number")) == 4:
+            self.action_mapping = ["stop", "move_forward", "turn_left", "turn_right"]
+            action_space = {
+                "stop": habitat_sim.agent.ActionSpec(
+                    "stop", habitat_sim.agent.ActuationSpec(amount=0.0)),
+                "move_forward": habitat_sim.agent.ActionSpec(
+                    "move_forward", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("forward_resolution")))  
+                ), # move -a meter along z axis (translate along local frame)
+                "turn_left": habitat_sim.agent.ActionSpec(
+                    "turn_left", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) 
+                ), # rotate a degree along y axis (rotate along local frame) 
+                "turn_right": habitat_sim.agent.ActionSpec(
+                    "turn_right", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) 
+                ) # rotate -a degree along y axis (rotate along local frame)
+            }
+        elif int(self.config.get("action_number")) == 5:
+            # index <--> action name
+            self.action_mapping = ["stop", "move_forward", "move_backward", "turn_left", "turn_right"]
+            action_space = {
+                "stop": habitat_sim.agent.ActionSpec(
+                    "stop", habitat_sim.agent.ActuationSpec(amount=0.0)),
+                "move_forward": habitat_sim.agent.ActionSpec(
+                    "move_forward", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("forward_resolution")))  
+                ), # move -a meter along z axis (translate along local frame)
+                "move_backward": habitat_sim.agent.ActionSpec(
+                    "move_backward", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("forward_resolution")))  
+                ), # move a meter along z axis (translate along local frame)
+                "turn_left": habitat_sim.agent.ActionSpec(
+                    "turn_left", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) 
+                ), # rotate a degree along y axis (rotate along local frame) 
+                "turn_right": habitat_sim.agent.ActionSpec(
+                    "turn_right", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) 
+                ) # rotate -a degree along y axis (rotate along local frame)
+            }
+        elif int(self.config.get("action_number")) == 6:
+            self.action_mapping = ["stop", "move_forward", "turn_left", "turn_right", "look_up", "look_down"]
+            action_space = {
+                "stop": habitat_sim.agent.ActionSpec(
+                    "stop", habitat_sim.agent.ActuationSpec(amount=0.0)),
+                "move_forward": habitat_sim.agent.ActionSpec(
+                    "move_forward", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("forward_resolution")))  
+                ), # move -a meter along z axis (translate along local frame)
+                "turn_left": habitat_sim.agent.ActionSpec(
+                    "turn_left", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) 
+                ), # rotate a degree along y axis (rotate along local frame) 
+                "turn_right": habitat_sim.agent.ActionSpec(
+                    "turn_right", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) 
+                ), # rotate -a degree along y axis (rotate along local frame)
+                "look_up": habitat_sim.agent.ActionSpec(
+                    "look_up", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution"))) 
+                ), # rotate a degree along x axis (rotate along local frame)
+                "look_down": habitat_sim.agent.ActionSpec(
+                    "look_down", habitat_sim.agent.ActuationSpec(amount=float(self.config.get("rotate_resolution")))
+                ) # rotate -a degree along x axis (rotate along local frame)
+            }
+        else:
+            print("Error: the number of actions is only allowed to be 4,5,6")
+            exit()
 
         return action_space
 
@@ -1102,7 +1141,7 @@ class NavEnv(gym.Env):
     def get_reward(self, current_train_state_count, current_episode_state_count):
         extrinsic_reward = self.measurements.measures["point_goal_reward"].get_metric()
 
-        intrinsic_reward_coef = float(self.config.get("intrinsic_reward_coef"))
+        intrinsic_reward_coef = float(self.config.get("intrinsic_reward_coef", 0))
         if intrinsic_reward_coef != 0 :
             novelty_change = 1.0 / float(current_train_state_count) - float(self.config.get("prev_state_novelty_coef")) / float(self.prev_train_state_count)
             intrinsic_reward = max(novelty_change, 0.0)
@@ -1351,8 +1390,8 @@ def test_rollout_storage():
     print("Goal observation space: %s"%(env.get_goal_observation_space()))
     print("Goal observation space dim: %s"%(len(env.get_goal_observation_space().shape)))
 
-def test_stop_action():
-    env =  NavEnv()
+def test_specific_action(config_file, action_name="stop"):
+    env =  NavEnv(config_file=config_file)
     for episode in range(2):
         print("***********************************")
         print('Episode: {}'.format(episode))
@@ -1369,11 +1408,12 @@ def test_stop_action():
         
         print('-----------------------------')
         for i in range(3):  # max steps per episode
-            obs, reward, done, info = env.step(0)
+            obs, reward, done, info = env.step(env.action_name_to_index(action_name))
             
+            env.render(mode="color_sensor")
             print('-----------------------------')
             print('step: %d'%(i+1))
-            print('action: %s'%(env.action_index_to_name(0)))
+            print('action: %s'%(action_name))
             env.print_agent_state()
             print('agent angle [euler]: '+str(env.get_agent_rotation_euler()))
             print('reward: %f'%(reward))
@@ -1401,14 +1441,14 @@ def test_export_map():
 
 
 if __name__ == "__main__":    
-    test_env("replica_nav_state.yaml")
+    #test_env("replica_nav_state.yaml")
     #test_env("pointgoal_ppo_baseline.yaml")
     #test_shortest_path(start_point=[0,0,0], end_point=[1,0,0])
     #check_coordinate_system()
     #test_rollout_storage()
     #test_stop_action()
     #zero_quat()
-
     #test_export_map()
-
+    test_specific_action(action_name="move_backward",
+        config_file=os.path.join(config_path, "imitation_learning_rnn_bc.yaml"))
     

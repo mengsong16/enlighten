@@ -821,6 +821,7 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
 # behavior_dataset_path: "/dataset/behavior_dataset_gibson"
 def generate_train_behavior_data(yaml_name, behavior_dataset_path, split_name):
     env = MultiNavEnv(config_file=yaml_name)
+    
     train_episodes = load_behavior_dataset_meta(behavior_dataset_path, split_name)
 
     goal_dimension = int(env.config.get("goal_dimension"))
@@ -850,6 +851,7 @@ def generate_train_behavior_data(yaml_name, behavior_dataset_path, split_name):
     print("Mean length: %d"%(np.mean(traj_lens, axis=0)))
     print("Max length: %d"%(np.max(traj_lens, axis=0)))
     print("Std of length: %f"%(np.std(traj_lens, axis=0)))
+    print("Number of actions: %s"%(str(env.action_space.n)))
     print("==============================================")
     
     # save
@@ -1323,10 +1325,14 @@ if __name__ == "__main__":
     #      behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000",
     #      split_name="train_aug")
     
-    # ====== regenerate train episodes =======
-    generate_train_behavior_data(yaml_name="imitation_learning_mlp_bc.yaml", 
-         behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000",
+    # ====== regenerate train episodes, others kept same =======
+    generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
+         behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000_5_actions",
          split_name="train")
+    
+    generate_train_behavior_data(yaml_name="imitation_learning_rnn_bc.yaml", 
+         behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000_5_actions",
+         split_name="train_aug")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(

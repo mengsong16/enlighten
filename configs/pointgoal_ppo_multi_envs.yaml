@@ -11,12 +11,12 @@ scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
 #behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_whole" #"/dataset/behavior_dataset_gibson_1_scene_Rancocas_4000" #"/dataset/behavior_dataset_gibson_mini"  # where imitation learning dataset store
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"
-#behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
+#behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_5_actions"
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
 
 # experiments
 algorithm_name: "ppo"
-experiment_name:  "pointgoal_baseline_multienv_1_scene_Rancocas_2000_observation_mlp_5m" # "ppo_test"
+experiment_name:  "pointgoal_baseline_multienv_1_scene_Rancocas_2000_observation_rnn_5m_4_actions" 
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -27,7 +27,7 @@ goal_position: [4, 0, -1]
 # robot
 forward_resolution: 0.25 # meter
 rotate_resolution: 10 # degree
-action_number: 4
+action_number: 4 #5 #[4,5,6]
 
 # observation space (env)
 state_sensor: true
@@ -90,7 +90,7 @@ pretrained_whole_model: false
 pretrained_model_path: data/ddppo-models/gibson-2plus-resnet50.pth
 # Whether or not the visual encoder backbone will be trained
 train_encoder: true
-rnn_policy: false #true #false #true #false
+rnn_policy: true #true #false #true #false
 rnn_type: gru #gru  # lstm
 attention: false #false # true
 attention_type: caption #fc
@@ -100,7 +100,7 @@ use_double_buffered_sampler: false
 num_steps: 128  # rollout buffer length
 
 # vector env (for training and evaluation, train 6, eval 14)
-num_environments: 14 #6 #6 #4 #14 #8 #6
+num_environments: 6 #6 #4 #14 #8 #6
 
 # training
 torch_gpu_id: 0

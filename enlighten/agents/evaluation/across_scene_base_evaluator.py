@@ -166,7 +166,7 @@ class AcrossEnvBaseEvaluator:
             state_dimension=int(self.config.get('state_dimension')),
             temperature=float(self.config.get('temperature', 1.0))
         )
-        elif "dqn" in self.algorithm_name:
+        elif "dqn" in self.algorithm_name or "sqn" in self.algorithm_name:
             model = QNetwork(
             obs_channel = get_obs_channel_num(self.config),
             obs_width = int(self.config.get("image_width")), 

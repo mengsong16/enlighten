@@ -201,9 +201,10 @@ class MultiNavEnv(NavEnv):
     # must be called after agent has been set to the start location, and goal has been reset
     # invalid optimal_action_sequence will be []
     def plan_shortest_path(self):
-        # create shortest path planner, must create everytime reset is called
+        # create shortest path planner, must create everytime the agent's state has been changed
         self.create_shortest_path_follower()
         try:
+            # find optimal action sequence from current state to goal state
             self.optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
             # append STOP if not appended
             self.check_optimal_action_sequence()
@@ -346,7 +347,7 @@ def test_env(config_file="imitation_learning_rnn_bc.yaml"):
     env = MultiNavEnv(config_file=config_file)
     
     
-    for i in range(1):
+    for i in range(10):
         obs = env.reset(plan_shortest_path=True)
         print('Episode: {}'.format(i+1))
         print("Goal position: %s"%(env.goal_position))
@@ -376,7 +377,8 @@ def test_env(config_file="imitation_learning_rnn_bc.yaml"):
         print("Total steps: %d"%j)
         print("===============================")
 
-    
+
+
 
 
 if __name__ == "__main__":    

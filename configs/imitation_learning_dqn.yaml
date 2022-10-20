@@ -13,7 +13,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 # experiments
 algorithm_name: "offline_dqn"
 experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_ours_reward_scale_10"
-log_to_wandb: true #true
+log_to_wandb: false #true
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb

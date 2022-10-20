@@ -7,16 +7,13 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
-#behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
-# Image training data location
-image_dataset_path: "/dataset/image_dataset_gibson"
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_q"  # where imitation learning dataset store
+
 
 # experiments
-algorithm_name: "rnn_bc"
-#experiment_name: "rel_goal_4_scene_Rancocas_2000_adamw_tau_1"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_adamw_tau_1"
-log_to_wandb: false #true
+algorithm_name: "sqn"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_shaped_reward"
+log_to_wandb: true #true
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -27,11 +24,10 @@ goal_position: [4, 0, -1]
 # dummy for saving render images
 eval_video_option: [] #["disk", "tensorboard"]
 
-
 # robot
 forward_resolution: 0.25 # meter
 rotate_resolution: 10 # degree
-action_number: 4 #[4,5,6]
+action_number: 4
 
 # observation space (env)
 state_sensor: true
@@ -72,7 +68,7 @@ goal_reward: true # false
 stop_depend_success: true
 
 # episode termination condition (environment)
-max_steps_per_episode: 500
+max_steps_per_episode: 500  # used as the longest evaluation steps
 max_collisions_per_episode: 200
 
 # seed
@@ -81,45 +77,45 @@ seed: 1
 # gpu
 gpu_id: 1 #1
 
-# vector env (for evaluation only)
-num_environments: 14 #8 #14 #4 #2
+# vector env (for evaluation only) train 10, evaluate 14
+num_environments: 10 #10 #14 #8 #14 #4 #2
 
-# bc rnn policy
-rnn_hidden_size: 512
+# q network
+hidden_size: 512 #1024
+hidden_layer: 1 # 1 when state_form is observation, 2 when state_form is state
 obs_embedding_size: 512
 goal_embedding_size: 32
-act_embedding_size: 32
-rnn_type: 'gru'
 goal_form:  "rel_goal" # ["rel_goal", "distance_to_goal", "abs_goal"]
+state_form: "observation" # ["state", "observation"]
+
 
 # batch
-batch_mode: "whole_trajectory" #["random_segment", "whole_trajectory", "partial_trajectory"]
+batch_mode: "transition"
 
 # training
-batch_size: 4 #4 # amount to the number of vector envs during training
+reward_type: "minus_one_zero" #["original", "minus_one_zero"]
+negative_reward_scale: 1.0e-4 # default is 1
+positive_reward: 2.5 # dafault is 0
+batch_size: 512 #256
 optimizer: "AdamW" #["AdamW", "Adam"]
-learning_rate: 1.0e-4 #5.0e-4 #1.0e-4
+learning_rate: 1.0e-4 #1.0e-3 #5.0e-4
 weight_decay: 1.0e-4
-max_epochs: 200 #100 #200 #2000 #1000 #800 #400 #500 #30 #10
-#num_steps_per_iter: 100 #10000
-use_augment_train_data: false #true
-supervise_value: false # true
-domain_adaptation: false #true
-temperature: 1 #10 #1
+max_epochs: 400
+gamma: 0.99
 
 # evaluate during training
-eval_during_training: false
-eval_every_epochs: 10 #2 #100 #40 #80 #50 #10 
-eval_during_training_sample: true
-eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
-eval_use_vector_envs: true #true
+eval_during_training: true #false
+eval_every_epochs: 10  
+eval_during_training_sample: false # dummy
+eval_during_training_splits: ["same_start_goal_val_mini"] #["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
+eval_use_vector_envs: true
 
 # save checkpoint
-save_every_epochs: 10 #2 #40 #50 #10 
+save_every_epochs: 10
 
 # evaluation
-eval_experiment_folder: "rnn_bc-rel_goal_4_scene_rancocas_2000_epoch_200_aug-s1-20221009-201558"
-eval_checkpoint_file: ["ckpt_3.pth", "ckpt_5.pth", "ckpt_10.pth", "ckpt_15.pth", "ckpt_19.pth"] 
+eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000_observation_ours-s1-20220930-143915"
+eval_checkpoint_file: ["ckpt_55.pth"] 
 eval_dir: "evaluation"
 
 

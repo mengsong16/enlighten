@@ -274,7 +274,7 @@ def evaluate_one_episode_rnn(
 
     return episode_length, success, spl, real_act_seqs #, softspl
 
-# evaluate mlp policy or q function for one episode
+# evaluate mlp policy or q function (dqn, sqn) for one episode
 def evaluate_one_episode_mlp_q(
         episode,
         env,
@@ -510,6 +510,18 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                     self.config.get("goal_coord_system"),
                     q_learning=False)
             elif "dqn" in self.algorithm_name:
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
+                    episode,
+                    self.env,
+                    model,
+                    self.goal_form,
+                    sample,
+                    self.max_ep_len,
+                    self.device,
+                    int(self.config.get("goal_dimension")), 
+                    self.config.get("goal_coord_system"),
+                    q_learning=True)
+            elif "sqn" in self.algorithm_name:
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
                     episode,
                     self.env,

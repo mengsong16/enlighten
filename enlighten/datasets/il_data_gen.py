@@ -9,7 +9,7 @@ from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
 from enlighten.datasets.dataset import Episode
 from enlighten.utils.image_utils import try_cv2_import
-from enlighten.agents.common.other import get_optimal_q
+from enlighten.agents.common.other import get_optimal_q, get_geodesic_distance_based_q
 
 import habitat_sim
 cv2 = try_cv2_import()
@@ -1432,11 +1432,7 @@ def visualize_image_dataset(image_dataset_path):
             if key == 27:
                 exit()
 
-def get_geodesic_distance_based_q(env):
-    # geodesic distance from current state to goal state
-    d = env.get_current_distance()
-    q = -d
-    return q
+
 
 # plan the optimal action sequence path from the current state
 def get_optimal_path(env):
@@ -1477,9 +1473,11 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
     print("="*20)
 
 
-    for i, optimal_action in enumerate(env.optimal_action_seq):
-    #done = False
-    #while not done:
+    #for i, optimal_action in enumerate(env.optimal_action_seq):
+    done = False
+    optimal_actions = []
+    i = 0
+    while not done:
         current_state = env.get_agent_state()
         # print("-------------------")
         # print(current_state.position)
@@ -1524,8 +1522,10 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
         current_q_values = np.array(current_q_values, dtype="float32")
         
         # list of indices where max q happen
-        max_q_index = list(np.argwhere(current_q_values == np.amax(current_q_values)).squeeze(axis=1))
-        
+        optimal_action_list = list(np.argwhere(current_q_values == np.amax(current_q_values)).squeeze(axis=1))
+        # multiple equal paths, always pick the one move forward
+        optimal_action = optimal_action_list[0]
+        optimal_actions.append(optimal_action)
         
         # print q values at current state
         print("="*20)
@@ -1533,6 +1533,8 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
         print(current_q_values)
         #print(current_path_lengths)
         print(optimal_action)
+
+        #exit()
         
         # fix no shortest path problem
         # if len(path_not_exist_index) > 0:
@@ -1557,8 +1559,8 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
         # print(optimal_action in max_q_index)
         # exit()
 
-        if optimal_action not in max_q_index:
-            print("Error: Max q happen at %s, which does not include the optimal action %d"%(max_q_index, optimal_action))
+        # if optimal_action not in max_q_index:
+        #     print("Error: Max q happen at %s, which does not include the optimal action %d"%(max_q_index, optimal_action))
             # swap
             # tempt = current_path_lengths[optimal_action]
             # current_path_lengths[optimal_action] = current_path_lengths[max_q_index[0]]
@@ -1566,9 +1568,19 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
             # print("Fixed to ")
             # print(current_path_lengths)
 
-        print("="*20)
+        #print("="*20)
         # take one action along the optimal path
         obs, reward, done, info = env.step(optimal_action)
+        i += 1
+    
+    if info["success"] != 1:
+        print("Error: planned path did not succeed!")
+    
+    print("="*20)
+    print(optimal_actions)
+    print("Q based optimal path length: %d"%(len(optimal_actions)))
+    print("Path planner optimal path length: %d"%(len(env.optimal_action_seq)))
+    print("="*20)
 
 def test_q(config_file="imitation_learning_dqn.yaml"):
     env = MultiNavEnv(config_file=config_file)

@@ -56,3 +56,9 @@ def get_optimal_q(action_seq_length, gamma, positive_reward, negative_reward_sca
     q_list = discount_cumsum(reward_list, gamma)
 
     return q_list[0]
+
+def get_geodesic_distance_based_q(env):
+    # geodesic distance from current state to goal state
+    d = env.get_current_distance()
+    q = -d
+    return q

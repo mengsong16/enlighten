@@ -907,6 +907,12 @@ def generate_one_episode_with_q(env, episode, goal_dimension, goal_coord_system)
         # min step to goal should include the optimal action
         if optimal_action not in min_step_index:
             print("Error: Min step to goal happen at %s, which does not include the optimal action %d"%(min_step_index, optimal_action))
+            # swap
+            tempt = current_path_lengths[optimal_action]
+            current_path_lengths[optimal_action] = current_path_lengths[min_step_index[0]]
+            current_path_lengths[min_step_index[0]] = tempt
+            print("Fixed to ")
+            print(current_path_lengths)
 
         # add steps to goal: {i-1}
         steps_to_goal.append(current_path_lengths)
@@ -1544,6 +1550,12 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
 
         if optimal_action not in max_q_index:
             print("Error: Max q happen at %s, which does not include the optimal action %d"%(max_q_index, optimal_action))
+            # swap
+            tempt = current_path_lengths[optimal_action]
+            current_path_lengths[optimal_action] = current_path_lengths[max_q_index[0]]
+            current_path_lengths[max_q_index[0]] = tempt
+            print("Fixed to ")
+            print(current_path_lengths)
 
         print("="*20)
         # take one action along the optimal path
@@ -1689,13 +1701,13 @@ if __name__ == "__main__":
     #      split_name="train_aug")
     
     # ====== regenerate train episodes, others kept same =======
-    # generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
-    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000_q",
-    #      split_name="train",
-    #      augment_with_q=True)
+    generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
+         behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_fixed_q",
+         split_name="train",
+         augment_with_q=True)
     
     # generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
-    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000_q",
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000_fixed_q",
     #      split_name="train_aug",
     #      augment_with_q=True)
     
@@ -1725,4 +1737,4 @@ if __name__ == "__main__":
     #visualize_image_dataset(image_dataset_path="/dataset/image_dataset_gibson")
 
     #test_dataset()
-    test_q()
+    #test_q()

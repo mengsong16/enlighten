@@ -1432,6 +1432,12 @@ def visualize_image_dataset(image_dataset_path):
             if key == 27:
                 exit()
 
+def get_geodesic_distance_based_q(env):
+    # geodesic distance from current state to goal state
+    d = env.get_current_distance()
+    q = -d
+    return q
+
 # plan the optimal action sequence path from the current state
 def get_optimal_path(env):
     try:
@@ -1472,6 +1478,8 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
 
 
     for i, optimal_action in enumerate(env.optimal_action_seq):
+    #done = False
+    #while not done:
         current_state = env.get_agent_state()
         # print("-------------------")
         # print(current_state.position)
@@ -1479,28 +1487,29 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
         # print("-------------------")
 
         current_q_values = []
-        current_path_lengths = []
+        #current_path_lengths = []
         
-        path_not_exist_index = []
+        #path_not_exist_index = []
         for action in list(range(action_num)):
             # take one step along each direction
             obs, reward, done, info = env.step(action)
 
             # plan the shortest path from the current state
             # if not exist, return an empty list
-            current_optimal_action_seq = get_optimal_path(env)
+            #current_optimal_action_seq = get_optimal_path(env)
+            q = get_geodesic_distance_based_q(env)
 
             # compute q value
-            q = get_optimal_q(action_seq_length=len(current_optimal_action_seq), 
-                gamma=config.get("gamma"), 
-                positive_reward=config.get("positive_reward"), 
-                negative_reward_scale=config.get("negative_reward_scale"))
+            # q = get_optimal_q(action_seq_length=len(current_optimal_action_seq), 
+            #     gamma=config.get("gamma"), 
+            #     positive_reward=config.get("positive_reward"), 
+            #     negative_reward_scale=config.get("negative_reward_scale"))
 
-            if len(current_optimal_action_seq) == 0:
-                path_not_exist_index.append(action)
+            # if len(current_optimal_action_seq) == 0:
+            #     path_not_exist_index.append(action)
 
             current_q_values.append(q)
-            current_path_lengths.append(len(current_optimal_action_seq))
+            # current_path_lengths.append(len(current_optimal_action_seq))
 
             # get back to original state
             env.set_agent_state(
@@ -1522,24 +1531,24 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
         print("="*20)
         print("Step: %d"%(i+1))
         print(current_q_values)
-        print(current_path_lengths)
+        #print(current_path_lengths)
         print(optimal_action)
         
         # fix no shortest path problem
-        if len(path_not_exist_index) > 0:
-            print("Path not exist for some actions, need to fix by smoothing!")
-            if len(path_not_exist_index) == action_num:
-                print("Error: path not exist for all actions!")
-                exit()
+        # if len(path_not_exist_index) > 0:
+        #     print("Path not exist for some actions, need to fix by smoothing!")
+        #     if len(path_not_exist_index) == action_num:
+        #         print("Error: path not exist for all actions!")
+        #         exit()
 
-            for action_index in list(range(action_num)):
-                if current_path_lengths[action_index] > 0:
-                    first_exist_index = action_index
-                    break
+        #     for action_index in list(range(action_num)):
+        #         if current_path_lengths[action_index] > 0:
+        #             first_exist_index = action_index
+        #             break
             
-            for need_fix_index in path_not_exist_index:
-                # shortest path does not exist
-                current_path_lengths[need_fix_index] = current_path_lengths[first_exist_index]
+        #     for need_fix_index in path_not_exist_index:
+        #         # shortest path does not exist
+        #         current_path_lengths[need_fix_index] = current_path_lengths[first_exist_index]
 
         # print(np.amax(current_q_values))
         # print(np.argwhere(current_q_values == np.amax(current_q_values)))
@@ -1551,11 +1560,11 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
         if optimal_action not in max_q_index:
             print("Error: Max q happen at %s, which does not include the optimal action %d"%(max_q_index, optimal_action))
             # swap
-            tempt = current_path_lengths[optimal_action]
-            current_path_lengths[optimal_action] = current_path_lengths[max_q_index[0]]
-            current_path_lengths[max_q_index[0]] = tempt
-            print("Fixed to ")
-            print(current_path_lengths)
+            # tempt = current_path_lengths[optimal_action]
+            # current_path_lengths[optimal_action] = current_path_lengths[max_q_index[0]]
+            # current_path_lengths[max_q_index[0]] = tempt
+            # print("Fixed to ")
+            # print(current_path_lengths)
 
         print("="*20)
         # take one action along the optimal path
@@ -1701,10 +1710,10 @@ if __name__ == "__main__":
     #      split_name="train_aug")
     
     # ====== regenerate train episodes, others kept same =======
-    generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
-         behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_fixed_q",
-         split_name="train",
-         augment_with_q=True)
+    # generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_fixed_q",
+    #      split_name="train",
+    #      augment_with_q=True)
     
     # generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
     #      behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000_fixed_q",
@@ -1737,4 +1746,4 @@ if __name__ == "__main__":
     #visualize_image_dataset(image_dataset_path="/dataset/image_dataset_gibson")
 
     #test_dataset()
-    #test_q()
+    test_q()

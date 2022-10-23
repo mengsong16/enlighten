@@ -9,7 +9,7 @@ from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
 from enlighten.datasets.dataset import Episode
 from enlighten.utils.image_utils import try_cv2_import
-from enlighten.agents.common.other import get_optimal_q, get_geodesic_distance_based_q
+from enlighten.agents.common.other import get_optimal_q, get_geodesic_distance_based_q_current_state
 
 import habitat_sim
 cv2 = try_cv2_import()
@@ -1495,7 +1495,7 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
             # plan the shortest path from the current state
             # if not exist, return an empty list
             #current_optimal_action_seq = get_optimal_path(env)
-            q = get_geodesic_distance_based_q(env)
+            q = get_geodesic_distance_based_q_current_state(env)
 
             # compute q value
             # q = get_optimal_q(action_seq_length=len(current_optimal_action_seq), 
@@ -1509,7 +1509,7 @@ def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
             current_q_values.append(q)
             # current_path_lengths.append(len(current_optimal_action_seq))
 
-            # get back to original state
+            # get back to the original state
             env.set_agent_state(
                 new_position=current_state.position,
                 new_rotation=current_state.rotation,
@@ -1599,6 +1599,43 @@ def test_q(config_file="imitation_learning_dqn.yaml"):
         if i >= 3:
             break
 
+def test_path_follower(config_file="imitation_learning_dqn.yaml"):
+    env = MultiNavEnv(config_file=config_file)
+
+    config = parse_config(os.path.join(config_path, config_file))
+
+    episodes = load_behavior_dataset_meta(
+                behavior_dataset_path=config.get("behavior_dataset_path"), 
+                split_name="same_start_goal_val_mini")
+    
+    # print(env.action_space.n)
+    # exit()
+    for i, episode in enumerate(episodes):
+        # reset and plan the optimal action sequence
+        obs = env.reset(episode=episode, plan_shortest_path=True)
+
+        print("="*20)
+        print('Episode: {}'.format(i+1))
+        print("Goal position: %s"%(env.goal_position))
+        print("Start position: %s"%(env.start_position))
+        print("Optimal action sequence: %s"%env.optimal_action_seq)
+        print("Optimal action sequence length: %s"%len(env.optimal_action_seq))
+        
+
+        
+        actions = []
+        done = False
+        while not done:
+            a = env.follower.next_action_along(goal_pos=env.goal_position)
+            actions.append(a)
+            obs, reward, done, info = env.step(a)
+            
+        print("Step by step planning path: %s"%actions)
+        print("Step by step planning path length: %s"%len(actions))
+        print("="*20)
+
+        if i >= 3:
+            break
 
 def test_dataset(config_file="imitation_learning_dqn.yaml"):
     env = MultiNavEnv(config_file=config_file)
@@ -1759,3 +1796,4 @@ if __name__ == "__main__":
 
     #test_dataset()
     test_q()
+    #test_path_follower()

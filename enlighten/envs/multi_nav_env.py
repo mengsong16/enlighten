@@ -51,9 +51,9 @@ class MultiNavEnv(NavEnv):
         # create agent and set agent's initial state to a navigable random position and z rotation
         self.agent = self.sim.initialize_agent(agent_id=self.sim._default_agent_id)
        
-        # create gym action space
+        # create gym action space: Cartesian
         self.action_space = self.create_gym_action_space()
-        
+
         # initialize viewer
         self.viewer = None
 

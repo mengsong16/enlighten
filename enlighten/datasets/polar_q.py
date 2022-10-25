@@ -10,7 +10,7 @@ from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_t
 from enlighten.datasets.dataset import Episode
 from enlighten.utils.image_utils import try_cv2_import
 from enlighten.agents.common.other import get_optimal_q, get_geodesic_distance_based_q_current_state
-from enlighten.datasets.il_data_gen import load_behavior_dataset_meta
+from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, get_optimal_path
 
 import habitat_sim
 cv2 = try_cv2_import()
@@ -135,6 +135,23 @@ class PolarActionSpace:
             i += 1
 
         return polar_seq
+
+
+def get_first_effective_action_sequence(cartesian_action_seq,
+    cartesian_stop_action_index,
+    cartesian_forward_action_index):
+    i = 0 
+    sub_seq = []
+    while i < len(cartesian_action_seq):
+        if cartesian_action_seq[i] == cartesian_stop_action_index or cartesian_action_seq[i] == cartesian_forward_action_index:
+            sub_seq.append(cartesian_action_seq[i])
+            break
+        else:
+            sub_seq.append(cartesian_action_seq[i])
+            
+        i += 1
+    
+    return sub_seq
 
 # rotate_resolution: in degree
 def compute_polar_q_current_state(env, polar_action_space):
@@ -377,15 +394,121 @@ def test_polar_action_space(config_file="imitation_learning_sqn.yaml"):
 
     pa = PolarActionSpace(env, rotate_resolution)
 
+
+# from s0, end with STOP
+def check_optimal_path_geodesic_q(env, episode):
+    # reset the env
+    obs = env.reset(episode=episode, plan_shortest_path=True)
     
+    print("="*20)
+    print("Goal position: %s"%(env.goal_position))
+    print("Start position: %s"%(env.start_position))
+    print("[Shortest path] Optimal cartesian action sequence: %s"%env.optimal_action_seq)
+    print("[Shortest path] Optimal cartesian action sequence length: %d"%len(env.optimal_action_seq))
+
+
+    # act according to the shortest path, and compute its polar q at each state
+    cartesian_action_number = len(env.action_mapping)
+    cartesian_stop_action_index = env.action_name_to_index("stop")
+    cartesian_forward_action_index = env.action_name_to_index("move_forward")
+    cartesian_turn_left_action_index = env.action_name_to_index("turn_left")
+    cartesian_turn_right_action_index = env.action_name_to_index("turn_right")
+        
+
+    for i, optimal_action in enumerate(env.optimal_action_seq):
+        current_state = env.get_agent_state()
+        
+        current_q_values = []
+    
+        print("-----------------------------")
+        print("Step: %d"%(i+1))
+        # "stop" q
+        print("Executed actions: None")
+        current_q_values.append(get_geodesic_distance_based_q_current_state(env))
+
+        # "move_forward" q
+        # take one step forward
+        obs, reward, done, info = env.step(cartesian_forward_action_index)
+        print("Executed actions: %s"%([cartesian_forward_action_index]))
+        # get current geodesic distance to goal as q
+        current_q_values.append(get_geodesic_distance_based_q_current_state(env))
+            
+        # get back to the original state
+        env.set_agent_state(
+            new_position=current_state.position,
+            new_rotation=current_state.rotation,
+            is_initial=False,
+            quaternion=True
+        )
+
+        # "turn_left" or "turn_right" q
+        for action in [cartesian_turn_left_action_index, cartesian_turn_right_action_index]:
+            # take one step along current direction
+            obs, reward, done, info = env.step(action)
+            
+            # plan the shortest path from the current state to see where move_forward or stop happen
+            current_optimal_action_seq = get_optimal_path(env)
+            # step the environment until move_forward or stop happen
+            execute_action_seq = get_first_effective_action_sequence(current_optimal_action_seq,
+                cartesian_stop_action_index,
+                cartesian_forward_action_index)
+            step_cartesian_action_seq(env, execute_action_seq)
+
+            print("Executed actions: %s"%([action]+execute_action_seq))
+
+            # get current geodesic distance to goal as q
+            q = get_geodesic_distance_based_q_current_state(env)
+            current_q_values.append(q)
+            
+            # get back to the original state
+            env.set_agent_state(
+                new_position=current_state.position,
+                new_rotation=current_state.rotation,
+                is_initial=False,
+                quaternion=True
+            )
+        
+        current_q_values = np.array(current_q_values, dtype="float32")
+        # actions where max q happen
+        max_q_action_list = list(np.argwhere(current_q_values == np.amax(current_q_values)).squeeze(axis=1))
+        
+        
+        print("Q values: %s"%current_q_values)
+        print("Max Q actions: %s"%max_q_action_list)
+        print("Planned action: %s"%optimal_action)
+        if optimal_action not in max_q_action_list:
+            print("Optimal action does not have max Q!")
+        print("-----------------------------")
+
+        # take one action along the optimal path
+        obs, reward, done, info = env.step(optimal_action)
+
+    print("="*20)
+
+def test_check_optimal_path_geodesic_q(config_file="imitation_learning_sqn.yaml"):
+    env = MultiNavEnv(config_file=config_file)
+
+    config = parse_config(os.path.join(config_path, config_file))
+
+    episodes = load_behavior_dataset_meta(
+                behavior_dataset_path=config.get("behavior_dataset_path"), 
+                split_name="same_start_goal_val_mini")
+    
+    for i, episode in enumerate(episodes):
+        check_optimal_path_geodesic_q(env, episode)
+        
+        #if i >= 3:
+        break
+
 if __name__ == "__main__":
     # ====== first set seed =======
     set_seed_except_env_seed(seed=0)  
     # ========= test ==========  
     #test_polar_q_planner()
     #test_check_optimal_path_polar_q()
-    compare_greedy_planner_polar_q_planner()
+    #compare_greedy_planner_polar_q_planner()
     #test_polar_action_space()
+    test_check_optimal_path_geodesic_q()
 
 
 

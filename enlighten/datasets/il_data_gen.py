@@ -1457,7 +1457,7 @@ def get_optimal_path(env):
     return optimal_action_seq
 
 # from s0, end with STOP
-def get_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
+def get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
     # reset and plan the optimal action sequence
     obs = env.reset(episode=episode, plan_shortest_path=True)
     #optimal_state_sequence = [obs]
@@ -1594,7 +1594,7 @@ def test_q(config_file="imitation_learning_dqn.yaml"):
     # print(env.action_space.n)
     # exit()
     for i, episode in enumerate(episodes):
-        get_q_along_optimal_path_from_s0(env, episode, config, episode_index=i)
+        get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_index=i)
 
         if i >= 3:
             break

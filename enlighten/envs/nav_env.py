@@ -325,7 +325,12 @@ class NavEnv(gym.Env):
 
     def create_sim_action_space(self):
         if int(self.config.get("action_number")) == 4:
+            
             self.action_mapping = ["stop", "move_forward", "turn_left", "turn_right"]
+            # must ensure stop is the first action and move_forward is the second action
+            assert self.action_mapping[0] == "stop"
+            assert self.action_mapping[1] == "move_forward"
+
             action_space = {
                 "stop": habitat_sim.agent.ActionSpec(
                     "stop", habitat_sim.agent.ActuationSpec(amount=0.0)),

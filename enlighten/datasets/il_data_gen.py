@@ -1,17 +1,16 @@
 from enlighten.utils.path import *
 from enlighten.utils.config_utils import parse_config
 from enlighten.datasets.pointnav_dataset import PointNavDatasetV1
-from enlighten.datasets.pointnav_dataset import NavigationEpisode, NavigationGoal, ShortestPathPoint
-from enlighten.datasets.dataset import EpisodeIterator
+from enlighten.datasets.pointnav_dataset import NavigationEpisode, NavigationGoal
 from enlighten.envs.multi_nav_env import MultiNavEnv, NavEnv
 from enlighten.utils.geometry_utils import euclidean_distance
 from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
-from enlighten.datasets.dataset import Episode
 from enlighten.utils.image_utils import try_cv2_import
-from enlighten.agents.common.other import get_optimal_q, get_geodesic_distance_based_q_current_state
+from enlighten.agents.common.other import get_geodesic_distance_based_q_current_state
+from enlighten.datasets.common import load_behavior_dataset_meta
+from enlighten.datasets.polar_q import PolarActionSpace, reached_goal, step_cartesian_action_seq, compute_polar_q_current_state
 
-import habitat_sim
 cv2 = try_cv2_import()
 
 import math
@@ -22,6 +21,7 @@ import pickle
 from tqdm import tqdm
 import random
 import copy
+import time
 
 
 import habitat
@@ -638,22 +638,6 @@ def generate_behavior_dataset_meta_v1(yaml_name,
     sample_across_scene_episodes(test_scenes, across_scene_test_episode_num, 
     behavior_dataset_path, pointgoal_meta, "across_scene_test")
     
-# behavior_dataset_path: "/dataset/behavior_dataset_gibson"
-def load_behavior_dataset_meta(behavior_dataset_path, split_name):
-
-    behavior_dataset_meta_data_path = os.path.join(behavior_dataset_path, "meta_data")
-    behavior_dataset_meta_split_path = os.path.join(behavior_dataset_meta_data_path, '%s.pickle'%(split_name))
-
-    if not os.path.exists(behavior_dataset_meta_split_path):
-        print("Error: path does not exist: %s"%(behavior_dataset_meta_split_path))
-        exit()
-    
-    episode_list = pickle.load(open(behavior_dataset_meta_split_path, "rb" ))
-
-    print("Behavior data split: %s"%split_name)
-    print("Loaded %d episodes"%(len(episode_list)))
-    
-    return episode_list
 
 def load_behavior_dataset_scenes(behavior_dataset_path, split_name):
 
@@ -716,51 +700,50 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
 
     traj = {}
 
-    # add (s0, g0, d0, r0)
+    # reset the env
     obs = env.reset(episode=episode, plan_shortest_path=True)
-    obs_array = extract_observation(obs, env.observation_space.spaces)
-    observations.append(obs_array) # (channel, height, width)
-    rel_goal = np.array(obs["pointgoal"], dtype="float32")
-    rel_goals.append(rel_goal) # (goal_dim,)
-    distance_to_goals.append(env.get_current_distance())  # float
-    goal_position = np.array(env.goal_position, dtype="float32")
-    goal_positions.append(goal_position) # (3,)
-    abs_goal = goal_position_to_abs_goal(goal_position,
-            goal_dimension, goal_coord_system) # (2,) or (3,)
-    abs_goals.append(abs_goal)
-    #state_position = np.array(env.agent.get_state().position, dtype="float32")
-    state_position = np.array(obs["state_sensor"], dtype="float32")
-    state_positions.append(state_position)  # (3,)
-
-    dones.append(False) # d0=False
-    rewards.append(0.0) # r0=0
+    # add (s0, g0, d0, r0)
+    # d0=False, r0=0
+    update_episode_data(env=env,
+        obs=obs, 
+        reward=0.0, 
+        done=False, 
+        goal_dimension=goal_dimension, 
+        goal_coord_system=goal_coord_system,
+        observations=observations,
+        actions=actions,
+        rel_goals=rel_goals,
+        distance_to_goals=distance_to_goals,
+        goal_positions=goal_positions,
+        state_positions=state_positions,
+        abs_goals=abs_goals,
+        dones=dones,
+        rewards=rewards,
+        action=None,
+        qs=None,
+        q=None)
             
     for action in env.optimal_action_seq:
         obs, reward, done, info = env.step(action)
         # add (s_i, a_{i-1}, g_i, d_i, r_i)
-        obs_array = extract_observation(obs, env.observation_space.spaces)
-        observations.append(obs_array) # (channel, height, width)
-        actions.append(action) # integer
-        rel_goal = np.array(obs["pointgoal"], dtype="float32")
-        rel_goals.append(rel_goal) # (goal_dim,)
-        distance_to_goals.append(env.get_current_distance()) # float
-        goal_position = np.array(env.goal_position, dtype="float32")
-        goal_positions.append(goal_position) # (3,)
-        abs_goal = goal_position_to_abs_goal(goal_position,
-            goal_dimension, goal_coord_system) # (2,) or (3,)
-        abs_goals.append(abs_goal)
-        #state_position = np.array(env.agent.get_state().position, dtype="float32")
-        state_position = np.array(obs["state_sensor"], dtype="float32")
-        # print(state_position.shape)
-        # print(state_position)
-        state_positions.append(state_position) # (3,)
-
-        dones.append(done) # bool
-        rewards.append(reward) # float
-
-        # print(rel_goal.shape)
-        # print(goal_position.shape)
-        # print(state_position.shape)
+        update_episode_data(env=env,
+            obs=obs, 
+            reward=reward, 
+            done=done, 
+            goal_dimension=goal_dimension, 
+            goal_coord_system=goal_coord_system,
+            observations=observations,
+            actions=actions,
+            rel_goals=rel_goals,
+            distance_to_goals=distance_to_goals,
+            goal_positions=goal_positions,
+            state_positions=state_positions,
+            abs_goals=abs_goals,
+            dones=dones,
+            rewards=rewards,
+            action=action,
+            qs=None,
+            q=None)
     
     # append an additional action STOP (besides the one at the end of the optimal action sequence)
     actions.append(0)
@@ -821,9 +804,61 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     
     return valid_episode, traj, env.optimal_action_seq
 
-def generate_one_episode_with_q(env, episode, goal_dimension, goal_coord_system):
+def update_episode_data(env, 
+    obs, 
+    reward, 
+    done, 
+    goal_dimension, 
+    goal_coord_system,
+    observations,
+    actions,
+    rel_goals,
+    distance_to_goals,
+    goal_positions,
+    state_positions,
+    abs_goals,
+    dones,
+    rewards,
+    action=None,
+    qs=None,
+    q=None):
+
+    obs_array = extract_observation(obs, env.observation_space.spaces)
+    observations.append(obs_array) # (channel, height, width)
+
+    rel_goal = np.array(obs["pointgoal"], dtype="float32")
+    rel_goals.append(rel_goal) # (goal_dim,)
+
+    distance_to_goals.append(env.get_current_distance())  # float
+
+    goal_position = np.array(env.goal_position, dtype="float32")
+    goal_positions.append(goal_position) # (3,)
+
+    abs_goal = goal_position_to_abs_goal(goal_position,
+            goal_dimension, goal_coord_system) # (2,) or (3,)
+    abs_goals.append(abs_goal)
+
+    #state_position = np.array(env.agent.get_state().position, dtype="float32")
+    state_position = np.array(obs["state_sensor"], dtype="float32")
+    state_positions.append(state_position)  # (3,)
+
+    if action is not None:
+        actions.append(action)
+
+    dones.append(done)  # bool
+
+    rewards.append(reward) # float
+
+    if q is not None and qs is not None:
+        qs.append(q)
+
+
+def generate_one_episode_with_q(env, polar_action_space, episode, config):
+    goal_dimension = int(env.config.get("goal_dimension"))
+    goal_coord_system = env.config.get("goal_coord_system")
+
     observations = []
-    actions = []
+    actions = [] # polar action sequence, not cartesian action sequence
     rel_goals = []
     distance_to_goals = []
     goal_positions = []
@@ -831,187 +866,205 @@ def generate_one_episode_with_q(env, episode, goal_dimension, goal_coord_system)
     abs_goals = []
     dones = []
     rewards = []
-    steps_to_goal = []
-
+    qs = []
     traj = {}
-    action_num = env.action_space.n
-
+    
+    # reset the env
+    obs = env.reset(episode=episode, plan_shortest_path=False)
     # add (s0, g0, d0, r0)
-    obs = env.reset(episode=episode, plan_shortest_path=True)
-    obs_array = extract_observation(obs, env.observation_space.spaces)
-    observations.append(obs_array) # (channel, height, width)
-    rel_goal = np.array(obs["pointgoal"], dtype="float32")
-    rel_goals.append(rel_goal) # (goal_dim,)
-    distance_to_goals.append(env.get_current_distance())  # float
-    goal_position = np.array(env.goal_position, dtype="float32")
-    goal_positions.append(goal_position) # (3,)
-    abs_goal = goal_position_to_abs_goal(goal_position,
-            goal_dimension, goal_coord_system) # (2,) or (3,)
-    abs_goals.append(abs_goal)
-    #state_position = np.array(env.agent.get_state().position, dtype="float32")
-    state_position = np.array(obs["state_sensor"], dtype="float32")
-    state_positions.append(state_position)  # (3,)
+    # d0=False, r0=0
+    update_episode_data(env=env,
+        obs=obs, 
+        reward=0.0, 
+        done=False, 
+        goal_dimension=goal_dimension, 
+        goal_coord_system=goal_coord_system,
+        observations=observations,
+        actions=actions,
+        rel_goals=rel_goals,
+        distance_to_goals=distance_to_goals,
+        goal_positions=goal_positions,
+        state_positions=state_positions,
+        abs_goals=abs_goals,
+        dones=dones,
+        rewards=rewards,
+        action=None,
+        qs=qs,
+        q=None)
 
-    dones.append(False) # d0=False
-    rewards.append(0.0) # r0=0
-            
-    for optimal_action in env.optimal_action_seq:
-        current_state = env.get_agent_state()
-
-        current_path_lengths = []
-        path_not_exist_index = []
-
-        for action in list(range(action_num)):
-            # take one step along each direction
-            obs, reward, done, info = env.step(action)
-
-            # plan the shortest path from the current state
-            # if not exist, return an empty list
-            current_optimal_action_seq = get_optimal_path(env)
-
-
-            if len(current_optimal_action_seq) == 0:
-                path_not_exist_index.append(action)
-
-            current_path_lengths.append(len(current_optimal_action_seq))
-
-            # get back to original state
-            env.set_agent_state(
-                new_position=current_state.position,
-                new_rotation=current_state.rotation,
-                is_initial=False,
-                quaternion=True
-            )
-
-        # fix no shortest path problem
-        if len(path_not_exist_index) > 0:
-            print("The shortest path not exist for some actions, need to fix by smoothing!")
-            if len(path_not_exist_index) == action_num:
-                print("Error: the shortest path not exist for all actions!")
-                exit()
-
-            for action_index in list(range(action_num)):
-                if current_path_lengths[action_index] > 0:
-                    first_exist_index = action_index
-                    break
-            
-            for need_fix_index in path_not_exist_index:
-                # shortest path does not exist
-                current_path_lengths[need_fix_index] = current_path_lengths[first_exist_index]
-
-        # convert from list to numpy array
-        current_path_lengths = np.array(current_path_lengths, dtype=int)
-        
-        # list of indices where min steps to goal happen
-        min_step_index = list(np.argwhere(current_path_lengths == np.amin(current_path_lengths)).squeeze(axis=1))
-        # min step to goal should include the optimal action
-        if optimal_action not in min_step_index:
-            print("Error: Min step to goal happen at %s, which does not include the optimal action %d"%(min_step_index, optimal_action))
-            # swap
-            tempt = current_path_lengths[optimal_action]
-            current_path_lengths[optimal_action] = current_path_lengths[min_step_index[0]]
-            current_path_lengths[min_step_index[0]] = tempt
-            print("Fixed to ")
-            print(current_path_lengths)
-
-        # add steps to goal: {i-1}
-        steps_to_goal.append(current_path_lengths)
-
-        # take one action along the optimal path
-        obs, reward, done, info = env.step(optimal_action)
-
-        # add (s_i, a_{i-1}, g_i, d_i, r_i)
-        obs_array = extract_observation(obs, env.observation_space.spaces)
-        observations.append(obs_array) # (channel, height, width)
-        actions.append(optimal_action) # integer
-        rel_goal = np.array(obs["pointgoal"], dtype="float32")
-        rel_goals.append(rel_goal) # (goal_dim,)
-        distance_to_goals.append(env.get_current_distance()) # float
-        goal_position = np.array(env.goal_position, dtype="float32")
-        goal_positions.append(goal_position) # (3,)
-        abs_goal = goal_position_to_abs_goal(goal_position,
-            goal_dimension, goal_coord_system) # (2,) or (3,)
-        abs_goals.append(abs_goal)
-        #state_position = np.array(env.agent.get_state().position, dtype="float32")
-        state_position = np.array(obs["state_sensor"], dtype="float32")
-        # print(state_position.shape)
-        # print(state_position)
-        state_positions.append(state_position) # (3,)
-
-        dones.append(done) # bool
-        rewards.append(reward) # float
-
-        # print(rel_goal.shape)
-        # print(goal_position.shape)
-        # print(state_position.shape)
     
-    # append an additional action STOP (besides the one at the end of the optimal action sequence)
+    reach_q_flag = reached_goal(env, config)
+
+    while not reach_q_flag:
+        q, polar_optimal_action, cartesian_optimal_action_seq = compute_polar_q_current_state(env, polar_action_space)
+
+        # take one polar action step
+        obs, reward, done, info = step_cartesian_action_seq(env, cartesian_optimal_action_seq)
+
+        # add (s_i, a_{i-1}, g_i, d_i, r_i, q_{i-1})
+        update_episode_data(env=env,
+            obs=obs, 
+            reward=reward, 
+            done=done, 
+            goal_dimension=goal_dimension, 
+            goal_coord_system=goal_coord_system,
+            observations=observations,
+            actions=actions,
+            rel_goals=rel_goals,
+            distance_to_goals=distance_to_goals,
+            goal_positions=goal_positions,
+            state_positions=state_positions,
+            abs_goals=abs_goals,
+            dones=dones,
+            rewards=rewards,
+            action=polar_optimal_action,
+            qs=qs,
+            q=q)
+
+        reach_q_flag = reached_goal(env, config)
+    
+    assert actions[-1] != 0, "The original planned optimal polar action sequence should not end with STOP."
+    print("========================")
+    print(actions)
+    
+    # take one normal env step = STOP
+    obs, reward, done, info = env.step(0)
+    assert done==True and env.is_success(), "generated episode did not succeed"
+    # q = zeros because we have already reached the goal
+    q = np.zeros(polar_action_space.polar_action_number, dtype="float")
+    # append the first polar action STOP as the final step
+    # add (s_i, a_{i-1}=0, g_i, d_i, r_i, q_{i-1})
+    update_episode_data(env=env,
+        obs=obs, 
+        reward=reward, 
+        done=done, 
+        goal_dimension=goal_dimension, 
+        goal_coord_system=goal_coord_system,
+        observations=observations,
+        actions=actions,
+        rel_goals=rel_goals,
+        distance_to_goals=distance_to_goals,
+        goal_positions=goal_positions,
+        state_positions=state_positions,
+        abs_goals=abs_goals,
+        dones=dones,
+        rewards=rewards,
+        action=0,
+        qs=qs,
+        q=q)
+
+    # append the second polar action STOP (besides the one at the end of the optimal action sequence)
     actions.append(0)
-    # append zeros to steps to goal because we are already reached the goal
-    steps_to_goal.append(np.zeros(action_num, dtype=int))
+    # append the second zeros to qs because we have already reached the goal
+    qs.append(np.zeros(polar_action_space.polar_action_number, dtype="float"))
 
-    #print(len(observations)) # n+1
-    # print(len(actions)) # n+1
-    # print(len(rel_goals)) # n+1
-    # print(len(distance_to_goals)) # n+1
-    # print(len(goal_positions)) # n+1
-    # print(len(state_positions)) # n+1
-    # print(len(abs_goals)) # n+1
-    # print(len(dones)) # n+1
-    #print(len(rewards)) # n+1
-    #print(len(env.optimal_action_seq)) # n
-    #print(len(steps_to_goal)) # n+1
-    #exit()
-
-    # print(actions)
-    # print(env.optimal_action_seq)
-
+    print("========================")
+    print(len(observations)) # n+1
+    print(len(rel_goals)) # n+1
+    print(len(distance_to_goals)) # n+1
+    print(len(goal_positions)) # n+1
+    print(len(state_positions)) # n+1
+    print(len(abs_goals)) # n+1
+    print(len(dones)) # n+1
+    print(len(rewards)) # n+1
+    print(len(qs)) # n+1
+    print(len(actions)) # n+1
+    print("========================")
+    print(actions)
+    print("========================")
+    print(qs)
+    print("========================")
     
-    # print(actions[-1])
-    # print(actions[-2])
-    # print(actions[-3])
-    # print(env.optimal_action_seq[-1])
-    # print(env.optimal_action_seq[-2])
-    # print(abs_goals)
-    # exit()
 
-    # check validity at the end of the trajectory
-    if env.optimal_action_seq:
-        if done == False:  # optimal policy did not done
-            print("Error: done should be true after following the shortest path")
-            print("Distance to goal at the end of the trajectory: %f"%(env.get_current_distance()))
-            valid_episode = False
-        else:
-            if env.is_success() == False: # optimal policy did not succeed
-                print("Error: success should be true after following the shortest path")
-                print("Distance to goal at the end of the trajectory: %f"%(env.get_current_distance()))
-                valid_episode = False
-            else:
-                # if env.optimal_action_seq[-1] != 0: # the last action of optimal action sequence is not STOP
-                #     print("Error: the last action of optimal action sequence is not STOP")
-                #     valid_episode = False
-                # else:    
-                valid_episode = True
-                traj["observations"] = observations
-                traj["actions"] = actions
-                traj["rel_goals"] = rel_goals
-                traj["distance_to_goals"] = distance_to_goals
-                traj["goal_positions"] = goal_positions
-                traj["state_positions"] = state_positions
-                traj["abs_goals"] = abs_goals
-                traj["dones"] = dones
-                traj["rewards"] = rewards
-                traj["steps_to_goal"] = steps_to_goal
+    traj["observations"] = observations
+    traj["actions"] = actions
+    traj["rel_goals"] = rel_goals
+    traj["distance_to_goals"] = distance_to_goals
+    traj["goal_positions"] = goal_positions
+    traj["state_positions"] = state_positions
+    traj["abs_goals"] = abs_goals
+    traj["dones"] = dones
+    traj["rewards"] = rewards
+    traj["qs"] = qs
                 
-    else:
-        print("Error: shortest path not found")
-        valid_episode = False
+    return traj, actions[:-1]
+
+def generate_train_behavior_data_with_q(yaml_name, behavior_dataset_path, 
+    split_name):
+
+    env = MultiNavEnv(config_file=yaml_name)
+
+    config = parse_config(os.path.join(config_path, yaml_name))
     
-    return valid_episode, traj, env.optimal_action_seq
+    train_episodes = load_behavior_dataset_meta(behavior_dataset_path, split_name)
+
+    rotate_resolution = int(config.get("rotate_resolution"))
+
+    polar_action_space = PolarActionSpace(env, rotate_resolution)
+    
+    traj_lens = []
+    trajectories = [] # real observation sequence
+    action_sequences = [] # optimal action sequences generated by path planner
+    
+    for episode in tqdm(train_episodes):
+        start_time = time.time()
+
+        # generate one episode with q
+        traj, act_seq = generate_one_episode_with_q(env, polar_action_space, 
+            episode, config)
         
+        print("Time per episode: %s"%(time.time()-start_time))
+        
+        trajectories.append(traj)
+        # act_seq include the first STOP, not the second STOP
+        action_sequences.append(act_seq)
+        traj_lens.append(len(act_seq)+1)
+
+        break
+    
+    print("==============================================")
+    print("Generated %d training trajectories"%(len(trajectories)))
+    traj_lens = np.array(traj_lens, dtype=np.float32)  
+    print("Total steps: %d"%(np.sum(traj_lens, axis=0)))
+    print("Min length: %d"%(np.min(traj_lens, axis=0)))
+    print("Mean length: %d"%(np.mean(traj_lens, axis=0)))
+    print("Max length: %d"%(np.max(traj_lens, axis=0)))
+    print("Std of length: %f"%(np.std(traj_lens, axis=0)))
+    print("Number of actions: %s"%(str(polar_action_space.polar_action_number)))
+    print("==============================================")
+
+    # close env
+    env.close()
+    
+    # save
+    # dump training trajectories
+    # each part include 1000 episodes
+    total_trajectory_num = len(trajectories)
+    
+    if total_trajectory_num <= 1000:
+        with open(os.path.join(behavior_dataset_path, '%s_data.pickle'%(split_name)), 'wb') as handle:
+            pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        part_num = total_trajectory_num // 1000
+        for i in range(part_num):
+            with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, i+1)), 'wb') as handle:
+                pickle.dump(trajectories[(1000*(i)):(1000*(i+1))], handle, protocol=pickle.HIGHEST_PROTOCOL)
+        rest_num = total_trajectory_num % 1000
+        if rest_num > 0:
+            with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, part_num+1)), 'wb') as handle:
+                pickle.dump(trajectories[(1000*part_num):], handle, protocol=pickle.HIGHEST_PROTOCOL)
+                
+    # dump action sequence
+    with open(os.path.join(behavior_dataset_path, '%s_action_sequences.pickle'%(split_name)), 'wb') as handle:
+        pickle.dump(action_sequences, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print("Behavior training dataset %s generation Done: %s"%(split_name, behavior_dataset_path))
+
+    
+
 # behavior_dataset_path: "/dataset/behavior_dataset_gibson"
 def generate_train_behavior_data(yaml_name, behavior_dataset_path, 
-    split_name, augment_with_q=False):
+    split_name):
     env = MultiNavEnv(config_file=yaml_name)
     
     train_episodes = load_behavior_dataset_meta(behavior_dataset_path, split_name)
@@ -1023,19 +1076,18 @@ def generate_train_behavior_data(yaml_name, behavior_dataset_path,
     
     traj_lens = []
     trajectories = [] # real observation sequence
-    action_sequences = [] # optimal action sequences generated by path planner
+    action_sequences = [] # optimal action sequences generated by path planner 
+   
     for episode in tqdm(train_episodes):
         # generate one episode
-        if augment_with_q:
-            valid_episode, traj, act_seq = generate_one_episode_with_q(env, episode, goal_dimension, goal_coord_system)
-        else:
-            valid_episode, traj, act_seq = generate_one_episode(env, episode, goal_dimension, goal_coord_system)
+        valid_episode, traj, act_seq = generate_one_episode(env, episode, goal_dimension, goal_coord_system)
         
         if valid_episode == False:
             print("Error: invalid episode, need to resample train episodes!")
             exit()
         else:
             trajectories.append(traj)
+            # act_seq include the first STOP, not the second STOP
             action_sequences.append(act_seq)
             traj_lens.append(len(act_seq)+1)
     
@@ -1051,8 +1103,8 @@ def generate_train_behavior_data(yaml_name, behavior_dataset_path,
     print("==============================================")
     
     # save
-    config_file=os.path.join(config_path, yaml_name)
-    config = parse_config(config_file)
+    #config_file=os.path.join(config_path, yaml_name)
+    #config = parse_config(config_file)
 
     # with open(os.path.join(behavior_dataset_path, '%s_data.pickle'%(split_name)), 'wb') as handle:
     #     pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1432,36 +1484,11 @@ def visualize_image_dataset(image_dataset_path):
             if key == 27:
                 exit()
 
-
-
-# plan the optimal action sequence path from the current state
-def get_optimal_path(env):
-    try:
-        # No need to reset or recreate the path follower before path planning
-        # once create the path follower attaching to an agent 
-        # it will always update itself to the current state when find_path is called
-        #env.create_shortest_path_follower()
-        #env.follower.reset()
-        optimal_action_seq = env.follower.find_path(goal_pos=env.goal_position)
-        
-        assert len(optimal_action_seq) > 0, "Error: optimal action sequence must have at least one element"
-        # append STOP if not appended
-        if optimal_action_seq[-1] != env.action_name_to_index("stop"):
-            print("Error: the last action in the optimal action sequence must be STOP, but %d now, appending STOP."%(optimal_action_seq[-1]))
-            optimal_action_seq.append(env.action_name_to_index("stop"))
-       
-    except habitat_sim.errors.GreedyFollowerError as e:
-        print("Error: optimal path NOT found! set optimal action sequence to []")
-        optimal_action_seq = []
-
-    return optimal_action_seq
-
 # from s0, end with STOP
 def get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_index=0):
     # reset and plan the optimal action sequence
     obs = env.reset(episode=episode, plan_shortest_path=True)
-    #optimal_state_sequence = [obs]
-    #optimal_action_sequence = env.optimal_action_seq
+   
     action_num = env.action_space.n
 
     print("="*20)
@@ -1472,8 +1499,6 @@ def get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_inde
     print("Optimal action sequence length: %s"%len(env.optimal_action_seq))
     print("="*20)
 
-
-    #for i, optimal_action in enumerate(env.optimal_action_seq):
     done = False
     optimal_actions = []
     i = 0
@@ -1485,29 +1510,15 @@ def get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_inde
         # print("-------------------")
 
         current_q_values = []
-        #current_path_lengths = []
         
-        #path_not_exist_index = []
         for action in list(range(action_num)):
             # take one step along each direction
             obs, reward, done, info = env.step(action)
 
-            # plan the shortest path from the current state
-            # if not exist, return an empty list
-            #current_optimal_action_seq = get_optimal_path(env)
+            # compute q value
             q = get_geodesic_distance_based_q_current_state(env)
 
-            # compute q value
-            # q = get_optimal_q(action_seq_length=len(current_optimal_action_seq), 
-            #     gamma=config.get("gamma"), 
-            #     positive_reward=config.get("positive_reward"), 
-            #     negative_reward_scale=config.get("negative_reward_scale"))
-
-            # if len(current_optimal_action_seq) == 0:
-            #     path_not_exist_index.append(action)
-
             current_q_values.append(q)
-            # current_path_lengths.append(len(current_optimal_action_seq))
 
             # get back to the original state
             env.set_agent_state(
@@ -1517,7 +1528,6 @@ def get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_inde
                 quaternion=True
             )
         
-
         # max q should include the optimal action
         current_q_values = np.array(current_q_values, dtype="float32")
         
@@ -1531,44 +1541,10 @@ def get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_inde
         print("="*20)
         print("Step: %d"%(i+1))
         print(current_q_values)
-        #print(current_path_lengths)
         print(optimal_action)
 
         #exit()
-        
-        # fix no shortest path problem
-        # if len(path_not_exist_index) > 0:
-        #     print("Path not exist for some actions, need to fix by smoothing!")
-        #     if len(path_not_exist_index) == action_num:
-        #         print("Error: path not exist for all actions!")
-        #         exit()
 
-        #     for action_index in list(range(action_num)):
-        #         if current_path_lengths[action_index] > 0:
-        #             first_exist_index = action_index
-        #             break
-            
-        #     for need_fix_index in path_not_exist_index:
-        #         # shortest path does not exist
-        #         current_path_lengths[need_fix_index] = current_path_lengths[first_exist_index]
-
-        # print(np.amax(current_q_values))
-        # print(np.argwhere(current_q_values == np.amax(current_q_values)))
-        # print(max_q_index)
-        # print(optimal_action)
-        # print(optimal_action in max_q_index)
-        # exit()
-
-        # if optimal_action not in max_q_index:
-        #     print("Error: Max q happen at %s, which does not include the optimal action %d"%(max_q_index, optimal_action))
-            # swap
-            # tempt = current_path_lengths[optimal_action]
-            # current_path_lengths[optimal_action] = current_path_lengths[max_q_index[0]]
-            # current_path_lengths[max_q_index[0]] = tempt
-            # print("Fixed to ")
-            # print(current_path_lengths)
-
-        #print("="*20)
         # take one action along the optimal path
         obs, reward, done, info = env.step(optimal_action)
         i += 1
@@ -1759,15 +1735,9 @@ if __name__ == "__main__":
     #      split_name="train_aug")
     
     # ====== regenerate train episodes, others kept same =======
-    # generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
-    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_fixed_q",
-    #      split_name="train",
-    #      augment_with_q=True)
-    
-    # generate_train_behavior_data(yaml_name="imitation_learning_dqn.yaml", 
-    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_4_scene_2000_fixed_q",
-    #      split_name="train_aug",
-    #      augment_with_q=True)
+    generate_train_behavior_data_with_q(yaml_name="imitation_learning_sqn.yaml", 
+         behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q",
+         split_name="train")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(
@@ -1795,5 +1765,5 @@ if __name__ == "__main__":
     #visualize_image_dataset(image_dataset_path="/dataset/image_dataset_gibson")
 
     #test_dataset()
-    test_q()
+    #test_q()
     #test_path_follower()

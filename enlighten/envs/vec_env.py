@@ -54,7 +54,7 @@ import copy
 import random
 
 from enlighten.datasets.pointnav_dataset import make_dataset
-from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
+from enlighten.datasets.common import load_behavior_dataset_meta
 
 try:
     # Use torch.multiprocessing if we can.

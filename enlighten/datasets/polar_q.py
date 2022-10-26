@@ -10,7 +10,7 @@ from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_t
 from enlighten.datasets.dataset import Episode
 from enlighten.utils.image_utils import try_cv2_import
 from enlighten.agents.common.other import get_optimal_q, get_geodesic_distance_based_q_current_state
-from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, get_optimal_path
+from enlighten.datasets.common import load_behavior_dataset_meta, get_optimal_path
 
 import habitat_sim
 cv2 = try_cv2_import()
@@ -205,6 +205,7 @@ def compute_polar_q_current_state(env, polar_action_space):
     assert len(q) == polar_action_space.polar_action_number
     q = np.array(q, dtype="float")
 
+    # plan max q action
     polar_optimal_action_list = list(np.argwhere(q == np.amax(q)).squeeze(axis=1))
 
     if len(polar_optimal_action_list) > 1:
@@ -229,6 +230,8 @@ def euclidean_distance(position_a, position_b):
 def step_cartesian_action_seq(env, cartesian_action_seq):
     for action in cartesian_action_seq:
         obs, reward, done, info = env.step(action)
+    
+    return obs, reward, done, info
 
 def step_one_polar_action(env, polar_action, polar_action_space):
     cartesian_action_seq = polar_action_space.polar_action_to_cartesian_actions(polar_action)

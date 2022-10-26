@@ -7,7 +7,8 @@ from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.agents.common.other import get_device
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
-from enlighten.datasets.il_data_gen import load_behavior_dataset_meta, extract_observation
+from enlighten.datasets.il_data_gen import extract_observation
+from enlighten.datasets.common import load_behavior_dataset_meta 
 from enlighten.agents.models.decision_transformer import DecisionTransformer
 from enlighten.agents.models.rnn_seq_model import RNNSequenceModel
 from enlighten.agents.evaluation.across_scene_base_evaluator import AcrossEnvBaseEvaluator

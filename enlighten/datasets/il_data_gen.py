@@ -1125,21 +1125,21 @@ def generate_train_behavior_data_with_q_parallel(behavior_dataset_path,
         # call the same function with different data in parallel asynchronously
         # can only accept a list of single argument
 
-        #for i, trajectories in enumerate(pool.imap(parallel_generation_task, episode_groups)):
+        for i, trajectories in enumerate(pool.imap(parallel_generation_task, episode_groups)):
         #for trajectories in pool.map_async(parallel_generation_task, episode_groups):
             # print("---------------------------------------------------")
             # print("Process %d generated %d trajectories"%(i+1, len(trajectories)))
             # print("---------------------------------------------------")
             #total_trajectories.extend(trajectories)
             # save trajectories
-            # with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, i+1)), 'wb') as handle:
-            #     pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        total_trajectories = pool.map_async(parallel_generation_task, episode_groups) 
+            with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, i+1)), 'wb') as handle:
+                pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        #total_trajectories = pool.map_async(parallel_generation_task, episode_groups) 
     
     # verify by loading the saved trajectories
-    #total_trajectories = load_trajectories(behavior_dataset_path)
-    print(len(total_trajectories.get()))
-    exit()
+    total_trajectories = load_trajectories(behavior_dataset_path)
+    #print(len(total_trajectories.get()))
+    #exit()
     # get trajectory lengths
     traj_lens = []
     for traj in total_trajectories:

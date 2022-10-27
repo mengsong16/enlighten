@@ -78,7 +78,7 @@ seed: 1
 gpu_id: 1 #1
 
 # vector env (for evaluation only) train 10, evaluate 14
-num_environments: 10 #10 #14 #8 #14 #4 #2
+num_environments: 20 #10 #14 #8 #14 #4 #2
 
 # q network
 hidden_size: 512 #1024

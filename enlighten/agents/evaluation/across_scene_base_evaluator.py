@@ -16,7 +16,7 @@ from enlighten.agents.common.tensor_related import (
     ObservationBatchingCache,
     batch_obs,
 )
-from enlighten.datasets.il_data_gen import goal_position_to_abs_goal
+from enlighten.datasets.common import goal_position_to_abs_goal
 import pickle
 import matplotlib.pyplot as plt
 from enlighten.agents.models.rnn_seq_model import DDBC

@@ -5,12 +5,13 @@ from enlighten.datasets.pointnav_dataset import NavigationEpisode, NavigationGoa
 from enlighten.envs.multi_nav_env import MultiNavEnv, NavEnv
 from enlighten.utils.geometry_utils import euclidean_distance
 from enlighten.agents.common.seed import set_seed_except_env_seed
-from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
 from enlighten.utils.image_utils import try_cv2_import
-from enlighten.agents.common.other import get_geodesic_distance_based_q_current_state
 from enlighten.datasets.common import load_behavior_dataset_meta
-from enlighten.datasets.polar_q import PolarActionSpace, reached_goal, step_cartesian_action_seq, compute_polar_q_current_state
 from enlighten.envs.vec_env import chunks
+from enlighten.envs.vec_env import construct_envs_based_on_dataset
+from enlighten.utils.ddp_utils import is_slurm_batch_job
+from enlighten.datasets.common import PolarActionSpace
+from enlighten.datasets.common import update_episode_data, extract_observation
 
 cv2 = try_cv2_import()
 
@@ -657,37 +658,6 @@ def load_behavior_dataset_scenes(behavior_dataset_path, split_name):
     
     return scene_list
 
-# [CHANNEL x HEIGHT X WIDTH]
-# CHANNEL = {1,3,4}
-# output numpy array
-def extract_observation(obs, observation_spaces):
-    n_channel = 0
-    obs_array = None
-    if "color_sensor" in observation_spaces:
-        rgb_obs = obs["color_sensor"]
-        # permute tensor from [HEIGHT X WIDTH x CHANNEL] to [CHANNEL x HEIGHT X WIDTH]
-        rgb_obs = np.transpose(rgb_obs, (2, 0, 1))
-
-        obs_array = rgb_obs
-        n_channel += 3
-
-    if "depth_sensor" in observation_spaces:
-        depth_obs = obs["depth_sensor"]
-        # permute tensor from [HEIGHT X WIDTH x CHANNEL] to [CHANNEL x HEIGHT X WIDTH]
-        depth_obs = np.transpose(depth_obs, (2, 0, 1))
-        
-        if obs_array is not None:
-            obs_array = np.concatenate((obs_array, depth_obs), axis=0)
-        else:
-            obs_array = depth_obs
-        n_channel += 1
-
-    # check if observation is valid
-    if n_channel == 0:
-        print("Error: channel of observation input is 0")
-        exit()
-    
-    return obs_array
 
 def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     observations = []
@@ -806,190 +776,6 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
     
     return valid_episode, traj, env.optimal_action_seq
 
-def update_episode_data(env, 
-    obs, 
-    reward, 
-    done, 
-    goal_dimension, 
-    goal_coord_system,
-    observations,
-    actions,
-    rel_goals,
-    distance_to_goals,
-    goal_positions,
-    state_positions,
-    abs_goals,
-    dones,
-    rewards,
-    action=None,
-    qs=None,
-    q=None):
-
-    obs_array = extract_observation(obs, env.observation_space.spaces)
-    observations.append(obs_array) # (channel, height, width)
-
-    rel_goal = np.array(obs["pointgoal"], dtype="float32")
-    rel_goals.append(rel_goal) # (goal_dim,)
-
-    distance_to_goals.append(env.get_current_distance())  # float
-
-    goal_position = np.array(env.goal_position, dtype="float32")
-    goal_positions.append(goal_position) # (3,)
-
-    abs_goal = goal_position_to_abs_goal(goal_position,
-            goal_dimension, goal_coord_system) # (2,) or (3,)
-    abs_goals.append(abs_goal)
-
-    #state_position = np.array(env.agent.get_state().position, dtype="float32")
-    state_position = np.array(obs["state_sensor"], dtype="float32")
-    state_positions.append(state_position)  # (3,)
-
-    if action is not None:
-        actions.append(action)
-
-    dones.append(done)  # bool
-
-    rewards.append(reward) # float
-
-    if q is not None and qs is not None:
-        qs.append(q)
-
-
-def generate_one_episode_with_q(env, polar_action_space, episode, config):
-    goal_dimension = int(env.config.get("goal_dimension"))
-    goal_coord_system = env.config.get("goal_coord_system")
-
-    observations = []
-    actions = [] # polar action sequence, not cartesian action sequence
-    rel_goals = []
-    distance_to_goals = []
-    goal_positions = []
-    state_positions = []
-    abs_goals = []
-    dones = []
-    rewards = []
-    qs = []
-    traj = {}
-    
-    # reset the env
-    obs = env.reset(episode=episode, plan_shortest_path=False)
-    # add (s0, g0, d0, r0)
-    # d0=False, r0=0
-    update_episode_data(env=env,
-        obs=obs, 
-        reward=0.0, 
-        done=False, 
-        goal_dimension=goal_dimension, 
-        goal_coord_system=goal_coord_system,
-        observations=observations,
-        actions=actions,
-        rel_goals=rel_goals,
-        distance_to_goals=distance_to_goals,
-        goal_positions=goal_positions,
-        state_positions=state_positions,
-        abs_goals=abs_goals,
-        dones=dones,
-        rewards=rewards,
-        action=None,
-        qs=qs,
-        q=None)
-
-    
-    reach_q_flag = reached_goal(env, config)
-
-    while not reach_q_flag:
-        q, polar_optimal_action, cartesian_optimal_action_seq = compute_polar_q_current_state(env, polar_action_space)
-
-        # take one polar action step
-        obs, reward, done, info = step_cartesian_action_seq(env, cartesian_optimal_action_seq)
-
-        # add (s_i, a_{i-1}, g_i, d_i, r_i, q_{i-1})
-        update_episode_data(env=env,
-            obs=obs, 
-            reward=reward, 
-            done=done, 
-            goal_dimension=goal_dimension, 
-            goal_coord_system=goal_coord_system,
-            observations=observations,
-            actions=actions,
-            rel_goals=rel_goals,
-            distance_to_goals=distance_to_goals,
-            goal_positions=goal_positions,
-            state_positions=state_positions,
-            abs_goals=abs_goals,
-            dones=dones,
-            rewards=rewards,
-            action=polar_optimal_action,
-            qs=qs,
-            q=q)
-
-        reach_q_flag = reached_goal(env, config)
-    
-    assert actions[-1] != 0, "The original planned optimal polar action sequence should not end with STOP."
-    # print("========================")
-    # print(actions)
-    
-    # take one normal env step = STOP
-    obs, reward, done, info = env.step(0)
-    assert done==True and env.is_success(), "generated episode did not succeed"
-    # q = zeros because we have already reached the goal
-    q = np.zeros(polar_action_space.polar_action_number, dtype="float")
-    # append the first polar action STOP as the final step
-    # add (s_i, a_{i-1}=0, g_i, d_i, r_i, q_{i-1})
-    update_episode_data(env=env,
-        obs=obs, 
-        reward=reward, 
-        done=done, 
-        goal_dimension=goal_dimension, 
-        goal_coord_system=goal_coord_system,
-        observations=observations,
-        actions=actions,
-        rel_goals=rel_goals,
-        distance_to_goals=distance_to_goals,
-        goal_positions=goal_positions,
-        state_positions=state_positions,
-        abs_goals=abs_goals,
-        dones=dones,
-        rewards=rewards,
-        action=0,
-        qs=qs,
-        q=q)
-
-    # append the second polar action STOP (besides the one at the end of the optimal action sequence)
-    actions.append(0)
-    # append the second zeros to qs because we have already reached the goal
-    qs.append(np.zeros(polar_action_space.polar_action_number, dtype="float"))
-
-    # print("========================")
-    # print(len(observations)) # n+1
-    # print(len(rel_goals)) # n+1
-    # print(len(distance_to_goals)) # n+1
-    # print(len(goal_positions)) # n+1
-    # print(len(state_positions)) # n+1
-    # print(len(abs_goals)) # n+1
-    # print(len(dones)) # n+1
-    # print(len(rewards)) # n+1
-    # print(len(qs)) # n+1
-    # print(len(actions)) # n+1
-    # print("========================")
-    # print(actions)
-    # print("========================")
-    # print(qs)
-    # print("========================")
-    
-
-    traj["observations"] = observations
-    traj["actions"] = actions
-    traj["rel_goals"] = rel_goals
-    traj["distance_to_goals"] = distance_to_goals
-    traj["goal_positions"] = goal_positions
-    traj["state_positions"] = state_positions
-    traj["abs_goals"] = abs_goals
-    traj["dones"] = dones
-    traj["rewards"] = rewards
-    traj["qs"] = qs
-                
-    return traj, actions[:-1]
 
 def generate_train_behavior_data_with_q(yaml_name, behavior_dataset_path, 
     split_name):
@@ -1012,8 +798,7 @@ def generate_train_behavior_data_with_q(yaml_name, behavior_dataset_path,
         start_time = time.time()
 
         # generate one episode with q
-        traj, act_seq = generate_one_episode_with_q(env, polar_action_space, 
-            episode, config)
+        traj, act_seq = env.generate_one_episode_with_q(episode)
         
         print("Time per episode: %s"%(time.time()-start_time))
         
@@ -1033,7 +818,7 @@ def generate_train_behavior_data_with_q(yaml_name, behavior_dataset_path,
     print("Mean length: %d"%(np.mean(traj_lens, axis=0)))
     print("Max length: %d"%(np.max(traj_lens, axis=0)))
     print("Std of length: %f"%(np.std(traj_lens, axis=0)))
-    print("Number of actions: %s"%(str(polar_action_space.polar_action_number)))
+    print("Number of polar actions: %s"%(str(polar_action_space.polar_action_number)))
     print("==============================================")
 
     # close env
@@ -1080,21 +865,6 @@ def load_trajectories(behavior_dataset_path):
 
     return trajectories
 
-def create_envs(n, yaml_name):
-    n = 2
-    envs = []
-    for i in list(range(n)):
-        env = MultiNavEnv(config_file=yaml_name)
-        envs.append(env)
-        print("======> Created %d env"%(i+1))
-    
-    return envs
-
-# def close_envs(envs):
-#     for env in envs:
-#         env.close()
-
-
 # each parallel task creates one environment
 # episodes is a list of episode
 def parallel_generation_task(env, episodes):
@@ -1109,8 +879,7 @@ def parallel_generation_task(env, episodes):
     trajectories = []
     for episode in episodes:
         # generate one episode with q
-        traj, act_seq = generate_one_episode_with_q(env, polar_action_space, 
-            episode, config)
+        traj, act_seq = env.generate_one_episode_with_q(episode)
         
         trajectories.append(traj)
 
@@ -1119,24 +888,28 @@ def parallel_generation_task(env, episodes):
     return trajectories
 
 def generate_train_behavior_data_with_q_parallel(behavior_dataset_path, 
-    split_name):
-    # process number
-    n_process = mp.cpu_count()  # 20
-    # assign training episode to each process
-    total_train_episodes = load_behavior_dataset_meta(behavior_dataset_path, split_name)
-    total_train_episodes = total_train_episodes[:20]
-    # episode_groups must be a list
-    episode_groups = chunks(lst=total_train_episodes, n=n_process)
+    split_name, yaml_name = "imitation_learning_sqn.yaml"):
+    # # process number
+    # n_process = mp.cpu_count()  # 20
+    # # assign training episode to each process
+    # total_train_episodes = load_behavior_dataset_meta(behavior_dataset_path, split_name)
+    # total_train_episodes = total_train_episodes[:20]
+    # # episode_groups must be a list
+    # episode_groups = chunks(lst=total_train_episodes, n=n_process)
     
-    # create a list of envs
-    # fixed config file name
-    yaml_name = "imitation_learning_sqn.yaml"
-    envs = create_envs(n_process, yaml_name)
+    # create vec envs and assign episodes to it
+    config_file = os.path.join(config_path, yaml_name)
+    config = parse_config(config_file)
+    envs = construct_envs_based_on_dataset(
+                config=config,
+                split_name=split_name,
+                auto_reset_done=True,
+                workers_ignore_signals=is_slurm_batch_job()
+            )
+    
+    print("========> Created %d envs"%(envs.num_envs))
     print("Done")
     exit()
-    
-
-    print("========> Created %d envs"%(len(envs)))
 
     # print(episode_groups)
     # print(len(episode_groups))
@@ -1258,67 +1031,7 @@ def generate_train_behavior_data(yaml_name, behavior_dataset_path,
 
     env.close()
 
-# borrowed from class PointGoal
-# source_rotation: quartenion representing a 3D rotation
-# goal_coord_system: ["polar", "cartesian"]
-# goal_dimension: 2, 3
-def compute_pointgoal(source_position, source_rotation, goal_position,
-    goal_dimension, goal_coord_system):
-    # use source local coordinate system as global coordinate system
-    # step 1: align origin 
-    direction_vector = goal_position - source_position
-    # step 2: align axis 
-    direction_vector_agent = quaternion_rotate_vector(
-        source_rotation.inverse(), direction_vector
-    )
 
-    if goal_coord_system == "polar":
-        # 2D movement: r, -phi
-        # -phi: angle relative to positive z axis (i.e reverse to robot forward direction)
-        # -phi: azimuth, around y axis
-        if goal_dimension == 2:
-            # -z, x --> x, y --> (r, -\phi)
-            rho, phi = cartesian_to_polar(
-                -direction_vector_agent[2], direction_vector_agent[0]
-            )
-            return np.array([rho, -phi], dtype=np.float32)
-        #  3D movement: r, -phi, theta 
-        #  -phi: azimuth, around y axis
-        #  theta: around z axis   
-        else:
-            # -z, x --> x, y --> -\phi
-            _, phi = cartesian_to_polar(
-                -direction_vector_agent[2], direction_vector_agent[0]
-            )
-            theta = np.arccos(
-                direction_vector_agent[1]
-                / np.linalg.norm(direction_vector_agent)
-            )
-            # r = l2 norm
-            rho = np.linalg.norm(direction_vector_agent)
-
-            return np.array([rho, -phi, theta], dtype=np.float32)
-    else:
-        # 2D movement: [-z,x]
-        # reverse the direction of z axis towards robot forward direction
-        if goal_dimension == 2:
-            return np.array(
-                [-direction_vector_agent[2], direction_vector_agent[0]],
-                dtype=np.float32,
-            )
-        # 3D movement: [x,y,z]    
-        # do not reverse the direction of z axis
-        else:
-            return np.array(direction_vector_agent, dtype=np.float32)
-
-# return abs_goal numpy: (2,), (3,)
-def goal_position_to_abs_goal(goal_position, goal_dimension, goal_coord_system):
-    goal_world_position = np.array(goal_position, dtype=np.float32)
-    return compute_pointgoal(source_position=np.array([0,0,0], dtype="float32"), 
-        source_rotation=np.quaternion(1,0,0,0), 
-        goal_position=goal_world_position,
-        goal_dimension=goal_dimension, 
-        goal_coord_system=goal_coord_system)
 
 # used when generate augmented episodes
 def assign_episode_to_scene_behavior_dataset(episodes):
@@ -1640,7 +1353,7 @@ def get_geodesic_q_along_optimal_path_from_s0(env, episode, config, episode_inde
             obs, reward, done, info = env.step(action)
 
             # compute q value
-            q = get_geodesic_distance_based_q_current_state(env)
+            q = env.get_geodesic_distance_based_q_current_state()
 
             current_q_values.append(q)
 
@@ -1859,13 +1572,13 @@ if __name__ == "__main__":
     #      split_name="train_aug")
     
     # ====== regenerate train episodes, others kept same =======
-    # generate_train_behavior_data_with_q(yaml_name="imitation_learning_sqn.yaml", 
-    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q",
-    #      split_name="train")
-    
-    generate_train_behavior_data_with_q_parallel(
+    generate_train_behavior_data_with_q(yaml_name="imitation_learning_sqn.yaml", 
          behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q",
          split_name="train")
+    
+    # generate_train_behavior_data_with_q_parallel(
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q",
+    #      split_name="train")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(

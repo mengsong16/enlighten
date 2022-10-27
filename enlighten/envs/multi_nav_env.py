@@ -24,6 +24,7 @@ from enlighten.datasets.pointnav_dataset import NavigationEpisode, NavigationGoa
 from enlighten.datasets.dataset import EpisodeIterator
 from enlighten.datasets.common import PolarActionSpace
 from enlighten.datasets.common import update_episode_data
+from enlighten.datasets.common import load_behavior_dataset_meta
 
 # across scene environments
 class MultiNavEnv(NavEnv):
@@ -665,11 +666,18 @@ def test_env(config_file="imitation_learning_rnn_bc.yaml"):
         print("===============================")
 
 def test_polar_episode_generation(config_file):
-    env = MultiNavEnv(config_file=config_file)
-    for i in list(range(2)):
-        traj, act_seq = env.generate_one_episode_with_q(episode=None)
-        print("Generated trajectory length: %d"%(len(traj)))
+    config = parse_config(os.path.join(config_path, config_file))
 
+    episodes = load_behavior_dataset_meta(
+                behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q", 
+                split_name="same_start_goal_val_mini") 
+
+    env = MultiNavEnv(config_file=config_file)
+    for episode in episodes[:1]:
+        traj, act_seq = env.generate_one_episode_with_q(episode=episode)
+        print("Generated trajectory length: %d"%(len(act_seq)+1))
+
+    env.close()
 
 if __name__ == "__main__":    
     #test_env(config_file="imitation_learning_dqn.yaml")

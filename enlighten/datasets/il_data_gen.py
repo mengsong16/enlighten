@@ -1080,15 +1080,29 @@ def load_trajectories(behavior_dataset_path):
 
     return trajectories
 
+def create_envs(n, yaml_name):
+    n = 2
+    envs = []
+    for i in list(range(n)):
+        env = MultiNavEnv(config_file=yaml_name)
+        envs.append(env)
+        print("======> Created %d env"%(i+1))
+    
+    return envs
+
+# def close_envs(envs):
+#     for env in envs:
+#         env.close()
+
 
 # each parallel task creates one environment
 # episodes is a list of episode
-def parallel_generation_task(episodes):
+def parallel_generation_task(env, episodes):
 
     # fixed config file name
     yaml_name = "imitation_learning_sqn.yaml"
 
-    env = MultiNavEnv(config_file=yaml_name)
+    
     config = parse_config(os.path.join(config_path, yaml_name))
     polar_action_space = PolarActionSpace(env, int(config.get("rotate_resolution")))
 
@@ -1113,10 +1127,23 @@ def generate_train_behavior_data_with_q_parallel(behavior_dataset_path,
     total_train_episodes = total_train_episodes[:20]
     # episode_groups must be a list
     episode_groups = chunks(lst=total_train_episodes, n=n_process)
+    
+    # create a list of envs
+    # fixed config file name
+    yaml_name = "imitation_learning_sqn.yaml"
+    envs = create_envs(n_process, yaml_name)
+    print("Done")
+    exit()
+    
+
+    print("========> Created %d envs"%(len(envs)))
 
     # print(episode_groups)
     # print(len(episode_groups))
     # exit()
+
+    # create function arguments
+    fun_args = zip(envs, episode_groups)
     
     #total_trajectories = []
     # start n processes (# cpu cores)
@@ -1125,7 +1152,7 @@ def generate_train_behavior_data_with_q_parallel(behavior_dataset_path,
         # call the same function with different data in parallel asynchronously
         # can only accept a list of single argument
 
-        for i, trajectories in enumerate(pool.imap(parallel_generation_task, episode_groups)):
+        for i, trajectories in enumerate(pool.starmap(parallel_generation_task, fun_args)):
         #for trajectories in pool.map_async(parallel_generation_task, episode_groups):
             # print("---------------------------------------------------")
             # print("Process %d generated %d trajectories"%(i+1, len(trajectories)))

@@ -11,9 +11,9 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_p
 
 
 # experiments
-algorithm_name: "sqn"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_shaped_reward"
-log_to_wandb: true #true
+algorithm_name: "mlp_sqn"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_polar_q"
+log_to_wandb: true
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -27,7 +27,7 @@ eval_video_option: [] #["disk", "tensorboard"]
 # robot
 forward_resolution: 0.25 # meter
 rotate_resolution: 10 # degree
-action_number: 4
+action_number: 4  # cartesian action space
 
 # observation space (env)
 state_sensor: true
@@ -78,7 +78,7 @@ seed: 1
 gpu_id: 1 #1
 
 # vector env (for evaluation only) train 10, evaluate 14
-num_environments: 14 #10 #14 #8 #14 #4 #2
+num_environments: 10 #10 #14 #8 #14 #4 #2
 
 # q network
 hidden_size: 512 #1024
@@ -93,22 +93,25 @@ state_form: "observation" # ["state", "observation"]
 batch_mode: "transition"
 
 # training
-reward_type: "minus_one_zero" #["original", "minus_one_zero"]
-negative_reward_scale: 1.0e-4 # default is 1
-positive_reward: 2.5 # dafault is 0
 batch_size: 512 #256
 optimizer: "AdamW" #["AdamW", "Adam"]
 learning_rate: 1.0e-4 #1.0e-3 #5.0e-4
 weight_decay: 1.0e-4
 max_epochs: 400
 gamma: 0.99
+#---------------
+reward_type: "minus_one_zero" #["original", "minus_one_zero"]
+negative_reward_scale: 1 #1.0e-4 # default is 1
+positive_reward: 0 #2.5 # dafault is 0
+action_type: "polar" #["cartesian", "polar"]
+#---------------
 
 # evaluate during training
 eval_during_training: true #false
-eval_every_epochs: 10  
+eval_every_epochs: 10 #10  
 eval_during_training_sample: false # dummy
 eval_during_training_splits: ["same_start_goal_val_mini"] #["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
-eval_use_vector_envs: true
+eval_use_vector_envs: true #true
 
 # save checkpoint
 save_every_epochs: 10

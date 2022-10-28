@@ -69,6 +69,7 @@ except ImportError:
 
 
 STEP_COMMAND = "step"
+POLAR_STEP_COMMAND = "step_one_polar_action"
 RESET_COMMAND = "reset"
 RENDER_COMMAND = "render"
 CLOSE_COMMAND = "close"
@@ -284,7 +285,25 @@ class VectorEnv:
                         observations, reward, done, info = env.step(**data)
                         # if done, automatically reset the environment
                         if auto_reset_done and done:
-                            # no optimal action sequence is planned
+                            # no optimal action sequence is planned because we do not pass the parameter to reset 
+                            observations = env.reset()
+                        with profiling_utils.RangeContext(
+                            "worker write after step"
+                        ):
+                            connection_write_fn(
+                                (observations, reward, done, info)
+                            )
+                    else:
+                        raise NotImplementedError
+                elif command == POLAR_STEP_COMMAND:
+                    # check wrapped env types
+                    # different step methods for enlighten.NavEnv and garage.GymEnv
+                    if isinstance(env, (NavEnv, MultiNavEnv, gym.Env)):
+                        # NavEnv or MultiNavEnv should have the same iterface for reset and step
+                        observations, reward, done, info = env.step_one_polar_action(**data)
+                        # if done, automatically reset the environment
+                        if auto_reset_done and done:
+                            # no optimal action sequence is planned because we do not pass the parameter to reset 
                             observations = env.reset()
                         with profiling_utils.RangeContext(
                             "worker write after step"
@@ -532,6 +551,25 @@ class VectorEnv:
             #print(action["action"])
             print("Error: Env %d was incorrectly paused before step is called"%(index_env))
             
+    def async_polar_step_at(
+        self, index_env: int, action: Union[int, str, Dict[str, Any]]
+    ) -> None:
+        # Backward compatibility
+        if isinstance(action, (int, np.integer, str)):
+            #print("---------------inside-------------------------------------")
+            # never use this branch, normal format is {"action": action index}
+            action = {"polar_action": {"polar_action": action}}
+
+        self._warn_cuda_tensors(action)
+        try:
+            #print(action)
+            #print('----------------------------------')
+            self._connection_write_fns[index_env]((POLAR_STEP_COMMAND, action))
+        except:
+            #print(index_env)
+            #print(action["action"])
+            print("Error: Env %d was incorrectly paused before step is called"%(index_env))
+            
 
     @profiling_utils.RangeContext("wait_step_at")
     def wait_step_at(self, index_env: int) -> Any:
@@ -560,6 +598,30 @@ class VectorEnv:
 
         for index_env, act in enumerate(data):
             self.async_step_at(index_env, act)
+    
+    def polar_step_at(self, index_env: int, action: Union[int, str, Dict[str, Any]]):
+        r"""Step in the index_env environment in the vector.
+
+        :param index_env: index of the environment to be stepped into
+        :param action: action to be taken
+        :return: list containing the output of step method of indexed env.
+        """
+        self.async_polar_step_at(index_env, action)
+        #print('-------after async step at--------')
+        r = self.wait_step_at(index_env)
+        #print('-------after wait step at--------')
+        return r
+
+    def async_polar_step(self, data: List[Union[int, str, Dict[str, Any]]]) -> None:
+        r"""Asynchronously step in the environments.
+
+        :param data: list of size _num_envs containing keyword arguments to
+            pass to :ref:`step` method for each Environment. For example,
+            :py:`[{"action": "TURN_LEFT", "action_args": {...}}, ...]`.
+        """
+
+        for index_env, act in enumerate(data):
+            self.async_polar_step_at(index_env, act)
 
     @profiling_utils.RangeContext("wait_step")
     def wait_step(self) -> List[Any]:
@@ -579,6 +641,25 @@ class VectorEnv:
         """
         
         self.async_step(data)
+        
+        return self.wait_step()
+    
+    # note that action must be in the format of {"action": int}
+    def polar_step(self, data: List[Union[int, str, Dict[str, Any]]]) -> List[Any]:
+        r"""Perform actions in the vectorized environments.
+
+        :param data: list of size _num_envs containing keyword arguments to
+            pass to :ref:`step` method for each Environment. For example,
+            :py:`[{"action": "TURN_LEFT", "action_args": {...}}, ...]`.
+        :return: list of outputs from the step method of envs.
+        """
+        
+        # print("====================================")
+        # print(data)
+
+        self.async_polar_step(data)
+        # print("====================================")
+        # exit()
         
         return self.wait_step()
 

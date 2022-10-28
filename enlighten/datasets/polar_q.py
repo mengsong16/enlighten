@@ -90,7 +90,7 @@ def check_optimal_path_polar_q(env, episode):
     
     print("[Shortest path] Optimal path length: %f"%shortest_path_length)
 
-def test_polar_q_planner(config_file="imitation_learning_sqn.yaml"):
+def test_polar_q_planner(config_file="imitation_learning_mlp_sqn.yaml"):
     env = MultiNavEnv(config_file=config_file)
 
     config = parse_config(os.path.join(config_path, config_file))
@@ -105,7 +105,7 @@ def test_polar_q_planner(config_file="imitation_learning_sqn.yaml"):
         #if i >= 3:
         break
 
-def test_check_optimal_path_polar_q(config_file="imitation_learning_sqn.yaml"):
+def test_check_optimal_path_polar_q(config_file="imitation_learning_mlp_sqn.yaml"):
     env = MultiNavEnv(config_file=config_file)
 
     config = parse_config(os.path.join(config_path, config_file))
@@ -120,7 +120,7 @@ def test_check_optimal_path_polar_q(config_file="imitation_learning_sqn.yaml"):
         #if i >= 3:
         break
 
-def compare_greedy_planner_polar_q_planner(config_file="imitation_learning_sqn.yaml"):
+def compare_greedy_planner_polar_q_planner(config_file="imitation_learning_mlp_sqn.yaml"):
     env = MultiNavEnv(config_file=config_file)
 
     config = parse_config(os.path.join(config_path, config_file))
@@ -136,7 +136,7 @@ def compare_greedy_planner_polar_q_planner(config_file="imitation_learning_sqn.y
         #if i >= 3:
         break
 
-def test_polar_action_space(config_file="imitation_learning_sqn.yaml"):
+def test_polar_action_space(config_file="imitation_learning_mlp_sqn.yaml"):
     env = MultiNavEnv(config_file=config_file)
 
     config = parse_config(os.path.join(config_path, config_file))
@@ -236,7 +236,7 @@ def check_optimal_path_geodesic_q(env, episode):
 
     print("="*20)
 
-def test_check_optimal_path_geodesic_q(config_file="imitation_learning_sqn.yaml"):
+def test_check_optimal_path_geodesic_q(config_file="imitation_learning_mlp_sqn.yaml"):
     env = MultiNavEnv(config_file=config_file)
 
     config = parse_config(os.path.join(config_path, config_file))

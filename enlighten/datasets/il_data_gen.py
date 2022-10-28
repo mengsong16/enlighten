@@ -866,7 +866,7 @@ def load_trajectories(behavior_dataset_path):
 # episodes is a list of episode
 def parallel_generation_task(episodes):
     # fixed config file name
-    config_file_name = "imitation_learning_sqn.yaml"
+    config_file_name = "imitation_learning_mlp_sqn.yaml"
     env = MultiNavEnv(config_file=config_file_name)
     
     trajectories = []
@@ -882,6 +882,9 @@ def parallel_generation_task(episodes):
 
 def generate_train_behavior_data_with_q_parallel(behavior_dataset_path, 
     split_name):
+    
+    start_time = time.time()
+
     # process number
     n_process = mp.cpu_count()  # 20
     # assign training episode to each process
@@ -905,7 +908,9 @@ def generate_train_behavior_data_with_q_parallel(behavior_dataset_path,
             # save trajectories
             with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, i+1)), 'wb') as handle:
                 pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
-       
+    
+    gen_time = time.time() - start_time
+
     # verify by loading the saved trajectories
     total_trajectories = load_trajectories(behavior_dataset_path)
     
@@ -922,6 +927,7 @@ def generate_train_behavior_data_with_q_parallel(behavior_dataset_path,
     print("Mean length: %d"%(np.mean(traj_lens, axis=0)))
     print("Max length: %d"%(np.max(traj_lens, axis=0)))
     print("Std of length: %f"%(np.std(traj_lens, axis=0)))
+    print("Time: %s"%(gen_time))
     print("==============================================")
 
     print("Behavior training dataset %s generation Done: %s"%(split_name, behavior_dataset_path))
@@ -1542,7 +1548,7 @@ if __name__ == "__main__":
     #      split_name="train_aug")
     
     # ====== regenerate train episodes, others kept same =======
-    # generate_train_behavior_data_with_q(yaml_name="imitation_learning_sqn.yaml", 
+    # generate_train_behavior_data_with_q(yaml_name="imitation_learning_mlp_sqn.yaml", 
     #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q",
     #      split_name="train")
     

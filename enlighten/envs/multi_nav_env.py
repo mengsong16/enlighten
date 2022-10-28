@@ -280,7 +280,7 @@ class MultiNavEnv(NavEnv):
         return default_obs
 
 
-    # action is an integer
+    # action is an integer in cartesian action space
     def step(self, action):
         if action is self.NONE_ACTION:
             return self.get_default_observation(), None, True, {}
@@ -371,7 +371,7 @@ class MultiNavEnv(NavEnv):
         q = []
         current_state = self.get_agent_state()
 
-        # q["stop"], always not the max q
+        # q["stop"]
         q.append(self.get_geodesic_distance_based_q_current_state())
 
         
@@ -422,9 +422,17 @@ class MultiNavEnv(NavEnv):
         polar_optimal_action_list = list(np.argwhere(q == np.amax(q)).squeeze(axis=1))
 
         if len(polar_optimal_action_list) > 1:
-            print("More than one polar optimal action has been found")
+            print("-------------------------------------------------")
+            print("More than one polar optimal actions have been found: %s"%(str(polar_optimal_action_list)))
+            for aa in polar_optimal_action_list:
+                if aa != 0: # find the first action which is not "stop"
+                    polar_optimal_action = aa
+                    print("Choose action %d"%(polar_optimal_action))
+                    break
+            print("-------------------------------------------------")
+        else:
+            polar_optimal_action = polar_optimal_action_list[0]
         
-        polar_optimal_action = polar_optimal_action_list[0]
         cartesian_optimal_action_seq = self.polar_action_space.polar_action_to_cartesian_actions(polar_optimal_action)
 
         return q, polar_optimal_action, cartesian_optimal_action_seq
@@ -437,7 +445,7 @@ class MultiNavEnv(NavEnv):
     
     def step_one_polar_action(self, polar_action):
         cartesian_action_seq = self.polar_action_space.polar_action_to_cartesian_actions(polar_action)
-        self.step_cartesian_action_seq(cartesian_action_seq)
+        return self.step_cartesian_action_seq(cartesian_action_seq)
     
     def polar_q_planner(self, episode):
         # reset the env
@@ -681,4 +689,4 @@ def test_polar_episode_generation(config_file):
 
 if __name__ == "__main__":    
     #test_env(config_file="imitation_learning_dqn.yaml")
-    test_polar_episode_generation(config_file="imitation_learning_sqn.yaml")
+    test_polar_episode_generation(config_file="imitation_learning_mlp_sqn.yaml")

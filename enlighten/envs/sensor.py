@@ -263,7 +263,7 @@ class StateSensor(HabitatSensor):
         )
 
         if self._state_coord_system == "polar":
-            # 2D movement: r, -phi
+            # 2D movement: r=rho, -phi
             # -phi: angle relative to positive z axis (i.e reverse to robot forward direction)
             # -phi: azimuth, around y axis
             if self._state_dimension == 2:
@@ -271,7 +271,7 @@ class StateSensor(HabitatSensor):
                     -direction_vector[2], direction_vector[0]
                 )
                 return np.array([rho, -phi], dtype=np.float32)
-            #  3D movement: r, -phi, theta 
+            #  3D movement: r=rho, -phi, theta 
             #  -phi: azimuth, around y axis
             #  theta: around z axis   
             else:

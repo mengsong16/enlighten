@@ -102,7 +102,7 @@ use_augment_train_data: false
 
 # evaluate during training
 eval_during_training: false
-eval_every_epochs: 10 #2 
+eval_every_epochs: 10 #10 #2 
 eval_during_training_sample: true
 eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
 eval_use_vector_envs: true

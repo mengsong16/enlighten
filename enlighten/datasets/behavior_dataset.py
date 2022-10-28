@@ -47,7 +47,7 @@ class BehaviorDataset:
             print("positive reward =====> %f"%(self.positive_reward))
         
         # gamma
-        self.gamma = float(self.config.get("gamma"))
+        self.gamma = float(self.config.get("gamma", 0.99))
 
         # augment transition dataset with relabeled actions
         self.relabel_actions = False
@@ -170,7 +170,7 @@ class BehaviorDataset:
     def generate_transition_index(self):
         if self.relabel_actions: # ours
             self.generate_relabel_action_transition_index()
-        else: # dqn, sqn
+        else: # dqn, mlp_sqn
             self.generate_original_transition_index()
 
         self.shuffle_transition_dataset()
@@ -346,7 +346,8 @@ class BehaviorDataset:
         rel_goal_space_shape = self.trajectories[0]['rel_goals'][0].shape
         abs_goal_space_shape = self.trajectories[0]['abs_goals'][0].shape
         state_space_shape = self.trajectories[0]['state_positions'][0].shape
-        action_number = self.trajectories[0]['steps_to_goal'][0].shape[0]
+        # the number of actions in the cartesian or polar action space
+        action_number = self.trajectories[0]['qs'][0].shape[0]
 
         # print(observation_space_shape)
         # print(rel_goal_space_shape)
@@ -377,7 +378,7 @@ class BehaviorDataset:
         d = torch.zeros(
             real_batch_size, dtype=torch.bool, device=self.device)
         
-        # [B,4]
+        # [B,37]
         q = torch.zeros(
             real_batch_size, action_number, dtype=torch.float, device=self.device)
 
@@ -403,29 +404,15 @@ class BehaviorDataset:
             else:
                 print("Error: undefined reward type: %s"%(self.reward_type))
                 exit()
+             
             
-            steps_to_goal = self.trajectories[traj_index]['steps_to_goal'][step_index]
-            #print(steps_to_goal)
-            qs = np.zeros(steps_to_goal.shape, dtype="float") 
-            for a_index in list(range(action_number)):
-                # print(steps_to_goal[a_index])
-                # exit()
-
-                # must make sure action_seq_length is int
-                qs[a_index] = get_optimal_q(action_seq_length=int(steps_to_goal[a_index]), 
-                    gamma=self.gamma, 
-                    positive_reward=self.positive_reward, 
-                    negative_reward_scale=self.negative_reward_scale)
+            q[batch_index] = torch.tensor(self.trajectories[traj_index]['qs'][step_index], dtype=torch.float, device=self.device)
 
             
-            # numpy array to tensor
-            q[batch_index] = torch.tensor(qs, dtype=torch.float, device=self.device)
-
-            
-            # print(q[batch_index])
+            #print(q[batch_index].size())
             # print(steps_to_goal)
             # print(a[batch_index])
-            # print("------------------------")
+            #print("------------------------")
 
         if self.goal_form == "rel_goal":
             output_goal = rel_g
@@ -872,7 +859,7 @@ class BehaviorDataset:
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
-    config_file = os.path.join(config_path, "imitation_learning_sqn.yaml")
+    config_file = os.path.join(config_path, "imitation_learning_mlp_sqn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
 
@@ -892,7 +879,7 @@ if __name__ == "__main__":
         #exit()
         #print(dataset.trajectories[0]["dones"][-1])
         #print(dataset.trajectories[0]["rewards"][-1])
-        #print(o.size())
+        #print(q.size())
         #break
         # print(g.size())
         # print(a.size())
@@ -904,6 +891,11 @@ if __name__ == "__main__":
         #print("Trajectory index: %d"%dataset.trajectory_index)
         print("=========================")
 
+    
     print("Batch size: %d"%(batch_size))
+    print("Total number of trajectories: %d"%(dataset.num_trajectories))
+    print("Total number of steps: %d"%(dataset.num_steps))
+    print("Total number of transitions: %d"%(len(dataset.transition_index_list)))
     print("Total number of transition batches: %d"%transition_batch_num)
     #print("Total number of trajectory batches: %d"%trajectory_batch_num)
+    print("=========================")

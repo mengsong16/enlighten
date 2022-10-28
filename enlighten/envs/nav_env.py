@@ -705,7 +705,7 @@ class NavEnv(gym.Env):
         average_predicted_depth = np.mean(predicted_depth_map)
         return average_predicted_depth
 
-    # action is an integer
+    # action is an integer in cartesian action space
     def step(self, action):
         # step simulator, transit to s'
         # action index to action name

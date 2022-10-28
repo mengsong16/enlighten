@@ -66,6 +66,11 @@ class AcrossEnvBaseEvaluator:
 
         # get name of evaluation folder
         self.experiment_name_to_load = self.config.get("eval_experiment_folder")
+
+        # action space
+        self.action_type = self.config.get("action_type", "cartesian")
+        print("=========> Action type: %s"%(self.action_type))
+        
           
         # load episodes of behavior datasets for evaluation
         self.eval_splits = eval_splits
@@ -149,38 +154,47 @@ class AcrossEnvBaseEvaluator:
                 device=self.device,
                 obs_transforms=self.obs_transforms,
                 checkpoint_file=checkpoint_file)
+            # return here because we already load the model and move it to the correct device
             return model
         elif self.algorithm_name == "mlp_bc":
             model = MLPPolicy(
-            obs_channel = get_obs_channel_num(self.config),
-            obs_width = int(self.config.get("image_width")), 
-            obs_height = int(self.config.get("image_height")),
-            goal_dim=int(self.config.get("goal_dimension")),
-            goal_form=self.config.get("goal_form"),
-            act_num=int(self.config.get("action_number")),
-            obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
-            goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
-            hidden_size=int(self.config.get('hidden_size')),
-            hidden_layer=int(self.config.get('hidden_layer')),
-            state_form=self.config.get('state_form'),
-            state_dimension=int(self.config.get('state_dimension')),
-            temperature=float(self.config.get('temperature', 1.0))
-        )
-        elif "dqn" in self.algorithm_name or "sqn" in self.algorithm_name:
+                obs_channel = get_obs_channel_num(self.config),
+                obs_width = int(self.config.get("image_width")), 
+                obs_height = int(self.config.get("image_height")),
+                goal_dim=int(self.config.get("goal_dimension")),
+                goal_form=self.config.get("goal_form"),
+                act_num=int(self.config.get("action_number")),
+                obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+                goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+                hidden_size=int(self.config.get('hidden_size')),
+                hidden_layer=int(self.config.get('hidden_layer')),
+                state_form=self.config.get('state_form'),
+                state_dimension=int(self.config.get('state_dimension')),
+                temperature=float(self.config.get('temperature', 1.0))
+            )
+        elif "dqn" in self.algorithm_name or "mlp_sqn" in self.algorithm_name:
+             # action type
+            self.action_type = self.config.get("action_type", "cartesian")
+            print("=========> Action type: %s"%(self.action_type))
+            if self.action_type == "polar":
+                self.action_number = 37
+            else:
+                self.action_number = int(self.config.get("action_number"))
+
             model = QNetwork(
-            obs_channel = get_obs_channel_num(self.config),
-            obs_width = int(self.config.get("image_width")), 
-            obs_height = int(self.config.get("image_height")),
-            goal_dim=int(self.config.get("goal_dimension")),
-            goal_form=self.config.get("goal_form"),
-            act_num=int(self.config.get("action_number")),
-            obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
-            goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
-            hidden_size=int(self.config.get('hidden_size')),
-            hidden_layer=int(self.config.get('hidden_layer')),
-            state_form=self.config.get('state_form'),
-            state_dimension=int(self.config.get('state_dimension'))
-        )
+                obs_channel = get_obs_channel_num(self.config),
+                obs_width = int(self.config.get("image_width")), 
+                obs_height = int(self.config.get("image_height")),
+                goal_dim=int(self.config.get("goal_dimension")),
+                goal_form=self.config.get("goal_form"),
+                act_num=self.action_number,
+                obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
+                goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
+                hidden_size=int(self.config.get('hidden_size')),
+                hidden_layer=int(self.config.get('hidden_layer')),
+                state_form=self.config.get('state_form'),
+                state_dimension=int(self.config.get('state_dimension'))
+            )
         else:
             print("Error: undefined algorithm name: %s"%(self.algorithm_name))
             exit()

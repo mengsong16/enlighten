@@ -84,9 +84,9 @@ def evaluate_one_episode_dt(
     # a0 is 0, shape (1,1)
     actions = torch.zeros((1, 1), device=device, dtype=torch.long)
 
-    print("Scene id: %s"%(episode.scene_id))
-    print("Goal position: %s"%(env.goal_position))
-    print("Start position: %s"%(env.start_position))
+    # print("Scene id: %s"%(episode.scene_id))
+    # print("Goal position: %s"%(env.goal_position))
+    # print("Start position: %s"%(env.start_position))
 
     # change shape and convert to torch tensor
     # (C,H,W) --> (1,1,C,H,W)
@@ -201,9 +201,9 @@ def evaluate_one_episode_rnn(
     # a0 is -1, shape (1)
     actions = torch.ones((1), device=device, dtype=torch.long) * (-1)
 
-    print("Scene id: %s"%(episode.scene_id))
-    print("Goal position: %s"%(env.goal_position)) # (3,)
-    print("Start position: %s"%(env.start_position)) # (3,)
+    # print("Scene id: %s"%(episode.scene_id))
+    # print("Goal position: %s"%(env.goal_position)) # (3,)
+    # print("Start position: %s"%(env.start_position)) # (3,)
 
     # change shape and convert to torch tensor
     # o: (C,H,W) --> (1,C,H,W)
@@ -275,7 +275,7 @@ def evaluate_one_episode_rnn(
 
     return episode_length, success, spl, real_act_seqs #, softspl
 
-# evaluate mlp policy or q function (dqn, sqn) for one episode
+# evaluate mlp policy or mlp q function (dqn, mlp_sqn, mlp_bc) for one episode
 def evaluate_one_episode_mlp_q(
         episode,
         env,
@@ -286,7 +286,8 @@ def evaluate_one_episode_mlp_q(
         device,
         goal_dimension, 
         goal_coord_system,
-        q_learning
+        q_learning,
+        action_type
     ):
 
     # turn model into eval mode and move to desired device
@@ -308,9 +309,9 @@ def evaluate_one_episode_mlp_q(
     # a0 is -1, shape (1)
     actions = torch.ones((1), device=device, dtype=torch.long) * (-1)
 
-    print("Scene id: %s"%(episode.scene_id))
-    print("Goal position: %s"%(env.goal_position)) # (3,)
-    print("Start position: %s"%(env.start_position)) # (3,)
+    # print("Scene id: %s"%(episode.scene_id))
+    # print("Goal position: %s"%(env.goal_position)) # (3,)
+    # print("Start position: %s"%(env.start_position)) # (3,)
 
     # change shape and convert to torch tensor
     # o: (C,H,W) --> (1,C,H,W)
@@ -351,7 +352,13 @@ def evaluate_one_episode_mlp_q(
         real_act_seqs.append(actions_cpu)
         
         # step the env according to the action, get new observation and goal
-        obs, _, done, _ = env.step(actions_cpu)
+        if action_type == "cartesian":
+            obs, _, done, _ = env.step(actions_cpu)
+        elif action_type == "polar":
+            obs, _, done, _ = env.step_one_polar_action(actions_cpu)
+        else:
+            print("Error: undefined action type: %s"%(action_type))
+
         obs_array = extract_observation(obs, env.observation_space.spaces)
         if goal_form == "rel_goal":
             goal = np.array(obs["pointgoal"], dtype="float32")
@@ -405,9 +412,9 @@ def evaluate_one_episode_ppo(
     recurrent_hidden_states, not_done_masks, prev_actions = init_ppo_inputs(model=model, config=config, 
         num_envs=1, device=device)
         
-    print("Scene id: %s"%(episode.scene_id))
-    print("Goal position: %s"%(env.goal_position))
-    print("Start position: %s"%(env.start_position))
+    # print("Scene id: %s"%(episode.scene_id))
+    # print("Goal position: %s"%(env.goal_position))
+    # print("Start position: %s"%(env.start_position))
     
     real_act_seqs = []
     # run under policy for max_ep_len step or done
@@ -462,19 +469,19 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
         #soft_spl_array = MeasureHistory("soft_spl")
 
         for i, episode in enumerate(episodes):
-            print('Episode: {}'.format(i+1))
+            #print('Episode: {}'.format(i+1))
             
             if self.algorithm_name == "dt":
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_dt(
-                    episode,
-                    self.env,
-                    model,
-                    self.goal_form,
-                    sample,
-                    self.max_ep_len,
-                    self.device,
-                    int(self.config.get("goal_dimension")), 
-                    self.config.get("goal_coord_system"))
+                episode,
+                self.env,
+                model,
+                self.goal_form,
+                sample,
+                self.max_ep_len,
+                self.device,
+                int(self.config.get("goal_dimension")), 
+                self.config.get("goal_coord_system"))
             elif self.algorithm_name == "rnn_bc":
                 rnn_hidden_size = int(self.config.get("rnn_hidden_size"))
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_rnn(
@@ -490,50 +497,40 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 self.config.get("goal_coord_system"))
             elif self.algorithm_name == "ppo":
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_ppo(
-                    episode,
-                    self.env,
-                    model,
-                    self.obs_transforms,
-                    self.max_ep_len,
-                    self.device,
-                    self.cache,
-                    self.config)
+                episode,
+                self.env,
+                model,
+                self.obs_transforms,
+                self.max_ep_len,
+                self.device,
+                self.cache,
+                self.config)
             elif self.algorithm_name == "mlp_bc":
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
-                    episode,
-                    self.env,
-                    model,
-                    self.goal_form,
-                    sample,
-                    self.max_ep_len,
-                    self.device,
-                    int(self.config.get("goal_dimension")), 
-                    self.config.get("goal_coord_system"),
-                    q_learning=False)
-            elif "dqn" in self.algorithm_name:
+                episode,
+                self.env,
+                model,
+                self.goal_form,
+                sample,
+                self.max_ep_len,
+                self.device,
+                int(self.config.get("goal_dimension")), 
+                self.config.get("goal_coord_system"),
+                q_learning=False,
+                action_type=self.action_type)
+            elif "dqn" in self.algorithm_name or "mlp_sqn" in self.algorithm_name:
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
-                    episode,
-                    self.env,
-                    model,
-                    self.goal_form,
-                    sample,
-                    self.max_ep_len,
-                    self.device,
-                    int(self.config.get("goal_dimension")), 
-                    self.config.get("goal_coord_system"),
-                    q_learning=True)
-            elif "sqn" in self.algorithm_name:
-                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
-                    episode,
-                    self.env,
-                    model,
-                    self.goal_form,
-                    sample,
-                    self.max_ep_len,
-                    self.device,
-                    int(self.config.get("goal_dimension")), 
-                    self.config.get("goal_coord_system"),
-                    q_learning=True)
+                episode,
+                self.env,
+                model,
+                self.goal_form,
+                sample,
+                self.max_ep_len,
+                self.device,
+                int(self.config.get("goal_dimension")), 
+                self.config.get("goal_coord_system"),
+                q_learning=True,
+                action_type=self.action_type)
             else:
                 print("Error: undefined algorithm name: %s"%(self.algorithm_name))
                 exit()
@@ -544,8 +541,11 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
             #soft_spl_array.add(softspl)
 
             # print episode info
-            self.print_episode_info(episode_index=i, env=self.env, real_act_seqs=real_act_seqs, 
-                episode_length=episode_length, success=success, spl=spl)
+            self.print_episode_info(episode_index=i, 
+            env=self.env, 
+            real_act_seqs=real_act_seqs, 
+            episode_length=episode_length, 
+            success=success, spl=spl)
         
         
         logs[f"{split_name}/total_episodes"] = success_array.len()
@@ -567,9 +567,11 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
         onecheckpoint_eval_results = {}
         return logs, onecheckpoint_eval_results
 
-    def print_episode_info(episode_index, env, real_act_seqs, episode_length, success, spl):
+    def print_episode_info(self, episode_index, 
+        env, real_act_seqs, episode_length, success, spl, compare_with_shortest_path=False):
+        
         same_act_seqs = False
-        if env.optimal_action_seq:
+        if compare_with_shortest_path and env.optimal_action_seq and self.action_type == "cartesian":
             if success:
                 if len(real_act_seqs) == len(env.optimal_action_seq):
                     same_flag = True
@@ -581,15 +583,16 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                         same_act_seqs = True
         
         print("==================================")
-        print("Episode: %d"%(episode_index))
+        print("Episode: %d"%(episode_index+1))
         print("Success: %s"%(success))
         print("SPL: %f"%(spl))
         print("Episode length: %d"%(episode_length))
-        if success:
-            print("Same with the optimal action sequence: %s"%(same_act_seqs))
-            if not same_act_seqs:
-                print("Demonstration actions\n: %s"%env.optimal_action_seq)
-                print("Real actions\n: %s"%real_act_seqs)
+        if compare_with_shortest_path and env.optimal_action_seq and self.action_type == "cartesian":
+            if success:
+                print("Same with the optimal action sequence: %s"%(same_act_seqs))
+                if not same_act_seqs:
+                    print("Demonstration actions\n: %s"%env.optimal_action_seq)
+                    print("Real actions\n: %s"%real_act_seqs)
         print("==================================")
 
 

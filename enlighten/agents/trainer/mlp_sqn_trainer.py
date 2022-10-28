@@ -26,10 +26,10 @@ from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.other import get_obs_channel_num
 from enlighten.datasets.image_dataset import ImageDataset
 
-class SQNTrainer(SequenceTrainer):
+class MLPSQNTrainer(SequenceTrainer):
     # resume_ckpt_index index starting from 0
     def __init__(self, config_filename, resume=False, resume_experiment_name=None, resume_ckpt_index=None):
-        super(SQNTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
+        super(MLPSQNTrainer, self).__init__(config_filename, resume, resume_experiment_name, resume_ckpt_index)
 
         # set evaluation interval
         self.eval_every_epochs = int(self.config.get("eval_every_epochs"))
@@ -37,20 +37,28 @@ class SQNTrainer(SequenceTrainer):
         # set save checkpoint interval
         self.save_every_epochs = int(self.config.get("save_every_epochs"))
 
-        
         # reward type
         self.reward_type = self.config.get("reward_type")
-        assert self.reward_type == "minus_one_zero", "Supevised Q learning assumes the reward type as minus_one_zero"
+        
+        # action type
+        self.action_type = self.config.get("action_type", "cartesian")
+        print("=========> Action type: %s"%(self.action_type))
+        assert self.action_type == "polar", "Supevised Q learning assumes the action type as polar"
 
 
     def create_model(self):
+        if self.action_type == "polar":
+            self.action_number = 37
+        else:
+            self.action_number = int(self.config.get("action_number"))
+
         self.q_network = QNetwork(
             obs_channel = get_obs_channel_num(self.config),
             obs_width = int(self.config.get("image_width")), 
             obs_height = int(self.config.get("image_height")),
             goal_dim=int(self.config.get("goal_dimension")),
             goal_form=self.config.get("goal_form"),
-            act_num=int(self.config.get("action_number")),
+            act_num=self.action_number,
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
             hidden_size=int(self.config.get('hidden_size')),
@@ -239,13 +247,13 @@ class SQNTrainer(SequenceTrainer):
 
     
 if __name__ == '__main__':
-    # trainer = SQNTrainer(
-    #     config_filename="imitation_learning_sqn.yaml", 
+    # trainer = MLPSQNTrainer(
+    #     config_filename="imitation_learning_mlp_sqn.yaml", 
     #     resume=True,
     #     resume_experiment_name="s1-20221005-174833",
     #     resume_ckpt_index=10)
     
-    trainer = SQNTrainer(
-        config_filename="imitation_learning_sqn.yaml")
+    trainer = MLPSQNTrainer(
+        config_filename="imitation_learning_mlp_sqn.yaml")
     
     trainer.train()

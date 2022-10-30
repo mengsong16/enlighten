@@ -577,11 +577,18 @@ class MultiNavEnv(NavEnv):
         # print("========================")
         # print(actions)
         
+        # compute q when we have already reached the goal
+        # align current agent position to goal position
+        #q, polar_optimal_action, cartesian_optimal_action_seq = self.compute_polar_q_current_state()
+        q = -1.0 * float(self.config.get("forward_resolution")) * np.ones(self.polar_action_space.polar_action_number, dtype="float")
+        q[0] = 0.0
+        final_polar_optimal_action_list = list(np.argwhere(q == np.amax(q)).squeeze(axis=1))
+        assert len(final_polar_optimal_action_list)==1 and final_polar_optimal_action_list[0]==0, "STOP should be the optimal action when we have already reached the goal."
+        
         # take one normal env step = STOP
         obs, reward, done, info = self.step(0)
-        assert done==True and self.is_success(), "generated episode did not succeed"
-        # q = zeros because we have already reached the goal
-        q = np.zeros(self.polar_action_space.polar_action_number, dtype="float")
+        assert done==True and self.is_success(), "Generated episode did not succeed"
+        
         # append the first polar action STOP as the final step
         # add (s_i, a_{i-1}=0, g_i, d_i, r_i, q_{i-1})
         update_episode_data(env=self,
@@ -605,8 +612,8 @@ class MultiNavEnv(NavEnv):
 
         # append the second polar action STOP (besides the one at the end of the optimal action sequence)
         actions.append(0)
-        # append the second zeros to qs because we have already reached the goal
-        qs.append(np.zeros(self.polar_action_space.polar_action_number, dtype="float"))
+        # append the second q (same as the previous one) to qs
+        qs.append(copy.deepcopy(q))
 
         # print("========================")
         # print(len(observations)) # n+1
@@ -677,13 +684,17 @@ def test_polar_episode_generation(config_file):
     config = parse_config(os.path.join(config_path, config_file))
 
     episodes = load_behavior_dataset_meta(
-                behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q", 
+                behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q_new", 
                 split_name="same_start_goal_val_mini") 
 
     env = MultiNavEnv(config_file=config_file)
     for episode in episodes[:1]:
         traj, act_seq = env.generate_one_episode_with_q(episode=episode)
+        print(traj["actions"])
+        print(len(traj["actions"]))
+        print(len(traj["qs"]))
         print("Generated trajectory length: %d"%(len(act_seq)+1))
+        
 
     env.close()
 

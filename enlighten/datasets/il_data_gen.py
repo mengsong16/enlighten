@@ -1553,7 +1553,7 @@ if __name__ == "__main__":
     #      split_name="train")
     
     generate_train_behavior_data_with_q_parallel(
-         behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q",
+         behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q_new",
          split_name="train")
     
     # ====== generate train augment meta data =======

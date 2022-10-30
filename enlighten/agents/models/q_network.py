@@ -112,7 +112,7 @@ class QNetwork(nn.Module):
         with torch.no_grad():
             # embed each input modality with a different head
             q_values = self.forward(observations, goals)
-            
+            # If there are multiple maximal values then the indices of the first maximal value are returned
             actions = torch.argmax(q_values, dim=1, keepdim=True)
             
         

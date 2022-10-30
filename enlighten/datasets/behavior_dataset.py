@@ -430,6 +430,15 @@ class BehaviorDataset:
             print("Undefined state form: %s"%(self.state_form))
             exit()
         
+
+        # max_q_a = torch.argmax(q, dim=1)
+        # check_equal = torch.equal(a, max_q_a)
+        
+        # if check_equal == False:
+        #     print("--------------------")
+        #     print("Max q and a not equal!")
+        #     print("--------------------")
+
         return output_obs, output_goal, q, a, r, d
 
     # (s_t,a_t,r_{t+1},d_{t+1},s_{t+1},a_{t+1})
@@ -856,12 +865,38 @@ class BehaviorDataset:
 
         print("Trajectory dataset shuffled")
 
+    def check_trajectory_q(self):
+        for t, traj in enumerate(self.trajectories):
+            print("---------- Trajectory %d-------------"%(t))
+            optimal_path_qs = []
+            for a, q in zip(traj["actions"], traj["qs"]):
+                #print(np.std(q))
+                #print("---------------------------")
+                optimal_q = np.amax(q)
+                optimal_path_qs.append(optimal_q)
+                optimal_action_list = list(np.argwhere(q == optimal_q).squeeze(axis=1))
+                # print("----------------")
+                # print(a)
+                # print(optimal_action_list)
+                # print("----------------")
+                assert a in optimal_action_list, "Action %d is not the maximum in q: %s"%(a, q)
+
+            #optimal_path_stepsizes = [optimal_path_qs[i]-optimal_path_qs[i-1] for i in list(range(1, len(optimal_path_qs)))]
+            
+            #print(optimal_path_qs)
+            #print(optimal_path_stepsizes)  
+            
+            # if t > 0:
+            #     break
+        print("Verification Done!")
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
     config_file = os.path.join(config_path, "imitation_learning_mlp_sqn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
+    # dataset.check_trajectory_q()
+    # exit()
 
     batch_size = 512
     #batch_size = 4
@@ -890,6 +925,7 @@ if __name__ == "__main__":
         print("Transition index: %d"%dataset.transition_index)
         #print("Trajectory index: %d"%dataset.trajectory_index)
         print("=========================")
+        #break
 
     
     print("Batch size: %d"%(batch_size))

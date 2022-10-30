@@ -12,7 +12,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_p
 
 # experiments
 algorithm_name: "mlp_sqn"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_polar_q"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_polar_q_fix_final_step"
 log_to_wandb: true
 
 # dummy initial setup 
@@ -61,7 +61,7 @@ goal_dimension: 2 # [2, 3]
 cos_augmented_goal: false #false
 
 # reward
-success_distance: 0.2 # l2 distance in meter
+success_distance: 0.2 # l2 distance in meter # must be smaller than movement distance of the forward action
 success_reward: 2.5 #100 #2.5 
 slack_reward: -1.0e-4 #-1 #-1.0e-4 #-1.0e-2
 goal_reward: true # false

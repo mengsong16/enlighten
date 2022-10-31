@@ -778,7 +778,9 @@ def generate_one_episode(env, episode, goal_dimension, goal_coord_system):
 
 
 def generate_train_behavior_data_with_q(yaml_name, behavior_dataset_path, 
-    split_name):
+    split_name, action_type):
+    
+    assert action_type in ["polar", "cartesian"], "Unknown action type: %s"%action_type
 
     env = MultiNavEnv(config_file=yaml_name)
 
@@ -794,7 +796,11 @@ def generate_train_behavior_data_with_q(yaml_name, behavior_dataset_path,
         start_time = time.time()
 
         # generate one episode with q
-        traj, act_seq = env.generate_one_episode_with_q(episode)
+        if action_type == "polar":
+            traj, act_seq = env.generate_one_episode_with_polar_q(episode)
+        else:
+            traj, act_seq = env.generate_one_episode_with_cartesian_q(episode)
+
         
         print("Time per episode: %s"%(time.time()-start_time))
         
@@ -864,7 +870,7 @@ def load_trajectories(behavior_dataset_path):
 
 # each parallel task creates one environment
 # episodes is a list of episode
-def parallel_generation_task(episodes):
+def parallel_polar_q_generation_task(episodes):
     # fixed config file name
     config_file_name = "imitation_learning_mlp_sqn.yaml"
     env = MultiNavEnv(config_file=config_file_name)
@@ -872,7 +878,7 @@ def parallel_generation_task(episodes):
     trajectories = []
     for episode in episodes:
         # generate one episode with q
-        traj, act_seq = env.generate_one_episode_with_q(episode)
+        traj, act_seq = env.generate_one_episode_with_polar_q(episode)
         
         trajectories.append(traj)
 
@@ -880,9 +886,25 @@ def parallel_generation_task(episodes):
 
     return trajectories
 
-def generate_train_behavior_data_with_q_parallel(behavior_dataset_path, 
-    split_name):
+def parallel_cartesian_q_generation_task(episodes):
+    # fixed config file name
+    config_file_name = "imitation_learning_mlp_sqn.yaml"
+    env = MultiNavEnv(config_file=config_file_name)
     
+    trajectories = []
+    for episode in episodes:
+        # generate one episode with q
+        traj, act_seq = env.generate_one_episode_with_cartesian_q(episode)
+        
+        trajectories.append(traj)
+
+    env.close()
+
+    return trajectories
+
+def generate_train_behavior_data_with_polar_q_parallel(behavior_dataset_path, 
+    split_name):
+
     start_time = time.time()
 
     # process number
@@ -900,7 +922,7 @@ def generate_train_behavior_data_with_q_parallel(behavior_dataset_path,
         # call the same function with different data in parallel asynchronously
         # can only accept a list of single argument
 
-        for i, trajectories in enumerate(pool.imap(parallel_generation_task, episode_groups)):
+        for i, trajectories in enumerate(pool.imap(parallel_polar_q_generation_task, episode_groups)):
             print("---------------------------------------------------")
             print("Process %d generated %d trajectories"%(i+1, len(trajectories)))
             print("---------------------------------------------------")
@@ -922,17 +944,70 @@ def generate_train_behavior_data_with_q_parallel(behavior_dataset_path,
     print("==============================================")
     print("Generated %d training trajectories"%(len(traj_lens)))
     traj_lens = np.array(traj_lens, dtype=np.float32) 
-    print("Total steps: %d"%(np.sum(traj_lens, axis=0)))
-    print("Min length: %d"%(np.min(traj_lens, axis=0)))
-    print("Mean length: %d"%(np.mean(traj_lens, axis=0)))
-    print("Max length: %d"%(np.max(traj_lens, axis=0)))
-    print("Std of length: %f"%(np.std(traj_lens, axis=0)))
+    print("Total polar steps: %d"%(np.sum(traj_lens, axis=0)))
+    print("Min length (in polar steps): %d"%(np.min(traj_lens, axis=0)))
+    print("Mean length (in polar steps): %d"%(np.mean(traj_lens, axis=0)))
+    print("Max length (in polar steps): %d"%(np.max(traj_lens, axis=0)))
+    print("Std of length (in polar steps): %f"%(np.std(traj_lens, axis=0)))
     print("Time: %s"%(gen_time))
     print("==============================================")
 
     print("Behavior training dataset %s generation Done: %s"%(split_name, behavior_dataset_path))
 
     #print(traj_lens)
+
+def generate_train_behavior_data_with_cartesian_q_parallel(behavior_dataset_path, 
+    split_name):
+
+    start_time = time.time()
+
+    # process number
+    n_process = mp.cpu_count()  # 20
+    # assign training episode to each process
+    total_train_episodes = load_behavior_dataset_meta(behavior_dataset_path, split_name)
+    #total_train_episodes = total_train_episodes[:20]
+    
+    # episode_groups must be a list
+    episode_groups = chunks(lst=total_train_episodes, n=n_process)
+
+    # start n processes (# cpu cores)
+    with mp.Pool(n_process) as pool:
+        print("Created a pool of %d processes"%n_process)
+        # call the same function with different data in parallel asynchronously
+        # can only accept a list of single argument
+
+        for i, trajectories in enumerate(pool.imap(parallel_cartesian_q_generation_task, episode_groups)):
+            print("---------------------------------------------------")
+            print("Process %d generated %d trajectories"%(i+1, len(trajectories)))
+            print("---------------------------------------------------")
+
+            # save trajectories
+            with open(os.path.join(behavior_dataset_path, '%s_data_part%d.pickle'%(split_name, i+1)), 'wb') as handle:
+                pickle.dump(trajectories, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    gen_time = time.time() - start_time
+
+    # verify by loading the saved trajectories
+    total_trajectories = load_trajectories(behavior_dataset_path)
+    
+    # get trajectory lengths
+    traj_lens = []
+    for traj in total_trajectories:
+        traj_lens.append(len(traj["actions"]))
+
+    print("==============================================")
+    print("Generated %d training trajectories"%(len(traj_lens)))
+    traj_lens = np.array(traj_lens, dtype=np.float32) 
+    print("Total cartesian steps: %d"%(np.sum(traj_lens, axis=0)))
+    print("Min length (in cartesian steps): %d"%(np.min(traj_lens, axis=0)))
+    print("Mean length (in cartesian steps): %d"%(np.mean(traj_lens, axis=0)))
+    print("Max length (in cartesian steps): %d"%(np.max(traj_lens, axis=0)))
+    print("Std of length (in cartesian steps): %f"%(np.std(traj_lens, axis=0)))
+    print("Time: %s"%(gen_time))
+    print("==============================================")
+
+    print("Behavior training dataset %s generation Done: %s"%(split_name, behavior_dataset_path))
+
 
 # behavior_dataset_path: "/dataset/behavior_dataset_gibson"
 def generate_train_behavior_data(yaml_name, behavior_dataset_path, 
@@ -1550,11 +1625,21 @@ if __name__ == "__main__":
     # ====== regenerate train episodes, others kept same =======
     # generate_train_behavior_data_with_q(yaml_name="imitation_learning_mlp_sqn.yaml", 
     #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q",
+    #      split_name="train",
+    #      action_type="polar")
+
+    generate_train_behavior_data_with_q(yaml_name="imitation_learning_mlp_sqn.yaml", 
+         behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_cartesian_q",
+         split_name="train",
+         action_type="cartesian")
+    
+    # generate_train_behavior_data_with_polar_q_parallel(
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q_new",
     #      split_name="train")
     
-    generate_train_behavior_data_with_q_parallel(
-         behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q_new",
-         split_name="train")
+    # generate_train_behavior_data_with_cartesian_q_parallel(
+    #      behavior_dataset_path="/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_cartesian_q",
+    #      split_name="train")
     
     # ====== generate train augment meta data =======
     # generate_behavior_dataset_train_aug_meta(

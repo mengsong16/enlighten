@@ -23,27 +23,7 @@ def load_behavior_dataset_meta(behavior_dataset_path, split_name):
     return episode_list
 
 
-# plan the optimal action sequence path from the current state
-def get_optimal_path(env):
-    try:
-        # No need to reset or recreate the path follower before path planning
-        # once create the path follower attaching to an agent 
-        # it will always update itself to the current state when find_path is called
-        #env.create_shortest_path_follower()
-        #env.follower.reset()
-        optimal_action_seq = env.follower.find_path(goal_pos=env.goal_position)
-        
-        assert len(optimal_action_seq) > 0, "Error: optimal action sequence must have at least one element"
-        # append STOP if not appended
-        if optimal_action_seq[-1] != env.action_name_to_index("stop"):
-            print("Error: the last action in the optimal action sequence must be STOP, but %d now, appending STOP."%(optimal_action_seq[-1]))
-            optimal_action_seq.append(env.action_name_to_index("stop"))
-       
-    except habitat_sim.errors.GreedyFollowerError as e:
-        print("Error: optimal path NOT found! set optimal action sequence to []")
-        optimal_action_seq = []
 
-    return optimal_action_seq
 
 class PolarActionSpace:
     def __init__(self, env, rotate_resolution):
@@ -289,3 +269,19 @@ def update_episode_data(env,
 
     if q is not None and qs is not None:
         qs.append(q)
+
+def get_first_effective_action_sequence(cartesian_action_seq,
+    cartesian_stop_action_index,
+    cartesian_forward_action_index):
+    i = 0 
+    sub_seq = []
+    while i < len(cartesian_action_seq):
+        if cartesian_action_seq[i] == cartesian_stop_action_index or cartesian_action_seq[i] == cartesian_forward_action_index:
+            sub_seq.append(cartesian_action_seq[i])
+            break
+        else:
+            sub_seq.append(cartesian_action_seq[i])
+            
+        i += 1
+    
+    return sub_seq

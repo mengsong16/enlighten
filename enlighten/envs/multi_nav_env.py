@@ -24,7 +24,7 @@ from enlighten.datasets.pointnav_dataset import NavigationEpisode, NavigationGoa
 from enlighten.datasets.dataset import EpisodeIterator
 from enlighten.datasets.common import PolarActionSpace
 from enlighten.datasets.common import update_episode_data
-from enlighten.datasets.common import load_behavior_dataset_meta
+from enlighten.datasets.common import load_behavior_dataset_meta, get_first_effective_action_sequence
 
 # across scene environments
 class MultiNavEnv(NavEnv):
@@ -209,8 +209,7 @@ class MultiNavEnv(NavEnv):
     # must be called after agent has been set to the start location, and goal has been reset
     # invalid optimal_action_sequence will be []
     def plan_shortest_path(self):
-        # create shortest path planner, must create everytime the agent's state has been changed
-        self.create_shortest_path_follower()
+       
         try:
             # find optimal action sequence from current state to goal state
             self.optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
@@ -259,6 +258,11 @@ class MultiNavEnv(NavEnv):
         # create optimal action sequence and its iterator
         self.optimal_action_seq = []    
         self.optimal_action_iter = iter(self.optimal_action_seq)
+
+        # create shortest path planner
+        self.create_shortest_path_follower()
+
+        # plan the shortest path using path follower at s0
         if plan_shortest_path:
             self.plan_shortest_path()
 
@@ -365,6 +369,108 @@ class MultiNavEnv(NavEnv):
         d = self.get_current_distance()
         q = -d
         return q
+
+
+    # plan the optimal action sequence path from the current state
+    def get_optimal_path(self):
+        try:
+            # No need to reset or recreate the path follower before path planning
+            # once create the path follower attaching to an agent 
+            # it will always update itself to the current state when find_path is called
+            #env.create_shortest_path_follower()
+            #env.follower.reset()
+            optimal_action_seq = self.follower.find_path(goal_pos=self.goal_position)
+            
+            assert len(optimal_action_seq) > 0, "Error: optimal action sequence must have at least one element"
+            # append STOP if not appended
+            if optimal_action_seq[-1] != self.action_name_to_index("stop"):
+                print("Error: the last action in the optimal action sequence must be STOP, but %d now, appending STOP."%(optimal_action_seq[-1]))
+                optimal_action_seq.append(self.action_name_to_index("stop"))
+        
+        except habitat_sim.errors.GreedyFollowerError as e:
+            print("Error: optimal path NOT found! set optimal action sequence to []")
+            optimal_action_seq = []
+
+        return optimal_action_seq
+
+
+    def compute_cartesian_q_current_state(self):
+         # act according to the shortest path, and compute its polar q at each state
+        cartesian_action_number = len(self.action_mapping)
+        cartesian_stop_action_index = self.action_name_to_index("stop")
+        cartesian_forward_action_index = self.action_name_to_index("move_forward")
+        cartesian_turn_left_action_index = self.action_name_to_index("turn_left")
+        cartesian_turn_right_action_index = self.action_name_to_index("turn_right")
+            
+        q_values = []
+        current_state = self.get_agent_state()
+
+        # q["stop"]
+        q_values.append(self.get_geodesic_distance_based_q_current_state())
+        # print("Executed actions: None")
+        
+        # q["move_forward"]
+        # take one step forward
+        obs, reward, done, info = self.step(cartesian_forward_action_index)
+        #print("Executed actions: %s"%([self.polar_action_space.cartesian_forward_action_index]))
+        
+        q_values.append(self.get_geodesic_distance_based_q_current_state())
+        # get back to the original state (i.e. circle center)
+        self.set_agent_state(
+            new_position=current_state.position,
+            new_rotation=current_state.rotation,
+            is_initial=False,
+            quaternion=True
+        )
+
+        # "turn_left" or "turn_right" q
+        for action in [cartesian_turn_left_action_index, cartesian_turn_right_action_index]:
+            # take one cartesian step along current direction
+            obs, reward, done, info = self.step(action)
+            
+            # plan the shortest path from the current state to see where move_forward or stop happen
+            current_optimal_action_seq = self.get_optimal_path()
+            # step the environment until move_forward or stop happen
+            execute_action_seq = get_first_effective_action_sequence(current_optimal_action_seq,
+                cartesian_stop_action_index,
+                cartesian_forward_action_index)
+            
+            self.step_cartesian_action_seq(execute_action_seq)
+
+            #print("Executed actions: %s"%([action]+execute_action_seq))
+
+            # get current geodesic distance to goal as q
+            q_values.append(self.get_geodesic_distance_based_q_current_state())
+            
+            # get back to the original state (i.e. circle center)
+            self.set_agent_state(
+                new_position=current_state.position,
+                new_rotation=current_state.rotation,
+                is_initial=False,
+                quaternion=True
+            )
+
+        assert len(q_values) == cartesian_action_number
+        q_values = np.array(q_values, dtype="float")
+
+        # plan max q action
+        cartesian_optimal_action_list = list(np.argwhere(q_values == np.amax(q_values)).squeeze(axis=1))
+
+        if len(cartesian_optimal_action_list) > 1:
+            print("-------------------------------------------------")
+            print("More than one cartesian optimal actions have been found: %s"%(str(cartesian_optimal_action_list)))
+            for aa in cartesian_optimal_action_list:
+                if aa != 0: # find the first action which is not "stop"
+                    # We now have the number of actions needs, do we pick the one with the shortest action sequence?
+                    # To keep it consistent with polar action q planner, we pick the first action not STOP 
+                    cartesian_optimal_action = aa
+                    print("Choose action %d"%(cartesian_optimal_action))
+                    break
+            print("-------------------------------------------------")
+        else:
+            cartesian_optimal_action = cartesian_optimal_action_list[0]
+        
+        return q_values, cartesian_optimal_action, cartesian_optimal_action_list
 
     # rotate_resolution: in degree
     def compute_polar_q_current_state(self):
@@ -503,7 +609,7 @@ class MultiNavEnv(NavEnv):
 
         return polar_optimal_actions, cartesian_optimal_actions, polar_path_length
     
-    def generate_one_episode_with_q(self, episode):
+    def generate_one_episode_with_polar_q(self, episode):
         goal_dimension = int(self.config.get("goal_dimension"))
         goal_coord_system = self.config.get("goal_coord_system")
 
@@ -522,7 +628,7 @@ class MultiNavEnv(NavEnv):
         # reset the env
         obs = self.reset(episode=episode, plan_shortest_path=False)
         # add (s0, g0, d0, r0)
-        # d0=False, r0=0
+        # d0=False, r0=0, q=None
         update_episode_data(env=self,
             obs=obs, 
             reward=0.0, 
@@ -645,6 +751,149 @@ class MultiNavEnv(NavEnv):
         traj["qs"] = qs
                     
         return traj, actions[:-1]
+    
+    def generate_one_episode_with_cartesian_q(self, episode):
+        goal_dimension = int(self.config.get("goal_dimension"))
+        goal_coord_system = self.config.get("goal_coord_system")
+        cartesian_action_number = len(self.action_mapping)
+
+        observations = []
+        actions = [] # cartesian action sequence
+        rel_goals = []
+        distance_to_goals = []
+        goal_positions = []
+        state_positions = []
+        abs_goals = []
+        dones = []
+        rewards = []
+        qs = []
+        traj = {}
+        
+        # reset the env
+        obs = self.reset(episode=episode, plan_shortest_path=False)
+        # add (s0, g0, d0, r0)
+        # d0=False, r0=0, q=None
+        update_episode_data(env=self,
+            obs=obs, 
+            reward=0.0, 
+            done=False, 
+            goal_dimension=goal_dimension, 
+            goal_coord_system=goal_coord_system,
+            observations=observations,
+            actions=actions,
+            rel_goals=rel_goals,
+            distance_to_goals=distance_to_goals,
+            goal_positions=goal_positions,
+            state_positions=state_positions,
+            abs_goals=abs_goals,
+            dones=dones,
+            rewards=rewards,
+            action=None,
+            qs=qs,
+            q=None)
+
+        
+        reach_q_flag = self.reached_goal()
+
+        while not reach_q_flag:
+            q, cartesian_optimal_action, cartesian_optimal_action_list = self.compute_cartesian_q_current_state()
+
+            # take one cartesian action step
+            obs, reward, done, info = self.step(cartesian_optimal_action)
+
+            # add (s_i, a_{i-1}, g_i, d_i, r_i, q_{i-1})
+            update_episode_data(env=self,
+                obs=obs, 
+                reward=reward, 
+                done=done, 
+                goal_dimension=goal_dimension, 
+                goal_coord_system=goal_coord_system,
+                observations=observations,
+                actions=actions,
+                rel_goals=rel_goals,
+                distance_to_goals=distance_to_goals,
+                goal_positions=goal_positions,
+                state_positions=state_positions,
+                abs_goals=abs_goals,
+                dones=dones,
+                rewards=rewards,
+                action=cartesian_optimal_action,
+                qs=qs,
+                q=q)
+
+            reach_q_flag = self.reached_goal()
+        
+        assert actions[-1] != 0, "The original planned optimal cartesian action sequence should not end with STOP."
+        # print("========================")
+        # print(actions)
+        
+        # compute q when we have already reached the goal
+        # align current agent position to goal position
+        q = -1.0 * float(self.config.get("forward_resolution")) * np.ones(cartesian_action_number, dtype="float")
+        q[0] = 0.0
+        final_cartesian_optimal_action_list = list(np.argwhere(q == np.amax(q)).squeeze(axis=1))
+        assert len(final_cartesian_optimal_action_list)==1 and final_cartesian_optimal_action_list[0]==0, "STOP should be the optimal action when we have already reached the goal."
+        
+        # take one cartesian env step = STOP
+        obs, reward, done, info = self.step(0)
+        assert done==True and self.is_success(), "Generated episode did not succeed"
+        
+        # append the first polar action STOP as the final step
+        # add (s_i, a_{i-1}=0, g_i, d_i, r_i, q_{i-1})
+        update_episode_data(env=self,
+            obs=obs, 
+            reward=reward, 
+            done=done, 
+            goal_dimension=goal_dimension, 
+            goal_coord_system=goal_coord_system,
+            observations=observations,
+            actions=actions,
+            rel_goals=rel_goals,
+            distance_to_goals=distance_to_goals,
+            goal_positions=goal_positions,
+            state_positions=state_positions,
+            abs_goals=abs_goals,
+            dones=dones,
+            rewards=rewards,
+            action=0,
+            qs=qs,
+            q=q)
+
+        # append the second polar action STOP (besides the one at the end of the optimal action sequence)
+        actions.append(0)
+        # append the second q (same as the previous one) to qs
+        qs.append(copy.deepcopy(q))
+
+        # print("========================")
+        # print(len(observations)) # n+1
+        # print(len(rel_goals)) # n+1
+        # print(len(distance_to_goals)) # n+1
+        # print(len(goal_positions)) # n+1
+        # print(len(state_positions)) # n+1
+        # print(len(abs_goals)) # n+1
+        # print(len(dones)) # n+1
+        # print(len(rewards)) # n+1
+        # print(len(qs)) # n+1
+        # print(len(actions)) # n+1
+        # print("========================")
+        # print(actions)
+        # print("========================")
+        # print(qs)
+        # print("========================")
+        
+
+        traj["observations"] = observations
+        traj["actions"] = actions
+        traj["rel_goals"] = rel_goals
+        traj["distance_to_goals"] = distance_to_goals
+        traj["goal_positions"] = goal_positions
+        traj["state_positions"] = state_positions
+        traj["abs_goals"] = abs_goals
+        traj["dones"] = dones
+        traj["rewards"] = rewards
+        traj["qs"] = qs
+                    
+        return traj, actions[:-1]
 
 def test_env(config_file="imitation_learning_rnn_bc.yaml"):
     env = MultiNavEnv(config_file=config_file)
@@ -689,7 +938,7 @@ def test_polar_episode_generation(config_file):
 
     env = MultiNavEnv(config_file=config_file)
     for episode in episodes[:1]:
-        traj, act_seq = env.generate_one_episode_with_q(episode=episode)
+        traj, act_seq = env.generate_one_episode_with_polar_q(episode=episode)
         print(traj["actions"])
         print(len(traj["actions"]))
         print(len(traj["qs"]))

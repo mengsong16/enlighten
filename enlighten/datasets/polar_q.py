@@ -9,8 +9,8 @@ from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.utils.geometry_utils import quaternion_rotate_vector, cartesian_to_polar
 from enlighten.datasets.dataset import Episode
 from enlighten.utils.image_utils import try_cv2_import
-from enlighten.datasets.common import load_behavior_dataset_meta, get_optimal_path
-from enlighten.datasets.common import PolarActionSpace
+from enlighten.datasets.common import load_behavior_dataset_meta
+from enlighten.datasets.common import PolarActionSpace, get_first_effective_action_sequence
 from enlighten.utils.geometry_utils import euclidean_distance
 
 import habitat_sim
@@ -34,21 +34,7 @@ from habitat.utils.visualizations.utils import images_to_video
 
 cv2 = try_cv2_import()
 
-def get_first_effective_action_sequence(cartesian_action_seq,
-    cartesian_stop_action_index,
-    cartesian_forward_action_index):
-    i = 0 
-    sub_seq = []
-    while i < len(cartesian_action_seq):
-        if cartesian_action_seq[i] == cartesian_stop_action_index or cartesian_action_seq[i] == cartesian_forward_action_index:
-            sub_seq.append(cartesian_action_seq[i])
-            break
-        else:
-            sub_seq.append(cartesian_action_seq[i])
-            
-        i += 1
-    
-    return sub_seq
+
 
 
 
@@ -157,81 +143,17 @@ def check_optimal_path_geodesic_q(env, episode):
     print("[Shortest path] Optimal cartesian action sequence: %s"%env.optimal_action_seq)
     print("[Shortest path] Optimal cartesian action sequence length: %d"%len(env.optimal_action_seq))
 
-
-    # act according to the shortest path, and compute its polar q at each state
-    cartesian_action_number = len(env.action_mapping)
-    cartesian_stop_action_index = env.action_name_to_index("stop")
-    cartesian_forward_action_index = env.action_name_to_index("move_forward")
-    cartesian_turn_left_action_index = env.action_name_to_index("turn_left")
-    cartesian_turn_right_action_index = env.action_name_to_index("turn_right")
-        
-
     for i, optimal_action in enumerate(env.optimal_action_seq):
-        current_state = env.get_agent_state()
-        
-        current_q_values = []
-    
-        print("-----------------------------")
-        print("Step: %d"%(i+1))
-        # "stop" q
-        print("Executed actions: None")
-        current_q_values.append(env.get_geodesic_distance_based_q_current_state())
-
-        # "move_forward" q
-        # take one step forward
-        obs, reward, done, info = env.step(cartesian_forward_action_index)
-        print("Executed actions: %s"%([cartesian_forward_action_index]))
-        # get current geodesic distance to goal as q
-        current_q_values.append(env.get_geodesic_distance_based_q_current_state())
-            
-        # get back to the original state
-        env.set_agent_state(
-            new_position=current_state.position,
-            new_rotation=current_state.rotation,
-            is_initial=False,
-            quaternion=True
-        )
-
-        # "turn_left" or "turn_right" q
-        for action in [cartesian_turn_left_action_index, cartesian_turn_right_action_index]:
-            # take one step along current direction
-            obs, reward, done, info = env.step(action)
-            
-            # plan the shortest path from the current state to see where move_forward or stop happen
-            current_optimal_action_seq = get_optimal_path(env)
-            # step the environment until move_forward or stop happen
-            execute_action_seq = get_first_effective_action_sequence(current_optimal_action_seq,
-                cartesian_stop_action_index,
-                cartesian_forward_action_index)
-            env.step_cartesian_action_seq(execute_action_seq)
-
-            print("Executed actions: %s"%([action]+execute_action_seq))
-
-            # get current geodesic distance to goal as q
-            q = env.get_geodesic_distance_based_q_current_state()
-            current_q_values.append(q)
-            
-            # get back to the original state
-            env.set_agent_state(
-                new_position=current_state.position,
-                new_rotation=current_state.rotation,
-                is_initial=False,
-                quaternion=True
-            )
-        
-        current_q_values = np.array(current_q_values, dtype="float32")
-        # actions where max q happen
-        max_q_action_list = list(np.argwhere(current_q_values == np.amax(current_q_values)).squeeze(axis=1))
-        
+        current_q_values, max_q_action, cartesian_optimal_action_list = env.compute_cartesian_q_current_state()
         
         print("Q values: %s"%current_q_values)
-        print("Max Q actions: %s"%max_q_action_list)
+        print("Max Q actions: %s"%max_q_action)
         print("Planned action: %s"%optimal_action)
-        if optimal_action not in max_q_action_list:
-            print("Optimal action does not have max Q!")
+        if optimal_action not in cartesian_optimal_action_list:
+            print("Planned optimal action does not have max Q!")
         print("-----------------------------")
 
-        # take one action along the optimal path
+        # take one optimal action along the optimal path
         obs, reward, done, info = env.step(optimal_action)
 
     print("="*20)

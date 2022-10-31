@@ -33,6 +33,7 @@ class DTTrainer(SequenceTrainer):
         # set save checkpoint interval
         self.save_every_iterations = int(self.config.get("save_every_iterations"))
 
+    # only support cartesian action space
     def create_model(self):
         self.model = DecisionTransformer(
             obs_channel = get_obs_channel_num(self.config),

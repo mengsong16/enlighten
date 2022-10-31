@@ -104,6 +104,8 @@ reward_type: "minus_one_zero" #["original", "minus_one_zero"]
 negative_reward_scale: 1 #1.0e-4 # default is 1
 positive_reward: 0 #2.5 # dafault is 0
 action_type: "polar" #["cartesian", "polar"]
+temperature: 1.0
+greedy_policy: true
 #---------------
 
 # evaluate during training

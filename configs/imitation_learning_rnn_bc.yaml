@@ -105,7 +105,8 @@ max_epochs: 200 #100 #200 #2000 #1000 #800 #400 #500 #30 #10
 use_augment_train_data: false #true
 supervise_value: false # true
 domain_adaptation: false #true
-temperature: 1 #10 #1
+temperature: 1.0 #10 #1
+action_type: "cartesian" #["cartesian", "polar"]
 
 # evaluate during training
 eval_during_training: false

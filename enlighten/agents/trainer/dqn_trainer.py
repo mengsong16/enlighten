@@ -67,7 +67,7 @@ class DQNTrainer(SequenceTrainer):
         # number of actions
         self.action_number = int(self.config.get("action_number"))
 
-
+    # only support cartesian action space
     def create_model(self):
         self.q_network = QNetwork(
             obs_channel = get_obs_channel_num(self.config),
@@ -81,7 +81,9 @@ class DQNTrainer(SequenceTrainer):
             hidden_size=int(self.config.get('hidden_size')),
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
-            state_dimension=int(self.config.get('state_dimension'))
+            state_dimension=int(self.config.get('state_dimension')),
+            greedy_policy=self.config.get("greedy_policy", True),
+            temperature=float(self.config.get("temperature", 1.0))
         )
 
         self.target_q_network = QNetwork(
@@ -96,7 +98,9 @@ class DQNTrainer(SequenceTrainer):
             hidden_size=int(self.config.get('hidden_size')),
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
-            state_dimension=int(self.config.get('state_dimension'))
+            state_dimension=int(self.config.get('state_dimension')),
+            greedy_policy=self.config.get("greedy_policy", True),
+            temperature=float(self.config.get("temperature", 1.0))
         )
 
         # load the weights into the target networks

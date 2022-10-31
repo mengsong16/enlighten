@@ -37,7 +37,21 @@ class MLPBCTrainer(SequenceTrainer):
         # set save checkpoint interval
         self.save_every_epochs = int(self.config.get("save_every_epochs"))
 
+        # action type
+        self.action_type = self.config.get("action_type", "cartesian")
+        print("=========> Action type: %s"%(self.action_type))
+        
+        # action number 
+        if self.action_type == "polar":
+            self.action_number = 1 + int(360 // int(self.config.get("rotate_resolution")))
+        else:
+            self.action_number = int(self.config.get("action_number"))
+        print("=========> Action number: %d"%(self.action_number))
 
+        #exit()
+
+
+    # suport cartesian or polar action space
     def create_model(self):
         self.model = MLPPolicy(
             obs_channel = get_obs_channel_num(self.config),
@@ -45,7 +59,7 @@ class MLPBCTrainer(SequenceTrainer):
             obs_height = int(self.config.get("image_height")),
             goal_dim=int(self.config.get("goal_dimension")),
             goal_form=self.config.get("goal_form"),
-            act_num=int(self.config.get("action_number")),
+            act_num=self.action_number,
             obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
             goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
             hidden_size=int(self.config.get('hidden_size')),

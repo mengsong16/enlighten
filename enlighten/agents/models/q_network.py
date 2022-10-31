@@ -22,7 +22,10 @@ class QNetwork(nn.Module):
             hidden_size, #512
             hidden_layer, #2
             state_form,
-            state_dimension #2
+            state_dimension, #2
+            greedy_policy,
+            temperature
+
     ):
         super().__init__()
         
@@ -59,7 +62,16 @@ class QNetwork(nn.Module):
             self.q_network = MLPNetwork(input_dim=self.state_dimension+self.goal_dim, 
                 output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
         
+        self.greedy_policy = greedy_policy
+        if self.greedy_policy:
+            print("=========> Q network uses greedy policy")
+        else:
+            self.temperature = temperature
+            print("=========> Q network uses Boltzmann policy")
+            print("=========> policy temperature: %f"%(self.temperature))
             
+        # acton logits --> action prob
+        self.softmax = nn.Softmax(dim=-1)
     
     def encoder_forward(self, observations, goals):
         # (T,C,H,W) ==> (T,obs_embedding_size)
@@ -112,8 +124,16 @@ class QNetwork(nn.Module):
         with torch.no_grad():
             # embed each input modality with a different head
             q_values = self.forward(observations, goals)
-            # If there are multiple maximal values then the indices of the first maximal value are returned
-            actions = torch.argmax(q_values, dim=1, keepdim=True)
+            # greedy policy = arg max Q
+            if self.greedy_policy:
+                # If there are multiple maximal values then the indices of the first maximal value are returned
+                actions = torch.argmax(q_values, dim=1, keepdim=True)
+            # Boltzmann policy = softmax (Q / temperature)
+            else:
+                q_values = q_values / self.temperature
+                probs = self.softmax(q_values)
+                # sample action according to the policy distribution
+                actions = torch.multinomial(probs, num_samples=1)
             
         
         return actions

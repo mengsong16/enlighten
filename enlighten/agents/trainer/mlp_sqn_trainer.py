@@ -43,15 +43,19 @@ class MLPSQNTrainer(SequenceTrainer):
         # action type
         self.action_type = self.config.get("action_type", "cartesian")
         print("=========> Action type: %s"%(self.action_type))
-        assert self.action_type == "polar", "Supevised Q learning assumes the action type as polar"
+        assert self.action_type == "polar", "Supevised Q learning assumes the action type as polar action space"
 
-
-    def create_model(self):
+        # action number 
         if self.action_type == "polar":
-            self.action_number = 37
+            self.action_number = 1 + int(360 // int(self.config.get("rotate_resolution")))
         else:
             self.action_number = int(self.config.get("action_number"))
+        print("=========> Action number: %d"%(self.action_number))
 
+
+    # suport cartesian or polar action space
+    def create_model(self):
+    
         self.q_network = QNetwork(
             obs_channel = get_obs_channel_num(self.config),
             obs_width = int(self.config.get("image_width")), 
@@ -64,7 +68,9 @@ class MLPSQNTrainer(SequenceTrainer):
             hidden_size=int(self.config.get('hidden_size')),
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
-            state_dimension=int(self.config.get('state_dimension'))
+            state_dimension=int(self.config.get('state_dimension')),
+            greedy_policy=self.config.get("greedy_policy", True),
+            temperature=float(self.config.get("temperature", 1.0))
         )
 
     # train for one update

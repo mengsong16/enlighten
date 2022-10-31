@@ -7,12 +7,12 @@ content_scenes: ["*"]
 scenes_dir: "/dataset"  # where mesh data store
 # -----------------------------------------------
 # BC training data location
-behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000"  # where imitation learning dataset store
+behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_polar_q"  # where imitation learning dataset store
 #behavior_dataset_path: "/dataset/behavior_dataset_gibson_4_scene_2000"
 
 # experiments
 algorithm_name: "mlp_bc"
-experiment_name: "rel_goal_4_scene_2000_epoch_200_adamw_obs_tau_1"
+experiment_name: "1_scene_Rancocas_2000_epoch_400_adamw_obs_tau_1_polar_action"
 log_to_wandb: true
 
 # dummy initial setup 
@@ -75,10 +75,10 @@ max_collisions_per_episode: 200
 seed: 1
 
 # gpu
-gpu_id: 0 #1
+gpu_id: 1 #1
 
 # vector env (for evaluation only)
-num_environments: 14 #8 #14 #4 #2
+num_environments: 10 #8 #14 #4 #2
 
 # bc mlp policy
 hidden_size: 512 #512 #1024
@@ -96,15 +96,16 @@ batch_size: 512 #256
 optimizer: "AdamW" #["AdamW", "Adam"]
 learning_rate: 1.0e-4 #5.0e-4 #1.0e-3 #1.0e-4
 weight_decay: 1.0e-4
-max_epochs: 200
+max_epochs: 400
 temperature: 1.0
 use_augment_train_data: false
+action_type: "polar" #["cartesian", "polar"]
 
 # evaluate during training
-eval_during_training: false
+eval_during_training: true
 eval_every_epochs: 10 #10 #2 
 eval_during_training_sample: true
-eval_during_training_splits: ["same_start_goal_val_mini", "same_scene_val_mini", "across_scene_val_mini"]
+eval_during_training_splits: ["same_start_goal_val_mini"] # "same_scene_val_mini", "across_scene_val_mini"
 eval_use_vector_envs: true
 
 # save checkpoint

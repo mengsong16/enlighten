@@ -179,7 +179,8 @@ def evaluate_one_episode_rnn(
         max_ep_len,
         device,
         goal_dimension, 
-        goal_coord_system
+        goal_coord_system,
+        action_type
     ):
 
     # turn model into eval mode and move to desired device
@@ -241,7 +242,13 @@ def evaluate_one_episode_rnn(
         real_act_seqs.append(actions_cpu)
         
         # step the env according to the action, get new observation and goal
-        obs, _, done, _ = env.step(actions_cpu)
+        if action_type == "cartesian":
+            obs, _, done, _ = env.step(actions_cpu)
+        elif action_type == "polar":
+            obs, _, done, _ = env.step_one_polar_action(actions_cpu)
+        else:
+            print("Error: undefined action type: %s"%(action_type))
+
         obs_array = extract_observation(obs, env.observation_space.spaces)
         if goal_form == "rel_goal":
             goal = np.array(obs["pointgoal"], dtype="float32")
@@ -276,7 +283,7 @@ def evaluate_one_episode_rnn(
     return episode_length, success, spl, real_act_seqs #, softspl
 
 # evaluate mlp policy or mlp q function (dqn, mlp_sqn, mlp_bc) for one episode
-def evaluate_one_episode_mlp_q(
+def evaluate_one_episode_mlp_policy_q_function(
         episode,
         env,
         model,
@@ -286,7 +293,7 @@ def evaluate_one_episode_mlp_q(
         device,
         goal_dimension, 
         goal_coord_system,
-        q_learning,
+        q_function,
         action_type
     ):
 
@@ -331,13 +338,13 @@ def evaluate_one_episode_mlp_q(
     for t in range(max_ep_len):
         # predict according to the sequence from (s0,a0,r0) up to now (context)
         # a = arg max q
-        if q_learning:
+        if q_function:  # q network
             actions = model.get_action(
                 observations,
                 goals
             )
         # sample a according to the policy distribution
-        else:    
+        else:   # policy network 
             actions = model.get_action(
                 observations,
                 goals,
@@ -471,6 +478,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
         for i, episode in enumerate(episodes):
             #print('Episode: {}'.format(i+1))
             
+            # only support cartesian action space
             if self.algorithm_name == "dt":
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_dt(
                 episode,
@@ -482,6 +490,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 self.device,
                 int(self.config.get("goal_dimension")), 
                 self.config.get("goal_coord_system"))
+            # support cartesian or polar action space
             elif self.algorithm_name == "rnn_bc":
                 rnn_hidden_size = int(self.config.get("rnn_hidden_size"))
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_rnn(
@@ -494,7 +503,9 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 self.max_ep_len,
                 self.device,
                 int(self.config.get("goal_dimension")), 
-                self.config.get("goal_coord_system"))
+                self.config.get("goal_coord_system"),
+                action_type=self.action_type)
+            # only support cartesian action space
             elif self.algorithm_name == "ppo":
                 episode_length, success, spl, real_act_seqs = evaluate_one_episode_ppo(
                 episode,
@@ -505,8 +516,9 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 self.device,
                 self.cache,
                 self.config)
+            # support cartesian or polar action space
             elif self.algorithm_name == "mlp_bc":
-                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_policy_q_function(
                 episode,
                 self.env,
                 model,
@@ -516,10 +528,11 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 self.device,
                 int(self.config.get("goal_dimension")), 
                 self.config.get("goal_coord_system"),
-                q_learning=False,
+                q_function=False,
                 action_type=self.action_type)
+            # support cartesian or polar action space
             elif "dqn" in self.algorithm_name or "mlp_sqn" in self.algorithm_name:
-                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_q(
+                episode_length, success, spl, real_act_seqs = evaluate_one_episode_mlp_policy_q_function(
                 episode,
                 self.env,
                 model,
@@ -529,7 +542,7 @@ class AcrossEnvEvaluatorSingle(AcrossEnvBaseEvaluator):
                 self.device,
                 int(self.config.get("goal_dimension")), 
                 self.config.get("goal_coord_system"),
-                q_learning=True,
+                q_function=True,
                 action_type=self.action_type)
             else:
                 print("Error: undefined algorithm name: %s"%(self.algorithm_name))

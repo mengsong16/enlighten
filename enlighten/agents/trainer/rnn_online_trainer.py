@@ -102,7 +102,7 @@ class BCOnlineTrainer(PPOTrainer):
         self._is_distributed = get_distrib_size()[2] > 1
         self._obs_batching_cache = ObservationBatchingCache()
 
-    
+    # only support cartesian action space
     def _setup_agent(self) -> None:
         r"""Sets up agent for BC
         """

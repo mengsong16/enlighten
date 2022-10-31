@@ -173,6 +173,7 @@ class PPOTrainer(BaseRLTrainer):
             polar_state = False
 
         # create actor critic
+        # only support cartesian action space
         if self.config.get("visual_encoder") == "CNN":
             self.actor_critic = CNNPolicy(observation_space=observation_space, 
                 goal_observation_space=self._goal_obs_space, 

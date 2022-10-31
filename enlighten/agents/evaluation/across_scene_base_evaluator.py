@@ -68,8 +68,16 @@ class AcrossEnvBaseEvaluator:
         self.experiment_name_to_load = self.config.get("eval_experiment_folder")
 
         # action space
+        # action type
         self.action_type = self.config.get("action_type", "cartesian")
         print("=========> Action type: %s"%(self.action_type))
+
+        # action number
+        if self.action_type == "polar":
+            self.action_number = 1 + int(360 // int(self.config.get("rotate_resolution")))
+        else:
+            self.action_number = int(self.config.get("action_number"))
+        print("=========> Action number : %d"%(self.action_number))
         
           
         # load episodes of behavior datasets for evaluation
@@ -88,6 +96,7 @@ class AcrossEnvBaseEvaluator:
 
     # load dt or rnn model to be evaluated
     def load_model(self, checkpoint_file):
+
         # create model
         if self.algorithm_name == "dt":
             model = DecisionTransformer(
@@ -96,7 +105,7 @@ class AcrossEnvBaseEvaluator:
                 obs_height = int(self.config.get("image_height")),
                 goal_dim=int(self.config.get("goal_dimension")),
                 goal_form=self.config.get("goal_form"),
-                act_num=int(self.config.get("action_number")),
+                act_num=self.action_number,
                 context_length=int(self.config.get('K')),
                 max_ep_len=int(self.config.get("dt_max_ep_len")),  
                 pad_mode = str(self.config.get("pad_mode")),
@@ -109,6 +118,7 @@ class AcrossEnvBaseEvaluator:
                 resid_pdrop=float(self.config.get('dropout')),
                 attn_pdrop=float(self.config.get('dropout')),
             )
+        # can handle cartesian or polar action space
         elif self.algorithm_name == "rnn_bc":
             model = RNNSequenceModel(
                 obs_channel = get_obs_channel_num(self.config),
@@ -116,7 +126,7 @@ class AcrossEnvBaseEvaluator:
                 obs_height = int(self.config.get("image_height")),
                 goal_dim=int(self.config.get("goal_dimension")),
                 goal_form=self.config.get("goal_form"),
-                act_num=int(self.config.get("action_number")),
+                act_num=self.action_number,
                 rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
                 obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
                 goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
@@ -126,6 +136,7 @@ class AcrossEnvBaseEvaluator:
                 domain_adaptation=self.config.get('domain_adaptation'),
                 temperature=float(self.config.get('temperature', 1.0))
             )
+        # can handle cartesian or polar action space
         elif self.algorithm_name == "rnn_bc_online":
             model = DDBC(
                 obs_channel = get_obs_channel_num(self.config),
@@ -133,7 +144,7 @@ class AcrossEnvBaseEvaluator:
                 obs_height = int(self.config.get("image_height")),
                 goal_dim=int(self.config.get("goal_dimension")),
                 goal_form=self.config.get("goal_form"),
-                act_num=int(self.config.get("action_number")),
+                act_num=self.action_number,
                 rnn_hidden_size=int(self.config.get('rnn_hidden_size')), 
                 obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
                 goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
@@ -143,6 +154,7 @@ class AcrossEnvBaseEvaluator:
                 device=self.device,
                 temperature=float(self.config.get('temperature', 1.0))
             )
+        # can only handle cartesian action space
         elif self.algorithm_name == "ppo":
             self.obs_transforms = get_active_obs_transforms(self.config)
             self.cache = ObservationBatchingCache()
@@ -156,6 +168,7 @@ class AcrossEnvBaseEvaluator:
                 checkpoint_file=checkpoint_file)
             # return here because we already load the model and move it to the correct device
             return model
+        # can handle cartesian or polar action space
         elif self.algorithm_name == "mlp_bc":
             model = MLPPolicy(
                 obs_channel = get_obs_channel_num(self.config),
@@ -163,7 +176,7 @@ class AcrossEnvBaseEvaluator:
                 obs_height = int(self.config.get("image_height")),
                 goal_dim=int(self.config.get("goal_dimension")),
                 goal_form=self.config.get("goal_form"),
-                act_num=int(self.config.get("action_number")),
+                act_num=self.action_number,
                 obs_embedding_size=int(self.config.get('obs_embedding_size')), #512
                 goal_embedding_size=int(self.config.get('goal_embedding_size')), #32
                 hidden_size=int(self.config.get('hidden_size')),
@@ -172,15 +185,8 @@ class AcrossEnvBaseEvaluator:
                 state_dimension=int(self.config.get('state_dimension')),
                 temperature=float(self.config.get('temperature', 1.0))
             )
+        # can handle cartesian or polar action space
         elif "dqn" in self.algorithm_name or "mlp_sqn" in self.algorithm_name:
-             # action type
-            self.action_type = self.config.get("action_type", "cartesian")
-            print("=========> Action type: %s"%(self.action_type))
-            if self.action_type == "polar":
-                self.action_number = 37
-            else:
-                self.action_number = int(self.config.get("action_number"))
-
             model = QNetwork(
                 obs_channel = get_obs_channel_num(self.config),
                 obs_width = int(self.config.get("image_width")), 
@@ -193,7 +199,9 @@ class AcrossEnvBaseEvaluator:
                 hidden_size=int(self.config.get('hidden_size')),
                 hidden_layer=int(self.config.get('hidden_layer')),
                 state_form=self.config.get('state_form'),
-                state_dimension=int(self.config.get('state_dimension'))
+                state_dimension=int(self.config.get('state_dimension')),
+                greedy_policy=self.config.get("greedy_policy", True),
+                temperature=float(self.config.get("temperature", 1.0))
             )
         else:
             print("Error: undefined algorithm name: %s"%(self.algorithm_name))

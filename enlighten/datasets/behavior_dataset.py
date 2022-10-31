@@ -892,7 +892,7 @@ class BehaviorDataset:
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
-    config_file = os.path.join(config_path, "imitation_learning_mlp_sqn.yaml")
+    config_file = os.path.join(config_path, "imitation_learning_mlp_bc.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
     # dataset.check_trajectory_q()
@@ -909,8 +909,8 @@ if __name__ == "__main__":
         #print(output[0].size()) # pytorch tensor
         #print(type(output[-1])) # numpy array
         #print(output[-1])
-        #o, g, a, r, next_o, next_g, d, next_a, optimal_action = dataset.get_transition_batch(batch_size=batch_size)
-        o, g, q, a, r, d = dataset.get_transition_batch(batch_size=batch_size)
+        o, g, a, r, next_o, next_g, d, next_a, optimal_action = dataset.get_transition_batch(batch_size=batch_size)
+        #o, g, q, a, r, d = dataset.get_transition_batch(batch_size=batch_size)
         #exit()
         #print(dataset.trajectories[0]["dones"][-1])
         #print(dataset.trajectories[0]["rewards"][-1])

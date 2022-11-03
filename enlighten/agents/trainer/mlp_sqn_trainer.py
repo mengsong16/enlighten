@@ -52,7 +52,17 @@ class MLPSQNTrainer(SequenceTrainer):
             self.action_number = int(self.config.get("action_number"))
         print("=========> Action number: %d"%(self.action_number))
 
+        # policy type
+        self.greedy_policy = self.config.get("greedy_policy", True)
+        print("=========> Evaluation policy type: %s"%(self.greedy_policy))
 
+        # loss type
+        self.loss_function = self.config.get("loss_function")
+        print("=========> Training loss function of Q network: %s"%(self.loss_function))
+        assert self.loss_function in ["mse", "cross_entropy"], "Unknown loss function: %s"%self.loss_function
+        if self.loss_function == "cross_entropy":
+            assert self.greedy_policy == False, "Training loss of Q network is cross entropy, evaluation policy must be Boltzmann policy instead of greedy policy"
+        
     # suport cartesian or polar action space
     def create_model(self):
     
@@ -69,9 +79,16 @@ class MLPSQNTrainer(SequenceTrainer):
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
             state_dimension=int(self.config.get('state_dimension')),
-            greedy_policy=self.config.get("greedy_policy", True),
+            greedy_policy=self.greedy_policy,
             temperature=float(self.config.get("temperature", 1.0))
         )
+
+        self.softmax = nn.Softmax(dim=-1)
+
+    # input_distribution: unknown
+    # target_distribution: known
+    def cross_entropy(self, input_distribution, target_distribution):
+        return torch.mean(-torch.sum(target_distribution * torch.log(input_distribution), 1))
 
     # train for one update
     def train_one_update(self):
@@ -85,14 +102,26 @@ class MLPSQNTrainer(SequenceTrainer):
         # actions # (B)
         # rewards # (B)
         # dones # (B)
-        observations, goals, q_groundtruths, actions, rewards, dones = self.train_dataset.get_transition_batch(self.batch_size)
+        observations, goals, q_groundtruths, action_targets, rewards, dones = self.train_dataset.get_transition_batch(self.batch_size)
 
         # compute predicted Q
         # (B, action_number)
         Q_output = self.q_network(observations, goals)
         
         # compute Q loss
-        q_loss = F.mse_loss(Q_output, q_groundtruths) # a single float number
+        if self.loss_function == "mse":
+            q_loss = F.mse_loss(Q_output, q_groundtruths) # a single float number
+        elif self.loss_function == "cross_entropy":
+            q_pred_logits = Q_output / self.q_network.temperature
+            q_pred_probs = self.q_network.softmax(q_pred_logits)
+
+            with torch.no_grad():
+                q_groundtruth_logits = q_groundtruths / self.q_network.temperature
+                q_groundtruth_probs = self.softmax(q_groundtruth_logits)
+                q_groundtruth_probs = q_groundtruth_probs.detach()
+
+            q_loss =  self.cross_entropy(input_distribution=q_pred_probs, target_distribution=q_groundtruth_probs)
+            
         
         
         # optimize Q network

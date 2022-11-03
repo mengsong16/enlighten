@@ -112,8 +112,8 @@ eval_use_vector_envs: true
 save_every_epochs: 10 #2
 
 # evaluation
-eval_experiment_folder: "mlp_bc-rel_goal_1_scene_rancocas_2000_epoch_200_adamw_obs_tau_1-s1-20221013-013959"
-eval_checkpoint_file: ["ckpt_3.pth", "ckpt_5.pth", "ckpt_10.pth", "ckpt_15.pth", "ckpt_19.pth"] 
+eval_experiment_folder: "mlp_bc-1_scene_rancocas_2000_epoch_400_adamw_obs_tau_1_polar_action-s1-20221031-020814"
+eval_checkpoint_file: ["ckpt_12.pth", "ckpt_13.pth", "ckpt_16.pth", "ckpt_22.pth", "ckpt_26.pth", "ckpt_32.pth", "ckpt_38.pth"] 
 eval_dir: "evaluation"
 
 

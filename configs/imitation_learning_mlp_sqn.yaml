@@ -12,7 +12,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_p
 
 # experiments
 algorithm_name: "mlp_sqn"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_polar_q_fix_final_step"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_polar_q_cross_entropy"
 log_to_wandb: true
 
 # dummy initial setup 
@@ -105,7 +105,8 @@ negative_reward_scale: 1 #1.0e-4 # default is 1
 positive_reward: 0 #2.5 # dafault is 0
 action_type: "polar" #["cartesian", "polar"]
 temperature: 1.0
-greedy_policy: true
+greedy_policy: false #true
+loss_function: "cross_entropy" #["mse", "cross_entropy"]
 #---------------
 
 # evaluate during training
@@ -119,8 +120,8 @@ eval_use_vector_envs: true #true
 save_every_epochs: 10
 
 # evaluation
-eval_experiment_folder: "offline_dqn-rel_goal_1_scene_rancocas_2000_observation_ours-s1-20220930-143915"
-eval_checkpoint_file: ["ckpt_55.pth"] 
+eval_experiment_folder: "mlp_sqn-rel_goal_1_scene_rancocas_2000_observation_polar_q_fix_final_step-s1-20221029-195457"
+eval_checkpoint_file: ["ckpt_24.pth", "ckpt_27.pth", "ckpt_31.pth", "ckpt_33.pth", "ckpt_35.pth", "ckpt_38.pth", "ckpt_39.pth"] 
 eval_dir: "evaluation"
 
 

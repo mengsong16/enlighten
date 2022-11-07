@@ -892,7 +892,7 @@ class BehaviorDataset:
 
 if __name__ == "__main__":
     set_seed_except_env_seed(seed=1)
-    config_file = os.path.join(config_path, "imitation_learning_mlp_bc.yaml")
+    config_file = os.path.join(config_path, "imitation_learning_mlp_sqn.yaml")
     config = parse_config(config_file)
     dataset = BehaviorDataset(config)
     # dataset.check_trajectory_q()
@@ -909,9 +909,21 @@ if __name__ == "__main__":
         #print(output[0].size()) # pytorch tensor
         #print(type(output[-1])) # numpy array
         #print(output[-1])
-        o, g, a, r, next_o, next_g, d, next_a, optimal_action = dataset.get_transition_batch(batch_size=batch_size)
-        #o, g, q, a, r, d = dataset.get_transition_batch(batch_size=batch_size)
-        #exit()
+        #o, g, a, r, next_o, next_g, d, next_a, optimal_action = dataset.get_transition_batch(batch_size=batch_size)
+        o, g, q, a, r, d = dataset.get_transition_batch(batch_size=batch_size)
+        # print(q[0])
+        # print("============================")
+        # mean = torch.mean(q[0], 0)
+        # print(mean)
+        # print("============================")
+        # print(q[0] - mean)
+        # print("============================")
+        # max_value, max_index = torch.max(q[0], 0)
+        # print(max_value)
+        # print("============================")
+        # print(q[0] - max_value)
+        
+        exit()
         #print(dataset.trajectories[0]["dones"][-1])
         #print(dataset.trajectories[0]["rewards"][-1])
         #print(q.size())

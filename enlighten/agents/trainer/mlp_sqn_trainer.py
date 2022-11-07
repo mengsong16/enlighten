@@ -63,6 +63,14 @@ class MLPSQNTrainer(SequenceTrainer):
         if self.loss_function == "cross_entropy":
             assert self.greedy_policy == False, "Training loss of Q network is cross entropy, evaluation policy must be Boltzmann policy instead of greedy policy"
         
+        # use advantage or q
+        self.use_advantage = self.config.get("use_advantage", False)
+        if self.use_advantage:
+            print("=========> Use advantage as groundtruth")
+        else:
+            print("=========> Use q as groundtruth")
+
+        
     # suport cartesian or polar action space
     def create_model(self):
     
@@ -103,6 +111,17 @@ class MLPSQNTrainer(SequenceTrainer):
         # rewards # (B)
         # dones # (B)
         observations, goals, q_groundtruths, action_targets, rewards, dones = self.train_dataset.get_transition_batch(self.batch_size)
+
+        if self.use_advantage:
+            max_q_groundtruth, _ = torch.max(q_groundtruths, dim=1, keepdim=True) 
+            # print(q_groundtruths.size())
+            # print(q_groundtruths[-1,0:2])
+            # print(max_q_groundtruth.size())
+            # print(max_q_groundtruth[-1,0])
+            q_groundtruths = q_groundtruths - max_q_groundtruth
+            # print(q_groundtruths.size())
+            # print(q_groundtruths[-1,0:2])
+            # exit()
 
         # compute predicted Q
         # (B, action_number)

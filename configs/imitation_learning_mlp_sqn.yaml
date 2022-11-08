@@ -12,7 +12,7 @@ behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000_p
 
 # experiments
 algorithm_name: "mlp_sqn"
-experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_polar_q_mse_advantage"
+experiment_name: "rel_goal_1_scene_Rancocas_2000_observation_polar_q_compare_distribution_advantage_mean_q_t_0.1"
 log_to_wandb: true #true
 
 # dummy initial setup 
@@ -95,7 +95,7 @@ batch_mode: "transition"
 # training
 batch_size: 512 #256
 optimizer: "AdamW" #["AdamW", "Adam"]
-learning_rate: 1.0e-4 #1.0e-3 #5.0e-4
+learning_rate: 1.0e-4 #1.0e-4 #1.0e-3 #5.0e-4
 weight_decay: 1.0e-4
 max_epochs: 400
 gamma: 0.99
@@ -104,10 +104,12 @@ reward_type: "minus_one_zero" #["original", "minus_one_zero"]
 negative_reward_scale: 1 #1.0e-4 # default is 1
 positive_reward: 0 #2.5 # dafault is 0
 action_type: "polar" #["cartesian", "polar"]
-loss_function: "mse" #["mse", "cross_entropy"]
-use_advantage: true
-greedy_policy: true #true
-temperature: 1.0
+loss_function: "compare_distribution" #["compare_value", "compare_distribution"]
+supervise_advantage: true # supervise advantage or q
+value_function_type: "mean_q" #["mean_q", "max_q"]
+policy_type: "boltzmann" # ["max_q", "boltzmann"]
+greedy_policy: false #true
+temperature: 0.1
 #---------------
 
 # evaluate during training

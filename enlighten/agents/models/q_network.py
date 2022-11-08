@@ -23,6 +23,7 @@ class QNetwork(nn.Module):
             hidden_layer, #2
             state_form,
             state_dimension, #2
+            policy_type,
             greedy_policy,
             temperature
 
@@ -62,13 +63,21 @@ class QNetwork(nn.Module):
             self.q_network = MLPNetwork(input_dim=self.state_dimension+self.goal_dim, 
                 output_dim=self.act_num, hidden_dim=self.hidden_size, hidden_layer=self.hidden_layer)
         
+        self.policy_type = policy_type
+        self.temperature = temperature
+        assert self.policy_type in ["max_q", "boltzmann"], "Unknown policy type: %s"%self.policy_type
+        if self.policy_type == "max_q":
+            print("=========> Q network uses max Q policy")
+        elif self.policy_type == "boltzmann":
+            print("=========> Q network uses Boltzmann policy")
+            print("=========> Policy temperature: %f"%(self.temperature))
+
         self.greedy_policy = greedy_policy
         if self.greedy_policy:
-            print("=========> Q network uses greedy policy")
+            print("=========> Use greedy Q policy")
         else:
-            self.temperature = temperature
-            print("=========> Q network uses Boltzmann policy")
-            print("=========> policy temperature: %f"%(self.temperature))
+            print("=========> Samle from Q policy")
+        
             
         # acton logits --> action prob
         self.softmax = nn.Softmax(dim=-1)
@@ -125,15 +134,19 @@ class QNetwork(nn.Module):
             # embed each input modality with a different head
             q_values = self.forward(observations, goals)
             # greedy policy = arg max Q
-            if self.greedy_policy:
+            if self.policy_type == "max_q": # must be greedy
                 # If there are multiple maximal values then the indices of the first maximal value are returned
                 actions = torch.argmax(q_values, dim=1, keepdim=True)
             # Boltzmann policy = softmax (Q / temperature)
             else:
                 q_values = q_values / self.temperature
                 probs = self.softmax(q_values)
-                # sample action according to the policy distribution
-                actions = torch.multinomial(probs, num_samples=1)
+                if self.greedy_policy:
+                    # get max prob action
+                    _, actions = torch.topk(probs, k=1, dim=-1)
+                else:
+                    # sample action according to the policy distribution
+                    actions = torch.multinomial(probs, num_samples=1)
             
         
         return actions

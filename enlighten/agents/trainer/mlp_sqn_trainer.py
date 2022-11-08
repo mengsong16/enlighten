@@ -54,21 +54,29 @@ class MLPSQNTrainer(SequenceTrainer):
 
         # policy type
         self.greedy_policy = self.config.get("greedy_policy", True)
-        print("=========> Evaluation policy type: %s"%(self.greedy_policy))
+        self.policy_type = self.config.get("policy_type", "max_q")
+        print("=========> Evaluation policy type: %s"%(self.policy_type))
+        if self.greedy_policy:
+            print("=========> Evaluation policy: Greedy")
+        else:
+            print("=========> Evaluation policy: Sample from distribution")
 
         # loss type
         self.loss_function = self.config.get("loss_function")
         print("=========> Training loss function of Q network: %s"%(self.loss_function))
-        assert self.loss_function in ["mse", "cross_entropy"], "Unknown loss function: %s"%self.loss_function
-        if self.loss_function == "cross_entropy":
-            assert self.greedy_policy == False, "Training loss of Q network is cross entropy, evaluation policy must be Boltzmann policy instead of greedy policy"
+        assert self.loss_function in ["compare_value", "compare_distribution"], "Unknown loss function: %s"%self.loss_function
+        # if self.loss_function == "compare_distribution":
+        #     assert self.policy_type == "boltzmann", "Training loss of Q network is comparing distributions, Q policy must be Boltzmann policy instead of greedy policy"
         
         # use advantage or q
-        self.use_advantage = self.config.get("use_advantage", False)
-        if self.use_advantage:
-            print("=========> Use advantage as groundtruth")
+        self.supervise_advantage = self.config.get("supervise_advantage", False)
+        if self.supervise_advantage:
+            self.value_function_type = self.config.get("value_function_type")
+            print("=========> Supervise advantage")
+            assert self.value_function_type in ["mean_q", "max_q"], "Unknown value function type: %s"%self.value_function_type
+            print("=========> Value function type: %s"%(self.value_function_type))
         else:
-            print("=========> Use q as groundtruth")
+            print("=========> Supervise q")
 
         
     # suport cartesian or polar action space
@@ -87,6 +95,7 @@ class MLPSQNTrainer(SequenceTrainer):
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
             state_dimension=int(self.config.get('state_dimension')),
+            policy_type=self.policy_type,
             greedy_policy=self.greedy_policy,
             temperature=float(self.config.get("temperature", 1.0))
         )
@@ -96,6 +105,9 @@ class MLPSQNTrainer(SequenceTrainer):
     # input_distribution: unknown
     # target_distribution: known
     def cross_entropy(self, input_distribution, target_distribution):
+        # print(target_distribution[0:3,:])
+        # print(input_distribution[0:3,:])
+
         return torch.mean(-torch.sum(target_distribution * torch.log(input_distribution), 1))
 
     # train for one update
@@ -112,13 +124,16 @@ class MLPSQNTrainer(SequenceTrainer):
         # dones # (B)
         observations, goals, q_groundtruths, action_targets, rewards, dones = self.train_dataset.get_transition_batch(self.batch_size)
 
-        if self.use_advantage:
-            max_q_groundtruth, _ = torch.max(q_groundtruths, dim=1, keepdim=True) 
+        if self.supervise_advantage:
+            if self.value_function_type == "max_q":
+                value_groundtruth, _ = torch.max(q_groundtruths, dim=1, keepdim=True) 
+            elif self.value_function_type == "mean_q":
+                value_groundtruth = torch.mean(q_groundtruths, dim=1, keepdim=True) 
             # print(q_groundtruths.size())
             # print(q_groundtruths[-1,0:2])
             # print(max_q_groundtruth.size())
             # print(max_q_groundtruth[-1,0])
-            q_groundtruths = q_groundtruths - max_q_groundtruth
+            q_groundtruths = q_groundtruths - value_groundtruth
             # print(q_groundtruths.size())
             # print(q_groundtruths[-1,0:2])
             # exit()
@@ -128,9 +143,9 @@ class MLPSQNTrainer(SequenceTrainer):
         Q_output = self.q_network(observations, goals)
         
         # compute Q loss
-        if self.loss_function == "mse":
+        if self.loss_function == "compare_value":
             q_loss = F.mse_loss(Q_output, q_groundtruths) # a single float number
-        elif self.loss_function == "cross_entropy":
+        elif self.loss_function == "compare_distribution":
             q_pred_logits = Q_output / self.q_network.temperature
             q_pred_probs = self.q_network.softmax(q_pred_logits)
 
@@ -138,8 +153,14 @@ class MLPSQNTrainer(SequenceTrainer):
                 q_groundtruth_logits = q_groundtruths / self.q_network.temperature
                 q_groundtruth_probs = self.softmax(q_groundtruth_logits)
                 q_groundtruth_probs = q_groundtruth_probs.detach()
+        
+            # print("==================")
+            # print(q_pred_logits[0,:])
+            # print("==================")
+            # print(q_groundtruth_logits[0,:])
 
-            q_loss =  self.cross_entropy(input_distribution=q_pred_probs, target_distribution=q_groundtruth_probs)
+            q_loss = F.mse_loss(q_pred_probs, q_groundtruth_probs)
+            #q_loss =  self.cross_entropy(input_distribution=q_pred_probs, target_distribution=q_groundtruth_probs)
             
         
         

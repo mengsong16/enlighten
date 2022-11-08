@@ -82,6 +82,7 @@ class DQNTrainer(SequenceTrainer):
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
             state_dimension=int(self.config.get('state_dimension')),
+            policy_type = self.config.get("policy_type", "max_q"), 
             greedy_policy=self.config.get("greedy_policy", True),
             temperature=float(self.config.get("temperature", 1.0))
         )
@@ -99,6 +100,7 @@ class DQNTrainer(SequenceTrainer):
             hidden_layer=int(self.config.get('hidden_layer')),
             state_form=self.config.get('state_form'),
             state_dimension=int(self.config.get('state_dimension')),
+            policy_type = self.config.get("policy_type", "max_q"),
             greedy_policy=self.config.get("greedy_policy", True),
             temperature=float(self.config.get("temperature", 1.0))
         )

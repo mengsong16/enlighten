@@ -24,7 +24,7 @@ from enlighten.datasets.pointnav_dataset import NavigationEpisode, NavigationGoa
 from enlighten.datasets.dataset import EpisodeIterator
 from enlighten.datasets.common import PolarActionSpace
 from enlighten.datasets.common import update_episode_data
-from enlighten.datasets.common import load_behavior_dataset_meta, get_first_effective_action_sequence
+from enlighten.datasets.common import load_behavior_dataset_meta, get_first_effective_action_sequence, get_first_forward_action_sequence
 
 # across scene environments
 class MultiNavEnv(NavEnv):
@@ -393,9 +393,9 @@ class MultiNavEnv(NavEnv):
 
         return optimal_action_seq
 
-
+    # wrong
     def compute_cartesian_q_current_state(self):
-         # act according to the shortest path, and compute its polar q at each state
+        # act according to the shortest path, and compute its cartesian q at each state
         cartesian_action_number = len(self.action_mapping)
         cartesian_stop_action_index = self.action_name_to_index("stop")
         cartesian_forward_action_index = self.action_name_to_index("move_forward")
@@ -752,6 +752,114 @@ class MultiNavEnv(NavEnv):
                     
         return traj, actions[:-1]
     
+    def generate_one_episode_cartesian_qs(self, episode):
+        # action space mapping
+        cartesian_action_number = len(self.action_mapping)
+        cartesian_stop_action_index = self.action_name_to_index("stop")
+        cartesian_forward_action_index = self.action_name_to_index("move_forward")
+        cartesian_turn_left_action_index = self.action_name_to_index("turn_left")
+        cartesian_turn_right_action_index = self.action_name_to_index("turn_right")
+
+        # how many shares on the circle
+        share_num = int(360) // self.polar_action_space.rotate_resolution
+
+        # penalty for each rotation action
+        q_penality_per_action = -1.0e-4
+        assert q_penality_per_action < 0, "q penality should be less than 0"
+       
+
+        # reset the env and plan the shortest path, trust the shortest path
+        obs = self.reset(episode=episode, plan_shortest_path=True)
+        # ensure that there is no STOP in the optimal action sequence
+        filtered_optimal_action_sequence = []
+        # planned sequence already appended stop at the end
+        for act in self.optimal_action_seq[:-1]:
+            if act != cartesian_stop_action_index:
+                filtered_optimal_action_sequence.append(act)
+
+        real_actions = []
+         
+        i = 0
+        optimal_action_seq_length = len(filtered_optimal_action_sequence)
+        q_sequence = []
+        while i < optimal_action_seq_length:
+            # now at the circle center
+
+
+            # get current q
+            cur_q = self.get_geodesic_distance_based_q_current_state()
+            # find next move_forward or stop
+            next_action_seq = get_first_forward_action_sequence(
+                filtered_optimal_action_sequence[i:],
+                cartesian_forward_action_index)
+            
+            # verify the sequence's optimality
+            next_action_seq[-1] == cartesian_forward_action_index
+            rotation_seq = next_action_seq[:-1]
+            if rotation_seq: # not empty
+                assert rotation_seq.count(rotation_seq[0]) == len(rotation_seq), "The sequence should rotate in the same direction"
+            
+            # execute these actions: now at next optimal position on the circle
+            for action in next_action_seq:
+                obs, reward, done, info = self.step(action)
+                real_actions.append(action)
+            
+            # get next q
+            next_q = self.get_geodesic_distance_based_q_current_state()
+            assert next_q > cur_q, "The next q should be greater than the current q"
+
+            # compute these qs
+            for j, action in enumerate(next_action_seq):
+                qs = np.zeros(4, dtype="float")
+                # stop is always stay at current q
+                qs[cartesian_stop_action_index] = cur_q
+
+                steps_to_forward = len(next_action_seq) - 1 - j
+                
+                # forward is optimal
+                if action == cartesian_forward_action_index:
+                    qs[action] = next_q
+                    qs[cartesian_turn_left_action_index] = cur_q
+                    qs[cartesian_turn_right_action_index] = cur_q
+                # turn left is optimal
+                elif action == cartesian_turn_left_action_index:
+                    qs[cartesian_forward_action_index] = cur_q
+                    qs[action] = next_q + q_penality_per_action * steps_to_forward
+                    qs[cartesian_turn_right_action_index] = next_q + q_penality_per_action * (share_num-steps_to_forward)
+                # turn right is optimal
+                elif action == cartesian_turn_right_action_index:
+                    qs[cartesian_forward_action_index] = cur_q
+                    qs[cartesian_turn_left_action_index] = next_q + q_penality_per_action * (share_num-steps_to_forward)
+                    qs[action] = next_q + q_penality_per_action * steps_to_forward
+                    
+                # print("---------------------------------")
+                # print(cur_q)
+                # print(next_q)
+                # print(steps_to_forward)
+                # print(share_num-steps_to_forward)
+                # print(qs)
+                # print("---------------------------------")
+
+                # check validity of qs
+                pred_optimal_action_list = list(np.argwhere(qs == np.amax(qs)).squeeze(axis=1))
+                #assert len(pred_optimal_action_list) == 1, "q groundtruth should have only one maximum value: %s"%(str(pred_optimal_action_list))
+                assert action in pred_optimal_action_list, "Error: max q at %s, optimal action at %d"%(str(pred_optimal_action_list), action)
+                
+                # add q
+                q_sequence.append(qs)
+
+            # i++
+            i += len(next_action_seq)
+
+
+        assert len(real_actions) == len(filtered_optimal_action_sequence)
+        # print(real_actions)
+        # print("==================")
+        # print(share_num)
+        # print("==================")
+        # exit()
+            
+
     def generate_one_episode_with_cartesian_q(self, episode):
         goal_dimension = int(self.config.get("goal_dimension"))
         goal_coord_system = self.config.get("goal_coord_system")
@@ -770,7 +878,7 @@ class MultiNavEnv(NavEnv):
         traj = {}
         
         # reset the env
-        obs = self.reset(episode=episode, plan_shortest_path=False)
+        obs = self.reset(episode=episode, plan_shortest_path=True)
         # add (s0, g0, d0, r0)
         # d0=False, r0=0, q=None
         update_episode_data(env=self,

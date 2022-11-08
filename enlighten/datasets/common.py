@@ -285,3 +285,18 @@ def get_first_effective_action_sequence(cartesian_action_seq,
         i += 1
     
     return sub_seq
+
+def get_first_forward_action_sequence(cartesian_action_seq,
+    cartesian_forward_action_index):
+    i = 0 
+    sub_seq = []
+    while i < len(cartesian_action_seq):
+        if cartesian_action_seq[i] == cartesian_forward_action_index:
+            sub_seq.append(cartesian_action_seq[i])
+            break
+        else:
+            sub_seq.append(cartesian_action_seq[i])
+            
+        i += 1
+    
+    return sub_seq

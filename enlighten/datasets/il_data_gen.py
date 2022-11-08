@@ -795,22 +795,28 @@ def generate_train_behavior_data_with_q(yaml_name, behavior_dataset_path,
     for i, episode in tqdm(enumerate(train_episodes)):
         start_time = time.time()
 
+        print("---------------------------------------------")
+        print("Episode %d"%i)
+
         # generate one episode with q
-        if action_type == "polar":
+        if action_type == "polar": # polar action spce
             traj, act_seq = env.generate_one_episode_with_polar_q(episode)
-        else:
-            traj, act_seq = env.generate_one_episode_with_cartesian_q(episode)
+        else:  # cartesian action space
+            #traj, act_seq = env.generate_one_episode_with_cartesian_q(episode)
+            env.generate_one_episode_cartesian_qs(episode)
 
         
         print("Time per episode: %s"%(time.time()-start_time))
         
-        trajectories.append(traj)
-        # act_seq include the first STOP, not the second STOP
-        action_sequences.append(act_seq)
-        traj_lens.append(len(act_seq)+1)
+        # trajectories.append(traj)
+        # # act_seq include the first STOP, not the second STOP
+        # action_sequences.append(act_seq)
+        # traj_lens.append(len(act_seq)+1)
 
-        if i >= 0:
-            break
+        # if i >= 0:
+        #     break
+    
+    exit()
     
     print("==============================================")
     print("Generated %d training trajectories"%(len(trajectories)))

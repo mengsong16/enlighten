@@ -56,10 +56,13 @@ class MLPSQNTrainer(SequenceTrainer):
         self.greedy_policy = self.config.get("greedy_policy", True)
         self.policy_type = self.config.get("policy_type", "max_q")
         print("=========> Evaluation policy type: %s"%(self.policy_type))
+        self.prob_convert_method = self.config.get("prob_convert_method", "softmax")
+        print("=========> Evaluation policy convert q to probability: %s"%(self.prob_convert_method))
         if self.greedy_policy:
             print("=========> Evaluation policy: Greedy")
         else:
             print("=========> Evaluation policy: Sample from distribution")
+        
 
         # loss type
         self.loss_function = self.config.get("loss_function")
@@ -97,7 +100,8 @@ class MLPSQNTrainer(SequenceTrainer):
             state_dimension=int(self.config.get('state_dimension')),
             policy_type=self.policy_type,
             greedy_policy=self.greedy_policy,
-            temperature=float(self.config.get("temperature", 1.0))
+            temperature=float(self.config.get("temperature", 1.0)),
+            prob_convert_method=self.prob_convert_method
         )
 
         self.softmax = nn.Softmax(dim=-1)
@@ -146,12 +150,25 @@ class MLPSQNTrainer(SequenceTrainer):
         if self.loss_function == "compare_value":
             q_loss = F.mse_loss(Q_output, q_groundtruths) # a single float number
         elif self.loss_function == "compare_distribution":
-            q_pred_logits = Q_output / self.q_network.temperature
-            q_pred_probs = self.q_network.softmax(q_pred_logits)
+            if self.prob_convert_method == "softmax":
+                q_pred_logits = Q_output / self.q_network.temperature
+                q_pred_probs = self.q_network.softmax(q_pred_logits)
+            elif self.prob_convert_method == "normalize":
+                min_q_pred = torch.min(Q_output)
+                normalize_q_pred = Q_output - min_q_pred
+                sum_q_pred = torch.sum(normalize_q_pred)
+                q_pred_probs = normalize_q_pred  / sum_q_pred
 
             with torch.no_grad():
-                q_groundtruth_logits = q_groundtruths / self.q_network.temperature
-                q_groundtruth_probs = self.softmax(q_groundtruth_logits)
+                if self.prob_convert_method == "softmax":
+                    q_groundtruth_logits = q_groundtruths / self.q_network.temperature
+                    q_groundtruth_probs = self.softmax(q_groundtruth_logits)
+                elif self.prob_convert_method == "normalize":
+                    min_q_groundtruth = torch.min(q_groundtruths)
+                    normalize_q_groundtruth = q_groundtruths - min_q_groundtruth
+                    sum_q_groundtruth = torch.sum(normalize_q_groundtruth)
+                    q_groundtruth_probs = normalize_q_groundtruth  / sum_q_groundtruth
+    
                 q_groundtruth_probs = q_groundtruth_probs.detach()
         
             # print("==================")

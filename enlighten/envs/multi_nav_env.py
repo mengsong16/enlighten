@@ -527,6 +527,7 @@ class MultiNavEnv(NavEnv):
         # plan max q action
         polar_optimal_action_list = list(np.argwhere(q == np.amax(q)).squeeze(axis=1))
 
+        # this happened when the optimal direction is exactly opposite to the agent's current orientation
         if len(polar_optimal_action_list) > 1:
             print("-------------------------------------------------")
             print("More than one polar optimal actions have been found: %s"%(str(polar_optimal_action_list)))
@@ -537,6 +538,7 @@ class MultiNavEnv(NavEnv):
                     break
             print("-------------------------------------------------")
         else:
+            assert polar_optimal_action_list[0] != 0, "Optimal action should not be STOP"
             polar_optimal_action = polar_optimal_action_list[0]
         
         cartesian_optimal_action_seq = self.polar_action_space.polar_action_to_cartesian_actions(polar_optimal_action)
@@ -752,9 +754,45 @@ class MultiNavEnv(NavEnv):
                     
         return traj, actions[:-1]
     
+    # action_sequence: [turn_left, turn_left, ..., move_forward]
+    def extract_qs_on_circles(self, qs_on_circle, action_sequence, 
+        cartesian_turn_left_action_index, cartesian_turn_right_action_index):
+        
+        rotation_action_sequence = action_sequence[:-1]
+        # only one action: move_forward
+        if not rotation_action_sequence: # no rotation
+            q_extract = np.array([copy.copy(qs_on_circle[1])], dtype="float")
+            
+        else:
+            rotation_action_sequence_len = len(rotation_action_sequence)
+            #print(rotation_action_sequence_len)
+            # print(len(action_sequence))
+            # print("-------------------------")
+            # turn left
+            if rotation_action_sequence[0] == cartesian_turn_left_action_index:
+                #print("turn_left")
+                q_extract = np.array(copy.copy(qs_on_circle[2:2+rotation_action_sequence_len]), dtype="float")
+            # turn right
+            elif rotation_action_sequence[0] == cartesian_turn_right_action_index:
+                #print("turn_right")
+                q_extract = np.array(copy.copy(qs_on_circle[-1:-1-rotation_action_sequence_len:-1]), dtype="float")
+            
+            # add move_forward to q
+            q_extract = np.insert(q_extract, 0, qs_on_circle[1])
+            
+        #print(q_extract)
+        #print("-------------------------")
+        #print(q_extract.shape)
+        assert q_extract.shape[0] == len(action_sequence)
+        assert q_extract[-1] == np.amax(qs_on_circle), "max q on the circle %f is not the final extracted q %f"%(np.amax(qs_on_circle), q_extract[-1]) 
+
+        #print(q_extract)
+        #exit()
+
+        return q_extract
+
     def generate_one_episode_cartesian_qs(self, episode):
         # action space mapping
-        cartesian_action_number = len(self.action_mapping)
         cartesian_stop_action_index = self.action_name_to_index("stop")
         cartesian_forward_action_index = self.action_name_to_index("move_forward")
         cartesian_turn_left_action_index = self.action_name_to_index("turn_left")
@@ -767,31 +805,20 @@ class MultiNavEnv(NavEnv):
         q_penality_per_action = -1.0e-4
         assert q_penality_per_action < 0, "q penality should be less than 0"
        
-
-        # reset the env and plan the shortest path, trust the shortest path
-        obs = self.reset(episode=episode, plan_shortest_path=True)
-        # ensure that there is no STOP in the optimal action sequence
-        filtered_optimal_action_sequence = []
-        # planned sequence already appended stop at the end
-        for act in self.optimal_action_seq[:-1]:
-            if act != cartesian_stop_action_index:
-                filtered_optimal_action_sequence.append(act)
-
+        # reset the env
+        obs = self.reset(episode=episode, plan_shortest_path=False)
+        
         real_actions = []
-         
-        i = 0
-        optimal_action_seq_length = len(filtered_optimal_action_sequence)
-        q_sequence = []
-        while i < optimal_action_seq_length:
+        reach_q_flag = self.reached_goal()
+
+
+        while not reach_q_flag:
             # now at the circle center
-
-
             # get current q
             cur_q = self.get_geodesic_distance_based_q_current_state()
-            # find next move_forward or stop
-            next_action_seq = get_first_forward_action_sequence(
-                filtered_optimal_action_sequence[i:],
-                cartesian_forward_action_index)
+
+            # plan one polar step
+            qs_on_circle, _, next_action_seq = self.compute_polar_q_current_state()
             
             # verify the sequence's optimality
             next_action_seq[-1] == cartesian_forward_action_index
@@ -799,18 +826,30 @@ class MultiNavEnv(NavEnv):
             if rotation_seq: # not empty
                 assert rotation_seq.count(rotation_seq[0]) == len(rotation_seq), "The sequence should rotate in the same direction"
             
-            # execute these actions: now at next optimal position on the circle
-            for action in next_action_seq:
-                obs, reward, done, info = self.step(action)
-                real_actions.append(action)
             
-            # get next q
-            next_q = self.get_geodesic_distance_based_q_current_state()
-            assert next_q > cur_q, "The next q should be greater than the current q"
+            # extract corresponding qs from the circle
+            q_extract = self.extract_qs_on_circles(qs_on_circle, next_action_seq, 
+                cartesian_turn_left_action_index, cartesian_turn_right_action_index)
+            
+            # after rotate and move_forward
+            final_q = q_extract[-1]
+
+            # print("------------------------")
+            # print(next_action_seq)
+            # print("------------------------")
+            # print(qs_on_circle)
+            # print("------------------------")
+            # print(q_extract)
+            # print("------------------------")
+
+            assert final_q > cur_q, "The final q %f should be greater than the current q %f"%(final_q, cur_q)
 
             # compute these qs
+            q_sequence = []
             for j, action in enumerate(next_action_seq):
+                # compute one step q
                 qs = np.zeros(4, dtype="float")
+
                 # stop is always stay at current q
                 qs[cartesian_stop_action_index] = cur_q
 
@@ -818,46 +857,52 @@ class MultiNavEnv(NavEnv):
                 
                 # forward is optimal
                 if action == cartesian_forward_action_index:
-                    qs[action] = next_q
+                    qs[action] = final_q
                     qs[cartesian_turn_left_action_index] = cur_q
                     qs[cartesian_turn_right_action_index] = cur_q
                 # turn left is optimal
                 elif action == cartesian_turn_left_action_index:
-                    qs[cartesian_forward_action_index] = cur_q
-                    qs[action] = next_q + q_penality_per_action * steps_to_forward
-                    qs[cartesian_turn_right_action_index] = next_q + q_penality_per_action * (share_num-steps_to_forward)
+                    qs[cartesian_forward_action_index] = q_extract[j]
+                    qs[action] = final_q + q_penality_per_action * steps_to_forward
+                    qs[cartesian_turn_right_action_index] = final_q + q_penality_per_action * (share_num-steps_to_forward)
                 # turn right is optimal
                 elif action == cartesian_turn_right_action_index:
-                    qs[cartesian_forward_action_index] = cur_q
-                    qs[cartesian_turn_left_action_index] = next_q + q_penality_per_action * (share_num-steps_to_forward)
-                    qs[action] = next_q + q_penality_per_action * steps_to_forward
-                    
-                # print("---------------------------------")
+                    qs[cartesian_forward_action_index] = q_extract[j]
+                    qs[cartesian_turn_left_action_index] = final_q + q_penality_per_action * (share_num-steps_to_forward)
+                    qs[action] = final_q + q_penality_per_action * steps_to_forward
+                
+                print("---------------------------------")
+                print(action)
+                print(final_q)
+                print(qs)
                 # print(cur_q)
-                # print(next_q)
+                
                 # print(steps_to_forward)
                 # print(share_num-steps_to_forward)
                 # print(qs)
-                # print("---------------------------------")
+                print("---------------------------------")
 
                 # check validity of qs
-                pred_optimal_action_list = list(np.argwhere(qs == np.amax(qs)).squeeze(axis=1))
-                #assert len(pred_optimal_action_list) == 1, "q groundtruth should have only one maximum value: %s"%(str(pred_optimal_action_list))
-                assert action in pred_optimal_action_list, "Error: max q at %s, optimal action at %d"%(str(pred_optimal_action_list), action)
-                
+                cur_step_optimal_action_list = list(np.argwhere(qs == np.amax(qs)).squeeze(axis=1))
+                assert action in  cur_step_optimal_action_list, "Optimal action %d does not have max q %s"%(action, str( cur_step_optimal_action_list))
+
                 # add q
                 q_sequence.append(qs)
 
-            # i++
-            i += len(next_action_seq)
+            
+            # take one polar action step
+            self.step_cartesian_action_seq(next_action_seq)
+            # add optimal actions
+            real_actions.extend(next_action_seq)
+                
+            reach_q_flag = self.reached_goal()
 
 
-        assert len(real_actions) == len(filtered_optimal_action_sequence)
-        # print(real_actions)
+        print(real_actions)
         # print("==================")
         # print(share_num)
         # print("==================")
-        # exit()
+        exit()
             
 
     def generate_one_episode_with_cartesian_q(self, episode):

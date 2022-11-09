@@ -25,7 +25,8 @@ class QNetwork(nn.Module):
             state_dimension, #2
             policy_type,
             greedy_policy,
-            temperature
+            temperature,
+            prob_convert_method
 
     ):
         super().__init__()
@@ -65,12 +66,16 @@ class QNetwork(nn.Module):
         
         self.policy_type = policy_type
         self.temperature = temperature
+        self.prob_convert_method = prob_convert_method
+
         assert self.policy_type in ["max_q", "boltzmann"], "Unknown policy type: %s"%self.policy_type
         if self.policy_type == "max_q":
             print("=========> Q network uses max Q policy")
         elif self.policy_type == "boltzmann":
             print("=========> Q network uses Boltzmann policy")
-            print("=========> Policy temperature: %f"%(self.temperature))
+            print("=========> Q to probability convert method: %s"%(self.prob_convert_method))
+            if self.prob_convert_method == "softmax":
+                print("=========> Policy temperature: %f"%(self.temperature))
 
         self.greedy_policy = greedy_policy
         if self.greedy_policy:
@@ -139,8 +144,19 @@ class QNetwork(nn.Module):
                 actions = torch.argmax(q_values, dim=1, keepdim=True)
             # Boltzmann policy = softmax (Q / temperature)
             else:
-                q_values = q_values / self.temperature
-                probs = self.softmax(q_values)
+                if self.prob_convert_method == "softmax":
+                    q_values = q_values / self.temperature
+                    probs = self.softmax(q_values)
+                elif self.prob_convert_method == "normalize":
+                    min_q = torch.min(q_values)
+                    normalize_q = q_values - min_q
+                    sum_q = torch.sum(normalize_q)
+                    probs = normalize_q  / sum_q
+                else:
+                    print("Error: unknown q to prob convert method: %s"%self.prob_convert_method)
+                    exit()
+
+
                 if self.greedy_policy:
                     # get max prob action
                     _, actions = torch.topk(probs, k=1, dim=-1)

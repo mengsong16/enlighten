@@ -110,8 +110,8 @@ value_function_type: "mean_q" #["mean_q", "max_q"]
 #---------------
 policy_type: "boltzmann" # ["max_q", "boltzmann"]
 greedy_policy: false #true
-prob_convert_method: "normalize" #["softmax", "normalize"]
-temperature: 1 #0.01
+prob_convert_method: "softmax" #["softmax", "normalize"]
+temperature: 0.1 #0.01
 #---------------
 
 # evaluate during training
@@ -125,8 +125,8 @@ eval_use_vector_envs: true #true
 save_every_epochs: 10
 
 # evaluation
-eval_experiment_folder: "mlp_sqn-rel_goal_1_scene_rancocas_2000_observation_polar_q_compare_value_advantage_max_q-s1-20221107-133951"
-eval_checkpoint_file: ["ckpt_13.pth", "ckpt_16.pth", "ckpt_25.pth", "ckpt_32.pth", "ckpt_37.pth"] 
+eval_experiment_folder: "mlp_sqn-rel_goal_1_scene_rancocas_2000_observation_polar_q_compare_distribution_advantage_mean_q_t_0.1-s1-20221108-024433"
+eval_checkpoint_file: ["ckpt_12.pth", "ckpt_21.pth", "ckpt_31.pth", "ckpt_34.pth"] 
 eval_dir: "evaluation"
 
 

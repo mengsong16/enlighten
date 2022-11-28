@@ -12,6 +12,7 @@ from enlighten.utils.path import *
 from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.agents.common.other import get_optimal_q
 
+# static trajectory / transition dataset
 class BehaviorDataset:
     """ Sample trajectory segments for supervised learning 
     """

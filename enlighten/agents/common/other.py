@@ -3,7 +3,9 @@ import numpy as np
 import yaml
 import math
 import collections
+from collections import OrderedDict
 import torch
+from gym.spaces import Box, Discrete, Tuple
 
 def get_device(config):
     if torch.cuda.is_available():
@@ -57,3 +59,90 @@ def get_optimal_q(action_seq_length, gamma, positive_reward, negative_reward_sca
 
     return q_list[0]
 
+def get_dim(space):
+    if isinstance(space, Box):
+        return space.low.size
+    elif isinstance(space, Discrete):
+        return space.n
+    elif isinstance(space, Tuple):
+        return sum(get_dim(subspace) for subspace in space.spaces)
+    elif hasattr(space, 'flat_dim'):
+        return space.flat_dim
+    else:
+        raise TypeError("Unknown space: {}".format(space))
+
+def add_prefix(log_dict: OrderedDict, prefix: str, divider=''):
+    with_prefix = OrderedDict()
+    for key, val in log_dict.items():
+        with_prefix[prefix + divider + key] = val
+    return with_prefix
+
+def _filter_batch(np_batch):
+    for k, v in np_batch.items():
+        if v.dtype == np.bool:
+            yield k, v.astype(int)
+        else:
+            yield k, v
+
+def _elem_or_tuple_to_variable(elem_or_tuple):
+    if isinstance(elem_or_tuple, tuple):
+        return tuple(
+            _elem_or_tuple_to_variable(e) for e in elem_or_tuple
+        )
+    return ptu.from_numpy(elem_or_tuple).float()
+
+def np_to_pytorch_batch(np_batch):
+    if isinstance(np_batch, dict):
+        return {
+            k: _elem_or_tuple_to_variable(x)
+            for k, x in _filter_batch(np_batch)
+            if x.dtype != np.dtype('O')  # ignore object (e.g. dictionaries)
+        }
+    else:
+        _elem_or_tuple_to_variable(np_batch)
+
+def create_stats_ordered_dict(
+        name,
+        data,
+        stat_prefix=None,
+        always_show_all_stats=True,
+        exclude_max_min=False,
+):
+    if stat_prefix is not None:
+        name = "{}{}".format(stat_prefix, name)
+    if isinstance(data, Number):
+        return OrderedDict({name: data})
+
+    if len(data) == 0:
+        return OrderedDict()
+
+    if isinstance(data, tuple):
+        ordered_dict = OrderedDict()
+        for number, d in enumerate(data):
+            sub_dict = create_stats_ordered_dict(
+                "{0}_{1}".format(name, number),
+                d,
+            )
+            ordered_dict.update(sub_dict)
+        return ordered_dict
+
+    if isinstance(data, list):
+        try:
+            iter(data[0])
+        except TypeError:
+            pass
+        else:
+            data = np.concatenate(data)
+
+    if (isinstance(data, np.ndarray) and data.size == 1
+            and not always_show_all_stats):
+        return OrderedDict({name: float(data)})
+
+    stats = OrderedDict([
+        (name + ' Mean', np.mean(data)),
+        (name + ' Std', np.std(data)),
+    ])
+    if not exclude_max_min:
+        stats[name + ' Max'] = np.max(data)
+        stats[name + ' Min'] = np.min(data)
+    return stats

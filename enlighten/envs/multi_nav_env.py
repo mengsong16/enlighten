@@ -482,7 +482,7 @@ class MultiNavEnv(NavEnv):
 
         
         # q["move_forward"]
-        # take one step forward
+        # take one step forward (ignore 1 step distance)
         obs, reward, done, info = self.step(self.polar_action_space.cartesian_forward_action_index)
         q.append(self.get_geodesic_distance_based_q_current_state())
         # get back to the original state (i.e. circle center)
@@ -493,7 +493,7 @@ class MultiNavEnv(NavEnv):
             quaternion=True
         )
 
-        # compute q at all angles rotate from 10 to 350 degrees
+        # compute q at all angles rotate from 10 to 350 degrees (ignore 1 step distance)
         rotate_num = self.polar_action_space.polar_action_number - 2
         circle_states = []
         for n in list(range(1, rotate_num+1)):

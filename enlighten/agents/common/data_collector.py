@@ -4,6 +4,8 @@ from functools import partial
 
 import numpy as np
 
+import copy
+
 from enlighten.agents.common.other import create_stats_ordered_dict
 
 def rollout(
@@ -35,8 +37,10 @@ def rollout(
     env_infos = []
     next_observations = []
     path_length = 0
+
     agent.reset()
     o = env.reset()
+
     if reset_callback:
         reset_callback(env, agent, o)
     if render:
@@ -94,32 +98,7 @@ def rollout(
         full_next_observations=raw_obs,
     )
 
-class DataCollector(object, metaclass=abc.ABCMeta):
-    def end_epoch(self, epoch):
-        pass
-
-    def get_diagnostics(self):
-        return {}
-
-    def get_snapshot(self):
-        return {}
-
-    @abc.abstractmethod
-    def get_epoch_paths(self):
-        pass
-
-class PathCollector(DataCollector, metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def collect_new_paths(
-            self,
-            max_path_length,
-            num_steps,
-            discard_incomplete_paths,
-    ):
-        pass
-
-
-class MdpPathCollector(PathCollector):
+class MdpPathCollector(object, metaclass=abc.ABCMeta):
     def __init__(
             self,
             env,

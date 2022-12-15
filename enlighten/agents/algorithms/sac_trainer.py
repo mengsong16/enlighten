@@ -17,36 +17,12 @@ import gtimer as gt
 
 LossStatistics = OrderedDict
 
-class TorchTrainer(metaclass=abc.ABCMeta):
-    def __init__(self):
-        self._num_train_steps = 0
-
-    def train(self, np_batch):
-        self._num_train_steps += 1
-        batch = np_to_pytorch_batch(np_batch)
-        self.train_from_torch(batch)
-
-    def get_diagnostics(self):
-        return OrderedDict([
-            ('num train calls', self._num_train_steps),
-        ])
-
-    @abc.abstractmethod
-    def train_from_torch(self, batch):
-        pass
-
-    @property
-    @abc.abstractmethod
-    def networks(self) -> Iterable[nn.Module]:
-        pass
-
-
 SACLosses = namedtuple(
     'SACLosses',
     'policy_loss qf1_loss qf2_loss alpha_loss',
 )
 
-class SACTrainer(TorchTrainer, LossFunction):
+class SACTrainer(metaclass=abc.ABCMeta, LossFunction):
     def __init__(
             self,
             env,
@@ -71,7 +47,8 @@ class SACTrainer(TorchTrainer, LossFunction):
             use_automatic_entropy_tuning=True,
             target_entropy=None,
     ):
-        super().__init__()
+        self._num_train_steps = 0
+
         self.env = env
         self.policy = policy
         self.qf1 = qf1
@@ -256,12 +233,19 @@ class SACTrainer(TorchTrainer, LossFunction):
         return loss, eval_statistics
 
     def get_diagnostics(self):
-        stats = super().get_diagnostics()
+        stats = OrderedDict([
+            ('num train calls', self._num_train_steps),
+        ])
         stats.update(self.eval_statistics)
         return stats
 
     def end_epoch(self, epoch):
         self._need_to_update_eval_statistics = True
+    
+    def train(self, np_batch):
+        self._num_train_steps += 1
+        batch = np_to_pytorch_batch(np_batch)
+        self.train_from_torch(batch)
 
     @property
     def networks(self):

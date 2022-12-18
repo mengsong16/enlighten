@@ -8,8 +8,7 @@ import warnings
 class EnvReplayBuffer():
     def __init__(
             self,
-            config,
-            replace = True
+            config
     ):
         """
         :param max_replay_buffer_size:
@@ -41,7 +40,7 @@ class EnvReplayBuffer():
         self._terminals = np.zeros((self._max_replay_buffer_size, 1), dtype=np.uint8)
         
         # sample batch with replacement or not
-        self._replace = replace
+        self._replace = self.config.get("sample_with_replace")
 
         self._top = 0
         self._size = 0

@@ -24,7 +24,7 @@ from enlighten.agents.evaluation.across_scene_vec_env_evaluator import AcrossEnv
 from enlighten.datasets.image_dataset import ImageDataset
 
 
-# train behavior cloning imitation learning
+# train offline rl and imitation learning
 class SequenceTrainer:
     def __init__(self, config_filename, resume, resume_experiment_name, resume_ckpt_index):
         assert config_filename is not None, "needs config file to initialize trainer"

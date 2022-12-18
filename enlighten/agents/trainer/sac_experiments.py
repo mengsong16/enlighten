@@ -1,6 +1,7 @@
 from gym.envs.mujoco import HalfCheetahEnv
 
 import rlkit.torch.pytorch_util as ptu
+from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.replay_buffer import EnvReplayBuffer
 from rlkit.envs.wrappers import NormalizedBoxEnv
 from rlkit.launchers.launcher_util import setup_logger
@@ -9,76 +10,113 @@ from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
 from enlighten.agents.algorithms.sac_trainer import SACTrainer
 from rlkit.torch.networks import ConcatMlp
 from enlighten.agents.algorithms.online_rl_algorithms import TorchBatchRLAlgorithm
+from enlighten.utils.path import *
+from enlighten.utils.config_utils import parse_config
+from enlighten.agents.common.seed import set_seed_except_env_seed
+from enlighten.agents.models.mlp_network import MLPNetwork
+from enlighten.agents.models.dt_encoder import ObservationEncoder, GoalEncoder
+from enlighten.agents.common.other import get_obs_channel_num
 
+class SACExperiment():
+    def __init__(self, config_filename):
+        # get config
+        config_file = os.path.join(config_path, config_filename)
+        self.config = parse_config(config_file)
 
-def experiment(variant):
-    expl_env = NormalizedBoxEnv(HalfCheetahEnv())
-    eval_env = NormalizedBoxEnv(HalfCheetahEnv())
-    obs_dim = expl_env.observation_space.low.size
-    action_dim = eval_env.action_space.low.size
+        # seed everything except env
+        self.seed = int(self.config.get("seed"))
+        set_seed_except_env_seed(self.seed)
 
-    M = variant['layer_size']
-    qf1 = ConcatMlp(
-        input_size=obs_dim + action_dim,
-        output_size=1,
-        hidden_sizes=[M, M],
-    )
-    qf2 = ConcatMlp(
-        input_size=obs_dim + action_dim,
-        output_size=1,
-        hidden_sizes=[M, M],
-    )
-    target_qf1 = ConcatMlp(
-        input_size=obs_dim + action_dim,
-        output_size=1,
-        hidden_sizes=[M, M],
-    )
-    target_qf2 = ConcatMlp(
-        input_size=obs_dim + action_dim,
-        output_size=1,
-        hidden_sizes=[M, M],
-    )
-    policy = TanhGaussianPolicy(
-        obs_dim=obs_dim,
-        action_dim=action_dim,
-        hidden_sizes=[M, M],
-    )
-    eval_policy = MakeDeterministic(policy)
-    eval_path_collector = MdpPathCollector(
-        eval_env,
-        eval_policy,
-    )
-    expl_path_collector = MdpPathCollector(
-        expl_env,
-        policy,
-    )
-    replay_buffer = EnvReplayBuffer(
-        variant['replay_buffer_size'],
-        expl_env,
-    )
-    trainer = SACTrainer(
-        env=eval_env,
-        policy=policy,
-        qf1=qf1,
-        qf2=qf2,
-        target_qf1=target_qf1,
-        target_qf2=target_qf2,
-        **variant['trainer_kwargs']
-    )
-    algorithm = TorchBatchRLAlgorithm(
-        trainer=trainer,
-        exploration_env=expl_env,
-        evaluation_env=eval_env,
-        exploration_data_collector=expl_path_collector,
-        evaluation_data_collector=eval_path_collector,
-        replay_buffer=replay_buffer,
-        **variant['algorithm_kwargs']
-    )
-    algorithm.to(ptu.device)
-    algorithm.train()
+        self.create_env(config_filename)
 
+        expl_env = NormalizedBoxEnv(HalfCheetahEnv())
+        eval_env = NormalizedBoxEnv(HalfCheetahEnv())
 
+        self.create_models()
+        
+        eval_policy = MakeDeterministic(self.policy)
+        eval_path_collector = MdpPathCollector(
+            eval_env,
+            eval_policy,
+        )
+        expl_path_collector = MdpPathCollector(
+            expl_env,
+            self.policy,
+        )
+        replay_buffer = EnvReplayBuffer(
+            self.config
+        )
+        trainer = SACTrainer(
+            env=eval_env,
+            policy=self.policy,
+            qf1=self.qf1,
+            qf2=self.qf2,
+            target_qf1=self.target_qf1,
+            target_qf2=self.target_qf2,
+            **variant['trainer_kwargs']
+        )
+        algorithm = TorchBatchRLAlgorithm(
+            trainer=trainer,
+            exploration_env=expl_env,
+            evaluation_env=eval_env,
+            exploration_data_collector=expl_path_collector,
+            evaluation_data_collector=eval_path_collector,
+            replay_buffer=replay_buffer,
+            **variant['algorithm_kwargs']
+        )
+        algorithm.to(ptu.device)
+        algorithm.train()
+    
+    def create_env(self, config_filename):
+        self.env = MultiNavEnv(config_file=config_filename)
+    
+    def create_models(self):
+        obs_channel = get_obs_channel_num(self.config)
+        self.goal_dim = int(self.config.get("goal_dimension"))
+        self.act_num = int(self.config.get("action_number"))
+        self.obs_embedding_size = int(self.config.get('obs_embedding_size')) #512
+        self.goal_embedding_size = int(self.config.get('goal_embedding_size')) #32
+        self.hidden_size = int(self.config.get('hidden_size'))
+        self.hidden_layer = int(self.config.get('hidden_layer'))
+        
+        # shared by the following 5 networks
+        self.goal_encoder = GoalEncoder(self.goal_dim, self.goal_embedding_size)
+        self.obs_encoder = ObservationEncoder(obs_channel, self.obs_embedding_size)
 
+        # two hidden layers
+        self.qf1 = MLPNetwork(
+            input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+            output_dim=self.act_num, 
+            hidden_dim=self.hidden_size, 
+            hidden_layer=self.hidden_layer)
+        
+        # two hidden layers
+        self.qf2 = MLPNetwork(
+            input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+            output_dim=self.act_num, 
+            hidden_dim=self.hidden_size, 
+            hidden_layer=self.hidden_layer)
+
+        # two hidden layers
+        self.target_qf1 = MLPNetwork(
+            input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+            output_dim=self.act_num, 
+            hidden_dim=self.hidden_size, 
+            hidden_layer=self.hidden_layer)
+        
+        # two hidden layers
+        self.target_qf2 = MLPNetwork(
+            input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+            output_dim=self.act_num, 
+            hidden_dim=self.hidden_size, 
+            hidden_layer=self.hidden_layer)
+        
+        # two hidden layers
+        self.policy = MLPNetwork(
+            input_dim=self.obs_embedding_size+self.goal_embedding_size, 
+            output_dim=self.act_num, 
+            hidden_dim=self.hidden_size, 
+            hidden_layer=self.hidden_layer)
 
 if __name__ == "__main__":
     # noinspection PyTypeChecker

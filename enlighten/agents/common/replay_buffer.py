@@ -145,3 +145,9 @@ class EnvReplayBuffer():
     def add_paths(self, paths):
         for path in paths:
             self.add_path(path)
+    
+    def get_snapshot(self):
+        return {}
+
+    def end_epoch(self, epoch):
+        return

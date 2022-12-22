@@ -11,7 +11,7 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             exploration_env,
             evaluation_env,
             exploration_data_collector: MdpPathCollector,
-            evaluation_data_collector: MdpPathCollector,
+            #evaluation_data_collector: MdpPathCollector,
             replay_buffer: EnvReplayBuffer,
             batch_size,
             max_path_length,
@@ -21,25 +21,24 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             num_trains_per_train_loop,
             num_train_loops_per_epoch=1,
             min_num_steps_before_training=0,
-            start_epoch=0, # negative epochs are offline, positive epochs are online
+            start_epoch=0
     ):
         self.trainer = trainer
         self.expl_env = exploration_env
         self.eval_env = evaluation_env
         self.expl_data_collector = exploration_data_collector
-        self.eval_data_collector = evaluation_data_collector
+        #self.eval_data_collector = evaluation_data_collector
         self.replay_buffer = replay_buffer
-        self._start_epoch = 0
 
-        self.post_epoch_funcs = []
+        #self.post_epoch_funcs = []
 
 
         self.batch_size = batch_size
         self.max_path_length = max_path_length
         self.num_epochs = num_epochs
         self.num_eval_steps_per_epoch = num_eval_steps_per_epoch
-        self.num_trains_per_train_loop = num_trains_per_train_loop
         self.num_train_loops_per_epoch = num_train_loops_per_epoch
+        self.num_trains_per_train_loop = num_trains_per_train_loop
         self.num_expl_steps_per_train_loop = num_expl_steps_per_train_loop
         self.min_num_steps_before_training = min_num_steps_before_training
         self._start_epoch = start_epoch
@@ -50,12 +49,12 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
                 range(self._start_epoch, self.num_epochs),
                 save_itrs=True,
         ):
-            self.offline_rl = self.epoch < 0
-            self._begin_epoch(self.epoch)
+            #self._begin_epoch(self.epoch)
             self._train()
             self._end_epoch(self.epoch)
 
     def _train(self):
+        # collect k steps
         if self.epoch == 0 and self.min_num_steps_before_training > 0:
             init_expl_paths = self.expl_data_collector.collect_new_paths(
                 self.max_path_length,
@@ -66,14 +65,16 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             self.replay_buffer.add_paths(init_expl_paths)
             self.expl_data_collector.end_epoch(-1)
 
-        self.eval_data_collector.collect_new_paths(
-            self.max_path_length,
-            self.num_eval_steps_per_epoch,
-            discard_incomplete_paths=True,
-        )
-        gt.stamp('evaluation sampling')
+        # self.eval_data_collector.collect_new_paths(
+        #     self.max_path_length,
+        #     self.num_eval_steps_per_epoch,
+        #     discard_incomplete_paths=True,
+        # )
+        # gt.stamp('evaluation sampling')
 
+        # loop n times
         for _ in range(self.num_train_loops_per_epoch):
+            # collect m steps
             new_expl_paths = self.expl_data_collector.collect_new_paths(
                 self.max_path_length,
                 self.num_expl_steps_per_train_loop,
@@ -81,10 +82,11 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             )
             gt.stamp('exploration sampling', unique=False)
 
-            
+            # add to replay buffer
             self.replay_buffer.add_paths(new_expl_paths)
             gt.stamp('data storing', unique=False)
 
+            # train b batches
             self.training_mode(True)
             for _ in range(self.num_trains_per_train_loop):
                 train_data = self.replay_buffer.random_batch(self.batch_size)
@@ -100,18 +102,19 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
         self._log_stats(epoch)
 
         self.expl_data_collector.end_epoch(epoch)
-        self.eval_data_collector.end_epoch(epoch)
+        #self.eval_data_collector.end_epoch(epoch)
         self.replay_buffer.end_epoch(epoch)
         self.trainer.end_epoch(epoch)
 
-        for post_epoch_func in self.post_epoch_funcs:
-            post_epoch_func(self, epoch)
+        # for post_epoch_func in self.post_epoch_funcs:
+        #     post_epoch_func(self, epoch)
 
 
     def to(self, device):
         for net in self.trainer.networks:
             net.to(device)
 
+    # switch network mode to train or evaluation
     def training_mode(self, mode):
         for net in self.trainer.networks:
             net.train(mode)
@@ -122,8 +125,8 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             snapshot['trainer/' + k] = v
         for k, v in self.expl_data_collector.get_snapshot().items():
             snapshot['exploration/' + k] = v
-        for k, v in self.eval_data_collector.get_snapshot().items():
-            snapshot['evaluation/' + k] = v
+        # for k, v in self.eval_data_collector.get_snapshot().items():
+        #     snapshot['evaluation/' + k] = v
         for k, v in self.replay_buffer.get_snapshot().items():
             snapshot['replay_buffer/' + k] = v
         return snapshot
@@ -165,20 +168,20 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
         """
         Evaluation
         """
-        logger.record_dict(
-            self.eval_data_collector.get_diagnostics(),
-            prefix='eval/',
-        )
-        eval_paths = self.eval_data_collector.get_epoch_paths()
-        if hasattr(self.eval_env, 'get_diagnostics'):
-            logger.record_dict(
-                self.eval_env.get_diagnostics(eval_paths),
-                prefix='eval/',
-            )
-        logger.record_dict(
-            eval_util.get_generic_path_information(eval_paths),
-            prefix="eval/",
-        )
+        # logger.record_dict(
+        #     self.eval_data_collector.get_diagnostics(),
+        #     prefix='eval/',
+        # )
+        # eval_paths = self.eval_data_collector.get_epoch_paths()
+        # if hasattr(self.eval_env, 'get_diagnostics'):
+        #     logger.record_dict(
+        #         self.eval_env.get_diagnostics(eval_paths),
+        #         prefix='eval/',
+        #     )
+        # logger.record_dict(
+        #     eval_util.get_generic_path_information(eval_paths),
+        #     prefix="eval/",
+        # )
 
         """
         Misc

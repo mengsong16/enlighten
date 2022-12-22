@@ -16,6 +16,7 @@ from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.agents.models.mlp_network import MLPNetwork
 from enlighten.agents.models.dt_encoder import ObservationEncoder, GoalEncoder
 from enlighten.agents.common.other import get_obs_channel_num
+from enlighten.datasets.common import load_behavior_dataset_meta
 
 class SACExperiment():
     def __init__(self, config_filename):
@@ -27,7 +28,7 @@ class SACExperiment():
         self.seed = int(self.config.get("seed"))
         set_seed_except_env_seed(self.seed)
 
-        self.create_env(config_filename)
+        self.create_env_dataset(config_filename)
 
         expl_env = NormalizedBoxEnv(HalfCheetahEnv())
         eval_env = NormalizedBoxEnv(HalfCheetahEnv())
@@ -67,9 +68,18 @@ class SACExperiment():
         algorithm.to(ptu.device)
         algorithm.train()
     
-    def create_env(self, config_filename):
+    def create_env_dataset(self, config_filename):
         self.env = MultiNavEnv(config_file=config_filename)
-    
+
+        self.env.seed(self.seed)
+
+        train_episodes = load_behavior_dataset_meta(
+            behavior_dataset_path=self.config.get("behavior_dataset_path"), 
+            split_name="train")
+
+        self.env.set_episode_dataset(episodes=train_episodes)
+
+
     def create_models(self):
         obs_channel = get_obs_channel_num(self.config)
         self.goal_dim = int(self.config.get("goal_dimension"))

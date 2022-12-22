@@ -17,7 +17,7 @@ def rollout(
         preprocess_obs_for_policy_fn=None,
         get_action_kwargs=None,
         return_dict_obs=False,
-        full_o_postprocess_func=None,
+        #full_o_postprocess_func=None,
         reset_callback=None,
 ):
     if render_kwargs is None:
@@ -26,19 +26,18 @@ def rollout(
         get_action_kwargs = {}
     if preprocess_obs_for_policy_fn is None:
         preprocess_obs_for_policy_fn = lambda x: x
-    raw_obs = []
-    raw_next_obs = []
+    
+    #raw_obs = []
+    #raw_next_obs = []
     observations = []
     actions = []
     rewards = []
     terminals = []
     dones = []
-    agent_infos = []
-    env_infos = []
     next_observations = []
     path_length = 0
 
-    agent.reset()
+    #agent.reset()
     o = env.reset()
 
     if reset_callback:
@@ -46,12 +45,12 @@ def rollout(
     if render:
         env.render(**render_kwargs)
     while path_length < max_path_length:
-        raw_obs.append(o)
+        #raw_obs.append(o)
         o_for_agent = preprocess_obs_for_policy_fn(o)
-        a, agent_info = agent.get_action(o_for_agent, **get_action_kwargs)
+        a = agent.get_action(o_for_agent, **get_action_kwargs)
 
-        if full_o_postprocess_func:
-            full_o_postprocess_func(env, agent, o)
+        #if full_o_postprocess_func:
+        #    full_o_postprocess_func(env, agent, o)
 
         next_o, r, done, env_info = env.step(copy.deepcopy(a))
         if render:
@@ -61,30 +60,32 @@ def rollout(
         terminal = False
         if done:
             # terminal=False if TimeLimit caused termination
+            # terminal=True if done=True and done is not caused by time limit
             if not env_info.pop('TimeLimit.truncated', False):
                 terminal = True
         terminals.append(terminal)
         dones.append(done)
         actions.append(a)
         next_observations.append(next_o)
-        raw_next_obs.append(next_o)
-        agent_infos.append(agent_info)
-        env_infos.append(env_info)
+        #raw_next_obs.append(next_o)
+        
         path_length += 1
         if done:
             break
         o = next_o
+    
     actions = np.array(actions)
     if len(actions.shape) == 1:
         actions = np.expand_dims(actions, 1)
     observations = np.array(observations)
     next_observations = np.array(next_observations)
-    if return_dict_obs:
-        observations = raw_obs
-        next_observations = raw_next_obs
+    # if return_dict_obs:
+    #     observations = raw_obs
+    #     next_observations = raw_next_obs
     rewards = np.array(rewards)
     if len(rewards.shape) == 1:
         rewards = rewards.reshape(-1, 1)
+    
     return dict(
         observations=observations,
         actions=actions,
@@ -92,10 +93,8 @@ def rollout(
         next_observations=next_observations,
         terminals=np.array(terminals).reshape(-1, 1),
         dones=np.array(dones).reshape(-1, 1),
-        agent_infos=agent_infos,
-        env_infos=env_infos,
-        full_observations=raw_obs,
-        full_next_observations=raw_obs,
+        # full_observations=raw_obs,
+        # full_next_observations=raw_obs,
     )
 
 class MdpPathCollector(object, metaclass=abc.ABCMeta):
@@ -114,6 +113,7 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
         self._env = env
         self._policy = policy
         self._max_num_epoch_paths_saved = max_num_epoch_paths_saved
+        # paths collected in the current epoch
         self._epoch_paths = deque(maxlen=self._max_num_epoch_paths_saved)
         self._render = render
         self._render_kwargs = render_kwargs
@@ -124,6 +124,7 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
 
         self._save_env_in_snapshot = save_env_in_snapshot
 
+    # collect n steps and return them
     def collect_new_paths(
             self,
             max_path_length,
@@ -137,6 +138,8 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
                 max_path_length,
                 num_steps - num_steps_collected,
             )
+
+            # collect one path (<= max steps needed)
             path = self._rollout_fn(
                 self._env,
                 self._policy,
@@ -145,17 +148,22 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
                 render_kwargs=self._render_kwargs,
             )
             path_len = len(path['actions'])
+
+            # discard incomplete (not done, not reach max length) path and stop collection
             if (
                     path_len != max_path_length
                     and not path['dones'][-1]
                     and discard_incomplete_paths
             ):
                 break
+
             num_steps_collected += path_len
             paths.append(path)
+        
         self._num_paths_total += len(paths)
         self._num_steps_total += num_steps_collected
         self._epoch_paths.extend(paths)
+        
         return paths
 
     def get_epoch_paths(self):

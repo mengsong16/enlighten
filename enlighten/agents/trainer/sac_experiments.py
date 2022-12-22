@@ -1,14 +1,11 @@
 from gym.envs.mujoco import HalfCheetahEnv
 
-import rlkit.torch.pytorch_util as ptu
 from enlighten.envs.multi_nav_env import MultiNavEnv
 from enlighten.agents.common.replay_buffer import EnvReplayBuffer
-from rlkit.envs.wrappers import NormalizedBoxEnv
 from rlkit.launchers.launcher_util import setup_logger
 from enlighten.agents.common.data_collector import MdpPathCollector
 from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
 from enlighten.agents.algorithms.sac_trainer import SACTrainer
-from rlkit.torch.networks import ConcatMlp
 from enlighten.agents.algorithms.online_rl_algorithms import TorchBatchRLAlgorithm
 from enlighten.utils.path import *
 from enlighten.utils.config_utils import parse_config

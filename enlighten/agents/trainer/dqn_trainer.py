@@ -23,7 +23,7 @@ from enlighten.agents.common.seed import set_seed_except_env_seed
 from enlighten.agents.common.other import get_device
 from enlighten.datasets.behavior_dataset import BehaviorDataset
 from enlighten.envs.multi_nav_env import MultiNavEnv
-from enlighten.agents.common.other import get_obs_channel_num
+from enlighten.agents.common.other import get_obs_channel_num, soft_update_from_to
 from enlighten.datasets.image_dataset import ImageDataset
 
 class DQNTrainer(SequenceTrainer):
@@ -109,13 +109,7 @@ class DQNTrainer(SequenceTrainer):
         # load the weights into the target networks
         self.target_q_network.load_state_dict(self.q_network.state_dict())
 
-    # polyak update
-    # tau = 1: 100% copy from source to target
-    def soft_update_from_to(self, source, target, tau):
-        for target_param, param in zip(target.parameters(), source.parameters()):
-            target_param.data.copy_(
-                target_param.data * (1.0 - tau) + param.data * tau
-            )
+    
         
     # train for one update
     def train_one_update_others(self):
@@ -201,7 +195,7 @@ class DQNTrainer(SequenceTrainer):
 
         # soft update target Q network (update when total updates == 0)
         if self.updates_done % self.target_update_every_updates == 0:
-            self.soft_update_from_to(
+            soft_update_from_to(
                 self.q_network, self.target_q_network, self.soft_target_tau)
 
         # the number of updates ++

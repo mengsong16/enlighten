@@ -16,7 +16,7 @@ def rollout(
         render_kwargs=None,
         preprocess_obs_for_policy_fn=None,
         get_action_kwargs=None,
-        return_dict_obs=False,
+        #return_dict_obs=False,
         #full_o_postprocess_func=None,
         reset_callback=None,
 ):

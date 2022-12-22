@@ -8,21 +8,16 @@ import torch
 import torch.optim as optim
 from torch import nn as nn
 
-from rlkit.core.loss import LossFunction, LossStatistics
-import rlkit.torch.pytorch_util as ptu
-from rlkit.core.eval_util import create_stats_ordered_dict
-from enlighten.agents.common.other import add_prefix
-from rlkit.torch.core import np_to_pytorch_batch
+from enlighten.agents.common.other import add_prefix, np_to_pytorch_batch, soft_update_from_to, zeros, get_numpy, create_stats_ordered_dict
 import gtimer as gt
 
-LossStatistics = OrderedDict
 
 SACLosses = namedtuple(
     'SACLosses',
     'policy_loss qf1_loss qf2_loss alpha_loss',
 )
 
-class SACTrainer(metaclass=abc.ABCMeta, LossFunction):
+class SACTrainer(metaclass=abc.ABCMeta):
     def __init__(
             self,
             env,
@@ -66,7 +61,7 @@ class SACTrainer(metaclass=abc.ABCMeta, LossFunction):
                     self.env.action_space.shape).item()
             else:
                 self.target_entropy = target_entropy
-            self.log_alpha = ptu.zeros(1, requires_grad=True)
+            self.log_alpha = zeros(1, requires_grad=True)
             self.alpha_optimizer = optimizer_class(
                 [self.log_alpha],
                 lr=policy_lr,
@@ -137,10 +132,10 @@ class SACTrainer(metaclass=abc.ABCMeta, LossFunction):
             self.update_target_networks()
 
     def update_target_networks(self):
-        ptu.soft_update_from_to(
+        soft_update_from_to(
             self.qf1, self.target_qf1, self.soft_target_tau
         )
-        ptu.soft_update_from_to(
+        soft_update_from_to(
             self.qf2, self.target_qf2, self.soft_target_tau
         )
 
@@ -148,7 +143,7 @@ class SACTrainer(metaclass=abc.ABCMeta, LossFunction):
         self,
         batch,
         skip_statistics=False,
-    ) -> Tuple[SACLosses, LossStatistics]:
+    ) -> Tuple[SACLosses, OrderedDict]:
         rewards = batch['rewards']
         terminals = batch['terminals']
         obs = batch['observations']
@@ -196,26 +191,26 @@ class SACTrainer(metaclass=abc.ABCMeta, LossFunction):
         """
         eval_statistics = OrderedDict()
         if not skip_statistics:
-            eval_statistics['QF1 Loss'] = np.mean(ptu.get_numpy(qf1_loss))
-            eval_statistics['QF2 Loss'] = np.mean(ptu.get_numpy(qf2_loss))
-            eval_statistics['Policy Loss'] = np.mean(ptu.get_numpy(
+            eval_statistics['QF1 Loss'] = np.mean(get_numpy(qf1_loss))
+            eval_statistics['QF2 Loss'] = np.mean(get_numpy(qf2_loss))
+            eval_statistics['Policy Loss'] = np.mean(get_numpy(
                 policy_loss
             ))
             eval_statistics.update(create_stats_ordered_dict(
                 'Q1 Predictions',
-                ptu.get_numpy(q1_pred),
+                get_numpy(q1_pred),
             ))
             eval_statistics.update(create_stats_ordered_dict(
                 'Q2 Predictions',
-                ptu.get_numpy(q2_pred),
+                get_numpy(q2_pred),
             ))
             eval_statistics.update(create_stats_ordered_dict(
                 'Q Targets',
-                ptu.get_numpy(q_target),
+                get_numpy(q_target),
             ))
             eval_statistics.update(create_stats_ordered_dict(
                 'Log Pis',
-                ptu.get_numpy(log_pi),
+                get_numpy(log_pi),
             ))
             policy_statistics = add_prefix(dist.get_diagnostics(), "policy/")
             eval_statistics.update(policy_statistics)

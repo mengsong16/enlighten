@@ -84,12 +84,28 @@ def _filter_batch(np_batch):
         else:
             yield k, v
 
+# polyak update
+# tau = 1: 100% copy from source to target
+def soft_update_from_to(source, target, tau):
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data.copy_(
+            target_param.data * (1.0 - tau) + param.data * tau
+        )
+
+def from_numpy(device, *args, **kwargs):
+    return torch.from_numpy(*args, **kwargs).float().to(device)
+
+
+def get_numpy(tensor):
+    return tensor.to('cpu').detach().numpy()
+
+
 def _elem_or_tuple_to_variable(elem_or_tuple):
     if isinstance(elem_or_tuple, tuple):
         return tuple(
             _elem_or_tuple_to_variable(e) for e in elem_or_tuple
         )
-    return ptu.from_numpy(elem_or_tuple).float()
+    return from_numpy(elem_or_tuple).float()
 
 def np_to_pytorch_batch(np_batch):
     if isinstance(np_batch, dict):
@@ -100,6 +116,17 @@ def np_to_pytorch_batch(np_batch):
         }
     else:
         _elem_or_tuple_to_variable(np_batch)
+
+def zeros(*sizes, torch_device=None, **kwargs):
+    return torch.zeros(*sizes, **kwargs, device=torch_device)
+
+
+def ones(*sizes, torch_device=None, **kwargs):
+    return torch.ones(*sizes, **kwargs, device=torch_device)
+
+def randint(*sizes, torch_device=None, **kwargs):
+    return torch.randint(*sizes, **kwargs, device=torch_device)
+
 
 def create_stats_ordered_dict(
         name,

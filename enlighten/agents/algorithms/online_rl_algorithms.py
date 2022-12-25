@@ -9,9 +9,7 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             self,
             trainer,
             exploration_env,
-            evaluation_env,
             exploration_data_collector: MdpPathCollector,
-            #evaluation_data_collector: MdpPathCollector,
             replay_buffer: EnvReplayBuffer,
             batch_size,
             max_path_length,
@@ -25,9 +23,7 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
     ):
         self.trainer = trainer
         self.expl_env = exploration_env
-        self.eval_env = evaluation_env
         self.expl_data_collector = exploration_data_collector
-        #self.eval_data_collector = evaluation_data_collector
         self.replay_buffer = replay_buffer
 
         #self.post_epoch_funcs = []
@@ -65,13 +61,6 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             self.replay_buffer.add_paths(init_expl_paths)
             self.expl_data_collector.end_epoch(-1)
 
-        # self.eval_data_collector.collect_new_paths(
-        #     self.max_path_length,
-        #     self.num_eval_steps_per_epoch,
-        #     discard_incomplete_paths=True,
-        # )
-        # gt.stamp('evaluation sampling')
-
         # loop n times
         for _ in range(self.num_train_loops_per_epoch):
             # collect m steps
@@ -102,7 +91,6 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
         self._log_stats(epoch)
 
         self.expl_data_collector.end_epoch(epoch)
-        #self.eval_data_collector.end_epoch(epoch)
         self.replay_buffer.end_epoch(epoch)
         self.trainer.end_epoch(epoch)
 
@@ -125,8 +113,6 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             snapshot['trainer/' + k] = v
         for k, v in self.expl_data_collector.get_snapshot().items():
             snapshot['exploration/' + k] = v
-        # for k, v in self.eval_data_collector.get_snapshot().items():
-        #     snapshot['evaluation/' + k] = v
         for k, v in self.replay_buffer.get_snapshot().items():
             snapshot['replay_buffer/' + k] = v
         return snapshot
@@ -165,23 +151,6 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             eval_util.get_generic_path_information(expl_paths),
             prefix="expl/",
         )
-        """
-        Evaluation
-        """
-        # logger.record_dict(
-        #     self.eval_data_collector.get_diagnostics(),
-        #     prefix='eval/',
-        # )
-        # eval_paths = self.eval_data_collector.get_epoch_paths()
-        # if hasattr(self.eval_env, 'get_diagnostics'):
-        #     logger.record_dict(
-        #         self.eval_env.get_diagnostics(eval_paths),
-        #         prefix='eval/',
-        #     )
-        # logger.record_dict(
-        #     eval_util.get_generic_path_information(eval_paths),
-        #     prefix="eval/",
-        # )
 
         """
         Misc

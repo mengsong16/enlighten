@@ -16,9 +16,6 @@ def rollout(
         render_kwargs=None,
         preprocess_obs_for_policy_fn=None,
         get_action_kwargs=None,
-        #return_dict_obs=False,
-        #full_o_postprocess_func=None,
-        reset_callback=None,
 ):
     if render_kwargs is None:
         render_kwargs = {}
@@ -37,24 +34,22 @@ def rollout(
     next_observations = []
     path_length = 0
 
-    #agent.reset()
+    # reset environment
+    # plan_shortest_path=False by default
     o = env.reset()
-
-    if reset_callback:
-        reset_callback(env, agent, o)
     if render:
         env.render(**render_kwargs)
+
     while path_length < max_path_length:
         #raw_obs.append(o)
         o_for_agent = preprocess_obs_for_policy_fn(o)
         a = agent.get_action(o_for_agent, **get_action_kwargs)
 
-        #if full_o_postprocess_func:
-        #    full_o_postprocess_func(env, agent, o)
 
         next_o, r, done, env_info = env.step(copy.deepcopy(a))
         if render:
             env.render(**render_kwargs)
+
         observations.append(o)
         rewards.append(r)
         terminal = False
@@ -67,11 +62,12 @@ def rollout(
         dones.append(done)
         actions.append(a)
         next_observations.append(next_o)
-        #raw_next_obs.append(next_o)
-        
+
         path_length += 1
         if done:
             break
+
+        # next turn
         o = next_o
     
     actions = np.array(actions)
@@ -194,60 +190,4 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
         return snapshot_dict
 
 
-class GoalConditionedPathCollector(MdpPathCollector):
-    def __init__(
-            self,
-            *args,
-            observation_key='observation',
-            desired_goal_key='desired_goal',
-            goal_sampling_mode=None,
-            **kwargs
-    ):
-        def obs_processor(o):
-            return np.hstack((o[observation_key], o[desired_goal_key]))
 
-        rollout_fn = partial(
-            rollout,
-            preprocess_obs_for_policy_fn=obs_processor,
-        )
-        super().__init__(*args, rollout_fn=rollout_fn, **kwargs)
-        self._observation_key = observation_key
-        self._desired_goal_key = desired_goal_key
-        self._goal_sampling_mode = goal_sampling_mode
-
-    def collect_new_paths(self, *args, **kwargs):
-        self._env.goal_sampling_mode = self._goal_sampling_mode
-        return super().collect_new_paths(*args, **kwargs)
-
-    def get_snapshot(self):
-        snapshot = super().get_snapshot()
-        snapshot.update(
-            observation_key=self._observation_key,
-            desired_goal_key=self._desired_goal_key,
-        )
-        return snapshot
-
-
-class ObsDictPathCollector(MdpPathCollector):
-    def __init__(
-            self,
-            *args,
-            observation_key='observation',
-            **kwargs
-    ):
-        def obs_processor(obs):
-            return obs[observation_key]
-
-        rollout_fn = partial(
-            rollout,
-            preprocess_obs_for_policy_fn=obs_processor,
-        )
-        super().__init__(*args, rollout_fn=rollout_fn, **kwargs)
-        self._observation_key = observation_key
-
-    def get_snapshot(self):
-        snapshot = super().get_snapshot()
-        snapshot.update(
-            observation_key=self._observation_key,
-        )
-        return snapshot

@@ -6,121 +6,131 @@ import numpy as np
 
 import copy
 
-from enlighten.agents.common.other import create_stats_ordered_dict
+import random
 
+from enlighten.agents.common.other import create_stats_ordered_dict
+from enlighten.datasets.common import extract_observation
+
+def extract_obs_goal(env, obs):
+    # [C,H,W]
+    obs_array = extract_observation(obs, env.observation_space.spaces)
+    
+    rel_goal = np.array(obs["pointgoal"], dtype="float32")
+    
+    # np arrays
+    return obs_array, rel_goal
+
+
+def get_random_action(observations, goals, sample):
+    return random.randint(0,3)
+
+    
 def rollout(
         env,
-        agent,
+        get_action_fn,
+        sample,
         max_path_length=np.inf,
         render=False,
-        render_kwargs=None,
-        preprocess_obs_for_policy_fn=None,
-        get_action_kwargs=None,
 ):
-    if render_kwargs is None:
-        render_kwargs = {}
-    if get_action_kwargs is None:
-        get_action_kwargs = {}
-    if preprocess_obs_for_policy_fn is None:
-        preprocess_obs_for_policy_fn = lambda x: x
     
-    #raw_obs = []
-    #raw_next_obs = []
     observations = []
+    goals = []
     actions = []
     rewards = []
-    terminals = []
-    dones = []
     next_observations = []
-    path_length = 0
+    next_goals = []
+    dones = []
+
+    # how many times env.step has been called
+    step_num = 0
 
     # reset environment
     # plan_shortest_path=False by default
-    o = env.reset()
+    raw_obs = env.reset()
+    o, g = extract_obs_goal(env, raw_obs)
+
     if render:
-        env.render(**render_kwargs)
+        env.render()
 
-    while path_length < max_path_length:
-        #raw_obs.append(o)
-        o_for_agent = preprocess_obs_for_policy_fn(o)
-        a = agent.get_action(o_for_agent, **get_action_kwargs)
+    # assume step_num is in [1, max_path_length-1]
+    while step_num < max_path_length:
+    
+        a = get_action_fn(observations=np.expand_dims(o, axis=0), goals=np.expand_dims(g, axis=0), sample=sample)
 
 
-        next_o, r, done, env_info = env.step(copy.deepcopy(a))
+        next_raw_obs, r, done, info = env.step(copy.deepcopy(a[0][0]))
+        next_o, next_g = extract_obs_goal(env, next_raw_obs)
+
         if render:
-            env.render(**render_kwargs)
+            env.render()
 
         observations.append(o)
+        goals.append(g)
         rewards.append(r)
-        terminal = False
-        if done:
-            # terminal=False if TimeLimit caused termination
-            # terminal=True if done=True and done is not caused by time limit
-            if not env_info.pop('TimeLimit.truncated', False):
-                terminal = True
-        terminals.append(terminal)
         dones.append(done)
         actions.append(a)
         next_observations.append(next_o)
+        next_goals.append(next_g)
 
-        path_length += 1
+        step_num += 1
+
         if done:
             break
 
         # next turn
         o = next_o
+        g = next_g
     
-    actions = np.array(actions)
+    # assume the path has [s0, s1, ..., sN], there are N transitions
+    actions = np.array(actions)  # [N,1]
     if len(actions.shape) == 1:
         actions = np.expand_dims(actions, 1)
-    observations = np.array(observations)
-    next_observations = np.array(next_observations)
-    # if return_dict_obs:
-    #     observations = raw_obs
-    #     next_observations = raw_next_obs
-    rewards = np.array(rewards)
-    if len(rewards.shape) == 1:
-        rewards = rewards.reshape(-1, 1)
+    observations = np.array(observations) #[N,C,H,W]
+    next_observations = np.array(next_observations) #[N,C,H,W]
+    goals = np.array(goals) # [N, goal_dim]
+    next_goals = np.array(next_goals) # [N, goal_dim]
+    rewards = np.array(rewards) #[N,1]
+    if len(rewards.shape) == 1: 
+        rewards = rewards.reshape(-1, 1) 
+    dones = np.array(dones).reshape(-1, 1)  #[N,1]
+
+    assert dones[-1,:] == True, "A trajectory should end with done=True"
     
     return dict(
         observations=observations,
+        goals=goals,
         actions=actions,
         rewards=rewards,
         next_observations=next_observations,
-        terminals=np.array(terminals).reshape(-1, 1),
-        dones=np.array(dones).reshape(-1, 1),
-        # full_observations=raw_obs,
-        # full_next_observations=raw_obs,
+        next_goals=next_goals,
+        dones=dones
     )
 
 class MdpPathCollector(object, metaclass=abc.ABCMeta):
     def __init__(
             self,
             env,
-            policy,
+            get_action_fn,
             max_num_epoch_paths_saved=None,
             render=False,
-            render_kwargs=None,
             rollout_fn=rollout,
-            save_env_in_snapshot=True,
+            sample=True,
     ):
-        if render_kwargs is None:
-            render_kwargs = {}
         self._env = env
-        self._policy = policy
+        self._get_action_fn = get_action_fn
         self._max_num_epoch_paths_saved = max_num_epoch_paths_saved
+        self._sample = sample
         # paths collected in the current epoch
         self._epoch_paths = deque(maxlen=self._max_num_epoch_paths_saved)
         self._render = render
-        self._render_kwargs = render_kwargs
         self._rollout_fn = rollout_fn
 
         self._num_steps_total = 0
         self._num_paths_total = 0
 
-        self._save_env_in_snapshot = save_env_in_snapshot
 
-    # collect n steps and return them
+    # collect n transitions and return them
+    # do not check the repeat of (s,a,r,s')
     def collect_new_paths(
             self,
             max_path_length,
@@ -135,13 +145,13 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
                 num_steps - num_steps_collected,
             )
 
-            # collect one path (<= max steps needed)
+            # collect a set of (s,a,r,s') from one path (<= max steps needed)
             path = self._rollout_fn(
-                self._env,
-                self._policy,
+                env=self._env,
+                get_action_fn=self._get_action_fn,
                 max_path_length=max_path_length_this_loop,
-                render=self._render,
-                render_kwargs=self._render_kwargs,
+                sample=self._sample,
+                render=self._render
             )
             path_len = len(path['actions'])
 
@@ -182,12 +192,8 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
         return stats
 
     def get_snapshot(self):
-        snapshot_dict = dict(
-            policy=self._policy,
-        )
-        if self._save_env_in_snapshot:
-            snapshot_dict['env'] = self._env
-        return snapshot_dict
+        return {}
 
-
+if __name__ == "__main__":
+    print("Done")
 

@@ -919,7 +919,7 @@ class NavEnv(gym.Env):
             print("Error: image channel is neither 1 nor 3!")
 
         # save observation images in video dir
-        if "disk" in list(self.config.get("eval_video_option")):
+        if "disk" in list(self.config.get("eval_video_option", [])):
             filename = str(self.get_current_episode())+"_"+str(self.get_current_step()) + ".jpg"
             video_path = os.path.join(root_path, self.config.get("eval_dir"), self.config.get("experiment_name"))
             if not os.path.exists(video_path):

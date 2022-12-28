@@ -115,7 +115,21 @@ class ObservationEncoder(nn.Module):
         
         return observations
 
+    def get_device(self):
+        return next(self.parameters()).device
+
+    def from_numpy_to_tensor(self, x):
+        if not torch.is_tensor(x):
+            x = torch.from_numpy(x).float()
+        
+        x = x.to(self.get_device())
+        return x
+
+
     def forward(self, observations) -> torch.Tensor:
+         # ensure states are tensors on the same device
+        observations = self.from_numpy_to_tensor(observations)
+
         observations = self.normalize_vision_inputs(observations)
 
         return self.visual_encoder(observations)
@@ -156,7 +170,21 @@ class GoalEncoder(nn.Module):
         super().__init__()
         self.model = torch.nn.Linear(goal_dim, output_size)
 
+    def get_device(self):
+        return next(self.parameters()).device
+
+    def from_numpy_to_tensor(self, x):
+        if not torch.is_tensor(x):
+            x = torch.from_numpy(x).float()
+        
+        x = x.to(self.get_device())
+        return x
+
     def forward(self, goals):
+        # ensure states are tensors on the same device
+        goals = self.from_numpy_to_tensor(goals)
+
+
         return self.model(goals)
 
 # adapt from action decoder from dt for atari

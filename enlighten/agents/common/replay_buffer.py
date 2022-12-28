@@ -36,8 +36,8 @@ class EnvReplayBuffer():
         # Make everything a 2D np array to make it easier for other code to
         # reason about the shape of the data
         self._rewards = np.zeros((self._max_replay_buffer_size, 1), dtype=np.float32)
-        # self._terminals[i] = a terminal was received at time i
-        self._terminals = np.zeros((self._max_replay_buffer_size, 1), dtype=np.uint8)
+        # self._dones[i] = a done was received at time i
+        self._dones = np.zeros((self._max_replay_buffer_size, 1), dtype=np.uint8)
         
         # sample batch with replacement or not
         self._replace = self.config.get("sample_with_replace")
@@ -49,13 +49,13 @@ class EnvReplayBuffer():
                 action,     
                 reward, 
                 next_observation, next_goal,
-                terminal):
+                done):
         
         self._observations[self._top] = observation
         self._goals[self._top] = goal
         self._actions[self._top] = action
         self._rewards[self._top] = reward
-        self._terminals[self._top] = terminal
+        self._dones[self._top] = done
         self._next_obs[self._top] = next_observation
         self._next_goal[self._top] = next_goal
 
@@ -87,7 +87,7 @@ class EnvReplayBuffer():
             goals=self._goals[indices],
             actions=self._actions[indices],
             rewards=self._rewards[indices],
-            terminals=self._terminals[indices],
+            dones=self._dones[indices],
             next_observations=self._next_obs[indices],
             next_goal=self._next_goal[indices]
         )
@@ -121,7 +121,7 @@ class EnvReplayBuffer():
                 reward,
                 next_obs,
                 next_goal,
-                terminal
+                done
         ) in enumerate(zip(
             path["observations"],
             path["goals"],
@@ -129,7 +129,7 @@ class EnvReplayBuffer():
             path["rewards"],
             path["next_observations"],
             path["next_goals"],
-            path["terminals"]
+            path["dones"]
         )):
             self.add_sample(
                 observation=obs,
@@ -138,7 +138,7 @@ class EnvReplayBuffer():
                 reward=reward,
                 next_observation=next_obs,
                 next_goal=next_goal,
-                terminal=terminal,
+                done=done,
             )
         self.terminate_episode()
 

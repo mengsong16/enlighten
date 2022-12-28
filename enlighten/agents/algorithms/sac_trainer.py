@@ -21,28 +21,25 @@ class SACTrainer(metaclass=abc.ABCMeta):
     def __init__(
             self,
             env,
+            encoder,
             policy,
             qf1,
             qf2,
             target_qf1,
             target_qf2,
-
-            discount=0.99,
-            reward_scale=1.0,
-
-            policy_lr=1e-3,
-            qf_lr=1e-3,
+            discount,
+            encoder_lr,
+            policy_lr,
+            qf_lr,
+            soft_target_tau,
+            target_update_period,
             optimizer_class=optim.Adam,
-
-            soft_target_tau=1e-2,
-            target_update_period=1,
-
-            use_automatic_entropy_tuning=True,
             target_entropy=None,
     ):
         self._num_train_steps = 0
 
         self.env = env
+        self.encoder = encoder
         self.policy = policy
         self.qf1 = qf1
         self.qf2 = qf2
@@ -51,20 +48,19 @@ class SACTrainer(metaclass=abc.ABCMeta):
         self.soft_target_tau = soft_target_tau
         self.target_update_period = target_update_period
 
-        self.use_automatic_entropy_tuning = use_automatic_entropy_tuning
-        if self.use_automatic_entropy_tuning:
-            if target_entropy is None:
-                # Use heuristic value from SAC paper
-                self.target_entropy = -np.prod(
-                    self.env.action_space.shape).item()
-            else:
-                self.target_entropy = target_entropy
-            self.log_alpha = zeros(1, requires_grad=True)
-            self.alpha_optimizer = optimizer_class(
-                [self.log_alpha],
-                lr=policy_lr,
-            )
+        
+        if target_entropy is None:
+            # Use heuristic value from SAC paper
+            self.target_entropy = -np.prod(
+                self.env.action_space.shape).item()
+        else:
+            self.target_entropy = target_entropy
+        self.log_alpha = zeros(1, requires_grad=True)
 
+        self.alpha_optimizer = optimizer_class(
+            [self.log_alpha],
+            lr=policy_lr,
+        )
 
         self.qf_criterion = nn.MSELoss()
         self.vf_criterion = nn.MSELoss()
@@ -81,9 +77,12 @@ class SACTrainer(metaclass=abc.ABCMeta):
             self.qf2.parameters(),
             lr=qf_lr,
         )
+        self.encoder_optimizer = optimizer_class(
+            self.encoder.parameters(),
+            lr=encoder_lr,
+        )
 
         self.discount = discount
-        self.reward_scale = reward_scale
         self._n_train_steps_total = 0
         self._need_to_update_eval_statistics = True
         self.eval_statistics = OrderedDict()
@@ -97,10 +96,9 @@ class SACTrainer(metaclass=abc.ABCMeta):
         """
         Update networks
         """
-        if self.use_automatic_entropy_tuning:
-            self.alpha_optimizer.zero_grad()
-            losses.alpha_loss.backward()
-            self.alpha_optimizer.step()
+        self.alpha_optimizer.zero_grad()
+        losses.alpha_loss.backward()
+        self.alpha_optimizer.step()
 
         self.policy_optimizer.zero_grad()
         losses.policy_loss.backward()
@@ -141,7 +139,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         skip_statistics=False,
     ) -> Tuple[SACLosses, OrderedDict]:
         rewards = batch['rewards']
-        terminals = batch['terminals']
+        dones = batch['dones']
         obs = batch['observations']
         actions = batch['actions']
         next_obs = batch['next_observations']
@@ -152,12 +150,10 @@ class SACTrainer(metaclass=abc.ABCMeta):
         dist = self.policy(obs)
         new_obs_actions, log_pi = dist.rsample_and_logprob()
         log_pi = log_pi.unsqueeze(-1)
-        if self.use_automatic_entropy_tuning:
-            alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
-            alpha = self.log_alpha.exp()
-        else:
-            alpha_loss = 0
-            alpha = 1
+        
+        alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
+        alpha = self.log_alpha.exp()
+       
 
         q_new_actions = torch.min(
             self.qf1(obs, new_obs_actions),
@@ -178,7 +174,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
             self.target_qf2(next_obs, new_next_actions),
         ) - alpha * new_log_pi
 
-        q_target = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values
+        q_target = rewards + (1. - dones) * self.discount * target_q_values
         qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
         qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
 
@@ -210,9 +206,9 @@ class SACTrainer(metaclass=abc.ABCMeta):
             ))
             policy_statistics = add_prefix(dist.get_diagnostics(), "policy/")
             eval_statistics.update(policy_statistics)
-            if self.use_automatic_entropy_tuning:
-                eval_statistics['Alpha'] = alpha.item()
-                eval_statistics['Alpha Loss'] = alpha_loss.item()
+            
+            eval_statistics['Alpha'] = alpha.item()
+            eval_statistics['Alpha Loss'] = alpha_loss.item()
 
         loss = SACLosses(
             policy_loss=policy_loss,
@@ -241,6 +237,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
     @property
     def networks(self):
         return [
+            self.encoder,
             self.policy,
             self.qf1,
             self.qf2,

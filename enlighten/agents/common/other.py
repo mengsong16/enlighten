@@ -7,6 +7,17 @@ from collections import OrderedDict
 import torch
 from gym.spaces import Box, Discrete, Tuple
 
+class Number(metaclass=ABCMeta):
+    """All numbers inherit from this class.
+
+    If you just want to check if an argument x is a number, without
+    caring what kind, use isinstance(x, Number).
+    """
+    __slots__ = ()
+
+    # Concrete numeric types must provide their own hash implementation
+    __hash__ = None
+    
 def get_device(config):
     if torch.cuda.is_available():
         return torch.device("cuda:{}".format(int(config.get("gpu_id"))))

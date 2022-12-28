@@ -14,11 +14,10 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             batch_size,
             max_path_length,
             num_epochs,
-            num_eval_steps_per_epoch,
             num_expl_steps_per_train_loop,
+            num_expl_steps_before_training,
             num_trains_per_train_loop,
             num_train_loops_per_epoch=1,
-            min_num_steps_before_training=0,
             start_epoch=0
     ):
         self.trainer = trainer
@@ -26,17 +25,13 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
         self.expl_data_collector = exploration_data_collector
         self.replay_buffer = replay_buffer
 
-        #self.post_epoch_funcs = []
-
-
         self.batch_size = batch_size
         self.max_path_length = max_path_length
         self.num_epochs = num_epochs
-        self.num_eval_steps_per_epoch = num_eval_steps_per_epoch
         self.num_train_loops_per_epoch = num_train_loops_per_epoch
         self.num_trains_per_train_loop = num_trains_per_train_loop
         self.num_expl_steps_per_train_loop = num_expl_steps_per_train_loop
-        self.min_num_steps_before_training = min_num_steps_before_training
+        self.num_expl_steps_before_training = num_expl_steps_before_training
         self._start_epoch = start_epoch
 
     def train(self):
@@ -51,10 +46,10 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
 
     def _train(self):
         # collect k steps
-        if self.epoch == 0 and self.min_num_steps_before_training > 0:
+        if self.epoch == 0 and self.num_expl_steps_before_training > 0:
             init_expl_paths = self.expl_data_collector.collect_new_paths(
                 self.max_path_length,
-                self.min_num_steps_before_training,
+                self.num_expl_steps_before_training,
                 discard_incomplete_paths=False,
             )
             

@@ -6,6 +6,7 @@ import collections
 from collections import OrderedDict
 import torch
 from gym.spaces import Box, Discrete, Tuple
+from abc import ABCMeta, abstractmethod
 
 class Number(metaclass=ABCMeta):
     """All numbers inherit from this class.
@@ -17,7 +18,7 @@ class Number(metaclass=ABCMeta):
 
     # Concrete numeric types must provide their own hash implementation
     __hash__ = None
-    
+
 def get_device(config):
     if torch.cuda.is_available():
         return torch.device("cuda:{}".format(int(config.get("gpu_id"))))

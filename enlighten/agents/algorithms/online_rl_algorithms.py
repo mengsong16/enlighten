@@ -48,9 +48,8 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
         # collect k steps
         if self.epoch == 0 and self.num_expl_steps_before_training > 0:
             init_expl_paths = self.expl_data_collector.collect_new_paths(
-                self.max_path_length,
-                self.num_expl_steps_before_training,
-                discard_incomplete_paths=False,
+                max_path_length=self.max_path_length,
+                num_steps=self.num_expl_steps_before_training
             )
             
             self.replay_buffer.add_paths(init_expl_paths)
@@ -60,9 +59,8 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
         for _ in range(self.num_train_loops_per_epoch):
             # collect m steps
             new_expl_paths = self.expl_data_collector.collect_new_paths(
-                self.max_path_length,
-                self.num_expl_steps_per_train_loop,
-                discard_incomplete_paths=False,
+                max_path_length=self.max_path_length,
+                num_steps=self.num_expl_steps_per_train_loop
             )
             gt.stamp('exploration sampling', unique=False)
 

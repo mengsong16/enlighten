@@ -251,9 +251,34 @@ class SACExperiment():
         print(data["dones"].shape)
         #print(data["dones"])
         print("="*30)
+    
+    def test_path_collector(self):
+        # collect m steps
+        new_expl_paths = self.expl_path_collector.collect_new_paths(
+            max_path_length=int(self.config.get("max_steps_per_episode")),
+            num_steps=1000
+        )
+        print("="*30)
+        print(self.expl_path_collector._num_paths_total)
+        print(self.expl_path_collector._num_steps_total)
+        print("="*30)
+    
+    def test_replay_buffer(self):
+        # collect m steps
+        new_expl_paths = self.expl_path_collector.collect_new_paths(
+            max_path_length=int(self.config.get("max_steps_per_episode")),
+            num_steps=1000
+        )
+        self.replay_buffer.add_paths(new_expl_paths)
+        print("="*30)
+        print(self.replay_buffer.num_steps_can_sample())
+        print("="*30)
+
 
 
 if __name__ == "__main__":
     exp = SACExperiment(config_filename=os.path.join(config_path, "sac_multi_envs.yaml"))
-    exp.test_rollouts()
+    #exp.test_rollouts()
+    #exp.test_path_collector()
+    exp.test_replay_buffer()
     #exp.train()

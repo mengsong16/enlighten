@@ -94,6 +94,7 @@ class EnvReplayBuffer():
         
         return batch
 
+    # number of transitions in the replay buffer
     def num_steps_can_sample(self):
         return self._size
 

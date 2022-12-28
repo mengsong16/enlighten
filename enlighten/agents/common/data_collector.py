@@ -134,8 +134,7 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
     def collect_new_paths(
             self,
             max_path_length,
-            num_steps,
-            discard_incomplete_paths,
+            num_steps
     ):
         paths = []
         num_steps_collected = 0
@@ -155,14 +154,6 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
             )
             path_len = len(path['actions'])
 
-            # discard incomplete (not done, not reach max length) path and stop collection
-            if (
-                    path_len != max_path_length
-                    and not path['dones'][-1]
-                    and discard_incomplete_paths
-            ):
-                break
-
             num_steps_collected += path_len
             paths.append(path)
         
@@ -179,14 +170,14 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
         self._epoch_paths = deque(maxlen=self._max_num_epoch_paths_saved)
 
     def get_diagnostics(self):
-        path_lens = [len(path['actions']) for path in self._epoch_paths]
+        epoch_path_lens = [len(path['actions']) for path in self._epoch_paths]
         stats = OrderedDict([
             ('num steps total', self._num_steps_total),
             ('num paths total', self._num_paths_total),
         ])
         stats.update(create_stats_ordered_dict(
-            "path length",
-            path_lens,
+            "epoch path length",
+            epoch_path_lens,
             always_show_all_stats=True,
         ))
         return stats

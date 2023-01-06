@@ -89,6 +89,7 @@ def add_prefix(log_dict: OrderedDict, prefix: str, divider=''):
         with_prefix[prefix + divider + key] = val
     return with_prefix
 
+# convert bool to int
 def _filter_batch(np_batch):
     for k, v in np_batch.items():
         if v.dtype == np.bool:
@@ -104,10 +105,10 @@ def soft_update_from_to(source, target, tau):
             target_param.data * (1.0 - tau) + param.data * tau
         )
 
-def from_numpy(device, *args, **kwargs):
-    return torch.from_numpy(*args, **kwargs).float().to(device)
+def from_numpy(np_array, device):
+    return torch.from_numpy(np_array).float().to(device)
 
-
+# called by sac
 def get_numpy(tensor):
     return tensor.to('cpu').detach().numpy()
 
@@ -119,15 +120,30 @@ def _elem_or_tuple_to_variable(elem_or_tuple):
         )
     return from_numpy(elem_or_tuple).float()
 
-def np_to_pytorch_batch(np_batch):
-    if isinstance(np_batch, dict):
-        return {
-            k: _elem_or_tuple_to_variable(x)
-            for k, x in _filter_batch(np_batch)
-            if x.dtype != np.dtype('O')  # ignore object (e.g. dictionaries)
-        }
-    else:
-        _elem_or_tuple_to_variable(np_batch)
+# def np_to_pytorch_batch(np_batch):
+#     if isinstance(np_batch, dict):
+#         return {
+#             k: _elem_or_tuple_to_variable(x)
+#             for k, x in _filter_batch(np_batch)
+#             if x.dtype != np.dtype('O')  # ignore object (e.g. dictionaries)
+#         }
+#     else:
+#         _elem_or_tuple_to_variable(np_batch)
+
+# return a dictionary of float tensors
+
+def np_to_pytorch_batch(np_batch, device):
+    # for k, np_array in np_batch.items():
+    #     print("------------------")
+    #     print(k)
+    #     print(np_array.dtype)
+    # exit()
+
+    return {
+            k: torch.from_numpy(np_array).float().to(device)
+            for k, np_array in np_batch.items()
+    }   
+        
 
 def zeros(*sizes, torch_device=None, **kwargs):
     return torch.zeros(*sizes, **kwargs, device=torch_device)

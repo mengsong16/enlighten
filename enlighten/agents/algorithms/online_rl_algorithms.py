@@ -68,7 +68,7 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
             self.replay_buffer.add_paths(new_expl_paths)
             gt.stamp('data storing', unique=False)
 
-            # train b batches
+            # train for b batches
             self.training_mode(True)
             for _ in range(self.num_trains_per_train_loop):
                 train_data = self.replay_buffer.random_batch(self.batch_size)
@@ -87,13 +87,11 @@ class TorchBatchRLAlgorithm(object, metaclass=abc.ABCMeta):
         self.replay_buffer.end_epoch(epoch)
         self.trainer.end_epoch(epoch)
 
-        # for post_epoch_func in self.post_epoch_funcs:
-        #     post_epoch_func(self, epoch)
-
 
     def to(self, device):
         for net in self.trainer.networks:
             net.to(device)
+        
 
     # switch network mode to train or evaluation
     def training_mode(self, mode):

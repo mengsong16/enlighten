@@ -45,10 +45,12 @@ class EnvReplayBuffer():
         self._top = 0
         self._size = 0
 
-    def add_sample(self, observation, goal, 
+    def add_sample(self, observation, 
+                goal, 
                 action,     
                 reward, 
-                next_observation, next_goal,
+                next_observation, 
+                next_goal,
                 done):
         
         self._observations[self._top] = observation
@@ -82,6 +84,7 @@ class EnvReplayBuffer():
         if not self._replace and self._size < batch_size:
             warnings.warn('Replace was set to false, but is temporarily set to true because batch size is larger than current size of replay.')
         
+        # return a dictionary of numpy arrays
         batch = dict(
             observations=self._observations[indices],
             goals=self._goals[indices],
@@ -89,7 +92,7 @@ class EnvReplayBuffer():
             rewards=self._rewards[indices],
             dones=self._dones[indices],
             next_observations=self._next_obs[indices],
-            next_goal=self._next_goal[indices]
+            next_goals=self._next_goal[indices]
         )
         
         return batch

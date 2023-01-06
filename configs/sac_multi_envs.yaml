@@ -1,9 +1,6 @@
 # for online sac dataset
 behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 
-# experiments
-algorithm_name: "sac"
-experiment_name:  "sac_multienv_1_scene_Rancocas_2000" 
 
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
@@ -87,7 +84,7 @@ hidden_layer: 2
 num_epochs: 3000
 num_trains_per_train_loop: 1000
 num_expl_steps_per_train_loop: 1000
-num_expl_steps_before_training: 1000
+num_expl_steps_before_training: 500 #1000
 batch_size: 256
 
 # SAC
@@ -107,6 +104,11 @@ eval_use_ckpt_config: false
 eval_dir: "evaluation"
 eval_splits: ["same_scene_val", "across_scene_val", "same_start_goal_val"]
 eval_experiment_folder: "pointgoal_baseline_multienv_1_scene_Rancocas_2000_observation_mlp_5m"  #"pointgoal_baseline_multienv_1_scene_Rancocas_whole_5m" "pointgoal_baseline_multienv_4_scene_3m" 
+
+# logs
+log_to_wandb: false
+algorithm_name: "sac"
+experiment_name:  "multienv_1_scene_Rancocas_2000" 
 
 
 

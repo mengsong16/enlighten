@@ -11,8 +11,11 @@ from enlighten.agents.models.dt_encoder import ObservationEncoder, GoalEncoder
 from enlighten.agents.common.other import get_obs_channel_num, get_device
 from enlighten.datasets.common import load_behavior_dataset_meta
 from enlighten.agents.common.data_collector import rollout, get_random_action
+#from enlighten.agents.trainer.seq_trainer import SequenceTrainer
 import torch
 import torch.nn as nn
+import datetime
+import wandb
 
 class SimpleMLPPolicy(nn.Module):
     def __init__(
@@ -46,8 +49,6 @@ class SimpleMLPPolicy(nn.Module):
 
         return probs
     
-    
-
 class Encoder(nn.Module):
     def __init__(
             self,
@@ -75,6 +76,12 @@ class Encoder(nn.Module):
         input_embeddings = torch.cat([observation_embeddings, goal_embeddings], dim=1)
 
         return input_embeddings
+    
+    def to(self, device):
+        self.goal_encoder.to(device)
+        self.obs_encoder.to(device)
+        #self.device = device
+    
 
 
 class SACExperiment():
@@ -89,14 +96,6 @@ class SACExperiment():
 
         # set device
         self.device = get_device(self.config)
-
-        # # set experiment name
-        # self.set_experiment_name()
-
-        # # init wandb
-        # self.log_to_wandb = self.config.get("log_to_wandb")
-        # if self.log_to_wandb:
-        #     self.init_wandb()
 
         # create env and dataset
         self.create_env_dataset(config_filename)
@@ -126,7 +125,6 @@ class SACExperiment():
             qf_lr=float(self.config.get("qf_lr")),
             soft_target_tau=float(self.config.get("soft_target_tau")),
             target_update_period=int(self.config.get("target_update_period"))
-            
         )
         self.algorithm = TorchBatchRLAlgorithm(
             trainer=self.trainer,
@@ -140,7 +138,16 @@ class SACExperiment():
             num_trains_per_train_loop=int(self.config.get("num_trains_per_train_loop")),
             num_expl_steps_before_training=int(self.config.get("num_expl_steps_before_training")),
         )
-        self.algorithm.to(self.device)
+        # move all networks to the device
+        #self.algorithm.to(self.device)
+        
+        # set experiment name
+        self.set_experiment_name()
+
+        # init wandb
+        self.log_to_wandb = self.config.get("log_to_wandb")
+        if self.log_to_wandb:
+            self.init_wandb()
         
     
     def create_env_dataset(self, config_filename):
@@ -204,6 +211,14 @@ class SACExperiment():
             input_dim=self.obs_embedding_size+self.goal_embedding_size,
             hidden_size=self.hidden_size, 
             hidden_layer=self.hidden_layer)
+        
+        # move all networks to the device (must be done before instantiating the algorithm and trainer)
+        self.encoder.to(self.device)
+        self.qf1.to(self.device)
+        self.qf2.to(self.device)
+        self.target_qf1.to(self.device)
+        self.target_qf2.to(self.device)
+        self.policy.to(self.device)
     
     # for evaluation
     # observations: [B,C,H,W]
@@ -230,6 +245,8 @@ class SACExperiment():
 
     def train(self):
         self.algorithm.train()
+    
+    
     
     def test_rollouts(self):
         data = rollout(
@@ -274,11 +291,28 @@ class SACExperiment():
         print(self.replay_buffer.num_steps_can_sample())
         print("="*30)
 
+    def set_experiment_name(self):
+        self.project_name = self.config.get("algorithm_name").lower()
+        self.group_name = self.config.get("experiment_name").lower()
+
+        # experiment_name: seed-YearMonthDay-HourMiniteSecond
+        # experiment name should be the same config run with different stochasticity
+        now = datetime.datetime.now()
+        self.experiment_name = "s%d-"%(self.seed)+now.strftime("%Y%m%d-%H%M%S").lower() 
+        
+    def init_wandb(self):
+        wandb.init(
+            name=self.experiment_name,
+            group=self.group_name,
+            project=self.project_name,
+            config=self.config,
+            dir=os.path.join(root_path),
+        )
 
 
 if __name__ == "__main__":
     exp = SACExperiment(config_filename=os.path.join(config_path, "sac_multi_envs.yaml"))
     #exp.test_rollouts()
     #exp.test_path_collector()
-    exp.test_replay_buffer()
-    #exp.train()
+    #exp.test_replay_buffer()
+    exp.train()

@@ -62,17 +62,16 @@ class SACTrainer(metaclass=abc.ABCMeta):
         else:
             self.target_entropy = target_entropy
 
-
-        #self.log_alpha = zeros(1, requires_grad=True)
-        self.alpha = ones(1, requires_grad=True, torch_device=self.get_device()) # tensor
+        # Initialize log alpha and alpha
+        self.log_alpha = zeros(1, requires_grad=True, torch_device=self.get_device()) # tensor
+        self.alpha = self.log_alpha.exp()
 
         # print(self.get_device())
         # print(self.alpha.device)
         # exit()
 
         self.alpha_optimizer = optimizer_class(
-            #[self.log_alpha],
-            [self.alpha],
+            [self.log_alpha],
             lr=policy_lr,
         )
 
@@ -104,6 +103,33 @@ class SACTrainer(metaclass=abc.ABCMeta):
     def get_device(self):
         return self.qf1.get_device()
 
+    def update_actor_parameters(self, losses):
+        """Updates the parameters for the actor"""
+        self.policy_optimizer.zero_grad()
+        losses.policy_loss.backward()
+        self.policy_optimizer.step()
+    
+    def update_alpha_parameters(self, losses):
+        """Upadate the log alpha"""
+        self.alpha_optimizer.zero_grad()
+        losses.alpha_loss.backward()
+        self.alpha_optimizer.step()
+
+        # update alpha 
+        self.alpha = self.log_alpha.exp()
+
+    def update_critic_parameters(self, losses):
+        """Updates the parameters for both critics"""
+        # update q1
+        self.qf1_optimizer.zero_grad()
+        losses.qf1_loss.backward()
+        self.qf1_optimizer.step()
+
+        # update q2
+        self.qf2_optimizer.zero_grad()
+        losses.qf2_loss.backward()
+        self.qf2_optimizer.step()
+
     def train_from_torch(self, batch):
         gt.blank_stamp()
 
@@ -115,32 +141,20 @@ class SACTrainer(metaclass=abc.ABCMeta):
         )
         #print(losses)
         
-
         """
         Update networks
         """
         # clear encoder gradients
         self.encoder_optimizer.zero_grad()
 
-        # alpha loss
-        self.alpha_optimizer.zero_grad()
-        losses.alpha_loss.backward()
-        self.alpha_optimizer.step()
+        # update alpha 
+        self.update_alpha_parameters(losses)
 
-        # policy loss
-        self.policy_optimizer.zero_grad()
-        losses.policy_loss.backward()
-        self.policy_optimizer.step()
+        # update policy weights
+        self.update_actor_parameters(losses)
 
-        # q1 loss
-        self.qf1_optimizer.zero_grad()
-        losses.qf1_loss.backward()
-        self.qf1_optimizer.step()
-
-        # q2 loss
-        self.qf2_optimizer.zero_grad()
-        losses.qf2_loss.backward()
-        self.qf2_optimizer.step()
+        # update q weights
+        self.update_critic_parameters(losses)
 
         # update encoder weights
         self.encoder_optimizer.step()
@@ -176,6 +190,74 @@ class SACTrainer(metaclass=abc.ABCMeta):
             self.qf2, self.target_qf2, self.soft_target_tau
         )
 
+    # pi, log_pi: # [B,4]
+    def get_policy_distribution(self, obs_embeddings):
+        pi = self.policy(obs_embeddings)
+        # Have to deal with situation of 0.0 probabilities because we can't do log 0
+        z = (pi == 0.0)
+        z = z.float() * 1e-8
+        log_pi = torch.log(pi+z)
+
+        return pi, log_pi
+
+    def calculate_entropy_tuning_loss(self, obs_embeddings):
+        """Calculates the loss for the entropy temperature parameter."""
+        # alpha_loss is a scalar
+        # torch.sum part has shape [B,1]
+        pi, log_pi = self.get_policy_distribution(obs_embeddings)
+        alpha_loss = -(self.log_alpha * torch.sum(pi.detach() * (log_pi + self.target_entropy).detach(), dim=1, keepdim=True)).mean()
+
+        return alpha_loss
+    
+    def calculate_actor_loss(self, obs_embeddings):
+        """Calculates the loss for the actor. This loss includes the additional entropy term"""
+        # [B,4]
+        q = torch.min(
+            self.qf1(obs_embeddings),
+            self.qf2(obs_embeddings),
+        )
+        
+        # [B,4]
+        pi, log_pi = self.get_policy_distribution(obs_embeddings)
+        # policy_loss is a scalar
+        # torch.sum part has shape [B,1]
+        policy_loss = (torch.sum(pi * (self.alpha * log_pi - q), dim=1, keepdim=True)).mean()
+        log_pi_pi = torch.sum(log_pi * pi, dim=1)
+
+        return policy_loss, log_pi_pi
+
+    def calculate_critic_losses(self, obs_embeddings, next_obs_embeddings, rewards, actions, dones):
+        """Calculates the losses for the two critics. This is the ordinary Q-learning loss except the additional entropy
+         term is taken into account"""
+
+        # compute predicted Q
+        q1_output = self.qf1(obs_embeddings)
+        q2_output = self.qf2(obs_embeddings)
+        
+        # actions: [B,1]
+        # q1_output: [B,4]
+        # q1_pred: [B,1]
+        q1_pred = torch.gather(q1_output, dim=1, index=actions.long()) # [B,1]
+        q2_pred = torch.gather(q2_output, dim=1, index=actions.long()) # [B,1]
+
+        # [B,4]
+        next_pi, next_log_pi = self.get_policy_distribution(next_obs_embeddings)
+
+        next_target_q = torch.min(
+            self.target_qf1(next_obs_embeddings),
+            self.target_qf2(next_obs_embeddings),
+        ) # [B,4]
+
+        # [B,1]
+        target_v_values = torch.sum(next_pi * (next_target_q - self.alpha * next_log_pi), dim=1, keepdim=True) 
+        # [B,1]
+        q_target = rewards + (1. - dones) * self.discount * target_v_values
+
+        qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
+        qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
+
+        return qf1_loss, qf2_loss
+
     def compute_loss(
         self,
         batch,
@@ -197,55 +279,19 @@ class SACTrainer(metaclass=abc.ABCMeta):
         next_obs_embeddings = self.encoder(next_obs, next_goals)
 
         """
-        Policy and Alpha Loss
+        Alpha Loss forward
         """
-        # [B,4]
-        pi = self.policy(obs_embeddings)
-        log_pi = torch.log(pi)
+        alpha_loss = self.calculate_entropy_tuning_loss(obs_embeddings)
         
-        # alpha_loss is a scalar
-        # torch.sum part has shape [B,1]
-        alpha_loss = -(self.alpha * torch.sum(pi.detach() * (log_pi + self.target_entropy).detach(), dim=1, keepdim=True)).mean()
-
-        # [B,4]
-        q = torch.min(
-            self.qf1(obs_embeddings),
-            self.qf2(obs_embeddings),
-        )
-        # policy_loss is a scalar
-        # torch.sum part has shape [B,1]
-        policy_loss = (torch.sum(pi * (self.alpha * log_pi - q), dim=1, keepdim=True)).mean()
-
+        """
+        Policy Loss forward
+        """
+        policy_loss, log_pi_pi = self.calculate_actor_loss(obs_embeddings)
 
         """
-        QF Loss
+        QF Loss forward
         """
-        # compute predicted Q
-        q1_output = self.qf1(obs_embeddings)
-        q2_output = self.qf2(obs_embeddings)
-        
-        # actions: [B,1]
-        # q1_output: [B,4]
-        # q1_pred: [B,1]
-
-        q1_pred = torch.gather(q1_output, dim=1, index=actions.long()) # [B,1]
-        q2_pred = torch.gather(q2_output, dim=1, index=actions.long()) # [B,1]
-
-        next_pi = self.policy(next_obs_embeddings) # [B,4]
-        new_log_pi = torch.log(next_pi) # [B,4]
-
-        next_target_q = torch.min(
-            self.target_qf1(next_obs_embeddings),
-            self.target_qf2(next_obs_embeddings),
-        ) # [B,4]
-
-        # [B,1]
-        target_v_values = torch.sum(next_pi * (next_target_q - self.alpha * new_log_pi), dim=1, keepdim=True) 
-        # [B,1]
-        q_target = rewards + (1. - dones) * self.discount * target_v_values
-
-        qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
-        qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
+        qf1_loss, qf2_loss = self.calculate_critic_losses(obs_embeddings, next_obs_embeddings, rewards, actions, dones)
 
         """
         Save some statistics for eval

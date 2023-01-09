@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 from torch import nn as nn
+import copy
 
 from enlighten.agents.common.other import add_prefix, np_to_pytorch_batch, soft_update_from_to, zeros, get_numpy, create_stats_ordered_dict, ones
 import gtimer as gt
@@ -49,7 +50,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         self.soft_target_tau = soft_target_tau
         self.target_update_period = target_update_period
 
-        
+        # set target entropy
         if target_entropy is None:
             # continuous actions space: Use heuristic value from SAC paper
             # self.target_entropy = -np.prod(
@@ -64,18 +65,13 @@ class SACTrainer(metaclass=abc.ABCMeta):
 
         # Initialize log alpha and alpha
         self.log_alpha = zeros(1, requires_grad=True, torch_device=self.get_device()) # tensor
-        self.alpha = self.log_alpha.exp()
+        self.alpha = self.log_alpha.detach().exp()
 
-        # print(self.get_device())
-        # print(self.alpha.device)
-        # exit()
-
+        # create optimizers
         self.alpha_optimizer = optimizer_class(
             [self.log_alpha],
             lr=policy_lr,
         )
-
-        self.qf_criterion = nn.MSELoss()
 
         self.policy_optimizer = optimizer_class(
             self.policy.parameters(),
@@ -94,8 +90,14 @@ class SACTrainer(metaclass=abc.ABCMeta):
             lr=encoder_lr,
         )
 
+        self.qf_criterion = nn.MSELoss()
+
         self.discount = discount
         self._n_train_steps_total = 0
+
+        # align target q to q at the very beginning
+        self.target_qf1 = copy.deepcopy(self.qf1)
+        self.target_qf2 = copy.deepcopy(self.qf2)
 
         self._need_to_update_eval_statistics = True
         self.eval_statistics = OrderedDict()
@@ -103,66 +105,102 @@ class SACTrainer(metaclass=abc.ABCMeta):
     def get_device(self):
         return self.qf1.get_device()
 
-    def update_actor_parameters(self, losses):
+    def update_actor_parameters(self, policy_loss, retain_graph):
         """Updates the parameters for the actor"""
         self.policy_optimizer.zero_grad()
-        losses.policy_loss.backward()
+        policy_loss.backward(retain_graph=retain_graph)
         self.policy_optimizer.step()
     
-    def update_alpha_parameters(self, losses):
+    def update_alpha_parameters(self, alpha_loss, retain_graph):
         """Upadate the log alpha"""
         self.alpha_optimizer.zero_grad()
-        losses.alpha_loss.backward()
+        alpha_loss.backward(retain_graph=retain_graph)
         self.alpha_optimizer.step()
 
-        # update alpha 
-        self.alpha = self.log_alpha.exp()
+        # update alpha (no gradients)
+        self.alpha = self.log_alpha.detach().exp()
 
-    def update_critic_parameters(self, losses):
+    def update_critic_parameters(self, qf1_loss, qf2_loss, retain_graph1, retain_graph2):
         """Updates the parameters for both critics"""
         # update q1
         self.qf1_optimizer.zero_grad()
-        losses.qf1_loss.backward()
+        qf1_loss.backward(retain_graph=retain_graph1)
         self.qf1_optimizer.step()
 
         # update q2
         self.qf2_optimizer.zero_grad()
-        losses.qf2_loss.backward()
+        qf2_loss.backward(retain_graph=retain_graph2)
         self.qf2_optimizer.step()
 
     def train_from_torch(self, batch):
         gt.blank_stamp()
 
-        # forward
-        losses, stats = self.compute_loss(
-            batch,
-            #skip_statistics=not self._need_to_update_eval_statistics,
-            skip_statistics=True
-        )
-        #print(losses)
-        
         """
-        Update networks
+        Get batch data
         """
-        # clear encoder gradients
+        rewards = batch['rewards']
+        dones = batch['dones']
+        obs = batch['observations']
+        goals = batch['goals']
+        actions = batch['actions']
+        next_obs = batch['next_observations']
+        next_goals = batch['next_goals']
+
+        """
+        Clear encoder gradients
+        """
         self.encoder_optimizer.zero_grad()
 
-        # update alpha 
-        self.update_alpha_parameters(losses)
+        """
+        Forward encoder 
+        """
+        # get input embeddings
+        obs_embeddings = self.encoder(obs, goals)
+        next_obs_embeddings = self.encoder(next_obs, next_goals)
 
-        # update policy weights
-        self.update_actor_parameters(losses)
+        """
+        Forward critic loss 
+        """
+        qf1_loss, qf2_loss = self.calculate_critic_losses(obs_embeddings, next_obs_embeddings, rewards, actions, dones)
 
-        # update q weights
-        self.update_critic_parameters(losses)
+        """
+        Update critic weights
+        """
+        self.update_critic_parameters(qf1_loss, qf2_loss, retain_graph1=True, retain_graph2=True)
+       
+        """
+        Forward actor loss 
+        """
+        policy_loss = self.calculate_actor_loss(obs_embeddings)
 
-        # update encoder weights
-        self.encoder_optimizer.step()
+        """
+        Update actor weights
+        """
+        self.update_actor_parameters(policy_loss, retain_graph=False)
 
-        # update weights of target q (after updating q networks)
+        """
+        Forward alpha loss 
+        """
+        alpha_loss = self.calculate_entropy_tuning_loss(obs_embeddings)
+        
+        """
+        Update alpha 
+        """
+        self.update_alpha_parameters(alpha_loss, retain_graph=False)
+
+        """
+        update weights of target q (after updating q networks)
+        """
         self.try_update_target_networks()
 
-        # update step counter
+        """
+        Update encoder weights
+        """
+        self.encoder_optimizer.step()
+
+        """
+        update step counter
+        """
         self._n_train_steps_total += 1
 
         print("Done")
@@ -178,7 +216,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         
 
     def try_update_target_networks(self):
-        # copy q to target q at the very beginning
+        # copy q to target q at the first update
         if self._n_train_steps_total % self.target_update_period == 0:
             self.update_target_networks()
 
@@ -204,6 +242,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         """Calculates the loss for the entropy temperature parameter."""
         # alpha_loss is a scalar
         # torch.sum part has shape [B,1]
+        # should calculate policy distribution again since policy has been updated since the last time we calculate it
         pi, log_pi = self.get_policy_distribution(obs_embeddings)
         alpha_loss = -(self.log_alpha * torch.sum(pi.detach() * (log_pi + self.target_entropy).detach(), dim=1, keepdim=True)).mean()
 
@@ -222,9 +261,9 @@ class SACTrainer(metaclass=abc.ABCMeta):
         # policy_loss is a scalar
         # torch.sum part has shape [B,1]
         policy_loss = (torch.sum(pi * (self.alpha * log_pi - q), dim=1, keepdim=True)).mean()
-        log_pi_pi = torch.sum(log_pi * pi, dim=1)
+        #log_pi_pi = torch.sum(log_pi * pi, dim=1)
 
-        return policy_loss, log_pi_pi
+        return policy_loss
 
     def calculate_critic_losses(self, obs_embeddings, next_obs_embeddings, rewards, actions, dones):
         """Calculates the losses for the two critics. This is the ordinary Q-learning loss except the additional entropy
@@ -286,7 +325,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         """
         Policy Loss forward
         """
-        policy_loss, log_pi_pi = self.calculate_actor_loss(obs_embeddings)
+        policy_loss = self.calculate_actor_loss(obs_embeddings)
 
         """
         QF Loss forward

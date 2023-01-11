@@ -65,7 +65,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
 
         # Initialize log alpha and alpha
         self.log_alpha = zeros(1, requires_grad=True, torch_device=self.get_device()) # tensor
-        self.alpha = self.log_alpha.detach().exp()
+        
 
         # create optimizers
         self.alpha_optimizer = optimizer_class(
@@ -117,8 +117,6 @@ class SACTrainer(metaclass=abc.ABCMeta):
         alpha_loss.backward(retain_graph=retain_graph)
         self.alpha_optimizer.step()
 
-        # update alpha (no gradients)
-        self.alpha = self.log_alpha.detach().exp()
 
     def update_critic_parameters(self, qf1_loss, qf2_loss, retain_graph1, retain_graph2):
         """Updates the parameters for both critics"""
@@ -131,6 +129,13 @@ class SACTrainer(metaclass=abc.ABCMeta):
         self.qf2_optimizer.zero_grad()
         qf2_loss.backward(retain_graph=retain_graph2)
         self.qf2_optimizer.step()
+
+        # self.qf1_optimizer.zero_grad()
+        # self.qf2_optimizer.zero_grad()
+        # loss = qf1_loss + qf2_loss
+        # loss.backward(retain_graph=True)
+        # self.qf1_optimizer.step()
+        # self.qf2_optimizer.step()
 
     def train_from_torch(self, batch):
         gt.blank_stamp()
@@ -189,7 +194,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         self.update_alpha_parameters(alpha_loss, retain_graph=False)
 
         """
-        update weights of target q (after updating q networks)
+        Update weights of target q (after updating q networks)
         """
         self.try_update_target_networks()
 
@@ -199,7 +204,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         self.encoder_optimizer.step()
 
         """
-        update step counter
+        Update step counter
         """
         self._n_train_steps_total += 1
 
@@ -214,7 +219,6 @@ class SACTrainer(metaclass=abc.ABCMeta):
         gt.stamp('sac training', unique=False)
 
         
-
     def try_update_target_networks(self):
         # copy q to target q at the first update
         if self._n_train_steps_total % self.target_update_period == 0:
@@ -238,38 +242,52 @@ class SACTrainer(metaclass=abc.ABCMeta):
 
         return pi, log_pi
 
+    # Use phi_2
     def calculate_entropy_tuning_loss(self, obs_embeddings):
         """Calculates the loss for the entropy temperature parameter."""
         # alpha_loss is a scalar
         # torch.sum part has shape [B,1]
-        # should calculate policy distribution again since policy has been updated since the last time we calculate it
-        pi, log_pi = self.get_policy_distribution(obs_embeddings)
-        alpha_loss = -(self.log_alpha * torch.sum(pi.detach() * (log_pi + self.target_entropy).detach(), dim=1, keepdim=True)).mean()
+
+        # this is the second time the observation embedding pass through the policy networks
+        # should calculate policy distribution once again since policy has been updated since the last time we calculate it
+        with torch.no_grad():
+            pi, log_pi = self.get_policy_distribution(obs_embeddings)
+        
+        alpha_loss = -(self.log_alpha * torch.sum(pi * (log_pi + self.target_entropy), dim=1, keepdim=True)).mean()
 
         return alpha_loss
     
+    # Use theta_2, phi_1, alpha_1
     def calculate_actor_loss(self, obs_embeddings):
         """Calculates the loss for the actor. This loss includes the additional entropy term"""
         # [B,4]
-        q = torch.min(
-            self.qf1(obs_embeddings),
-            self.qf2(obs_embeddings),
-        )
+        # use new q since critic has been updated before actor
+        # this is the second time the observation embedding pass through q networks
+        with torch.no_grad():
+            q = torch.min(
+                self.qf1(obs_embeddings),
+                self.qf2(obs_embeddings),
+            )
         
         # [B,4]
+        # this is the first time the observation embedding pass through the policy networks
         pi, log_pi = self.get_policy_distribution(obs_embeddings)
         # policy_loss is a scalar
         # torch.sum part has shape [B,1]
-        policy_loss = (torch.sum(pi * (self.alpha * log_pi - q), dim=1, keepdim=True)).mean()
-        #log_pi_pi = torch.sum(log_pi * pi, dim=1)
+        with torch.no_grad():
+            alpha = self.log_alpha.exp()
 
+        policy_loss = (torch.sum(pi * (alpha * log_pi - q), dim=1, keepdim=True)).mean()
+        
         return policy_loss
 
+    # Use theta_1, phi_1, alpha_1
     def calculate_critic_losses(self, obs_embeddings, next_obs_embeddings, rewards, actions, dones):
         """Calculates the losses for the two critics. This is the ordinary Q-learning loss except the additional entropy
          term is taken into account"""
 
         # compute predicted Q
+        # this is the first time the observation embedding pass through q networks
         q1_output = self.qf1(obs_embeddings)
         q2_output = self.qf2(obs_embeddings)
         
@@ -279,99 +297,28 @@ class SACTrainer(metaclass=abc.ABCMeta):
         q1_pred = torch.gather(q1_output, dim=1, index=actions.long()) # [B,1]
         q2_pred = torch.gather(q2_output, dim=1, index=actions.long()) # [B,1]
 
-        # [B,4]
-        next_pi, next_log_pi = self.get_policy_distribution(next_obs_embeddings)
+        with torch.no_grad():
+            # [B,4]
+            # this is the first time the next observation embedding pass through the policy networks
+            next_pi, next_log_pi = self.get_policy_distribution(next_obs_embeddings)
 
-        next_target_q = torch.min(
-            self.target_qf1(next_obs_embeddings),
-            self.target_qf2(next_obs_embeddings),
-        ) # [B,4]
+            next_target_q = torch.min(
+                self.target_qf1(next_obs_embeddings),
+                self.target_qf2(next_obs_embeddings),
+            ) # [B,4]
 
-        # [B,1]
-        target_v_values = torch.sum(next_pi * (next_target_q - self.alpha * next_log_pi), dim=1, keepdim=True) 
-        # [B,1]
-        q_target = rewards + (1. - dones) * self.discount * target_v_values
+            # [B,1]
+            alpha = self.log_alpha.exp()
+            target_v_values = torch.sum(next_pi * (next_target_q - alpha * next_log_pi), dim=1, keepdim=True) 
+            # [B,1]
+            q_target = rewards + (1. - dones) * self.discount * target_v_values
 
-        qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
-        qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
+        qf1_loss = self.qf_criterion(q1_pred, q_target)
+        qf2_loss = self.qf_criterion(q2_pred, q_target)
 
         return qf1_loss, qf2_loss
 
-    def compute_loss(
-        self,
-        batch,
-        skip_statistics=False,
-    ) -> Tuple[SACLosses, OrderedDict]:
-        rewards = batch['rewards']
-        dones = batch['dones']
-        obs = batch['observations']
-        goals = batch['goals']
-        actions = batch['actions']
-        next_obs = batch['next_observations']
-        next_goals = batch['next_goals']
-
-        """
-        Encoder forward
-        """
-        # get input embeddings
-        obs_embeddings = self.encoder(obs, goals)
-        next_obs_embeddings = self.encoder(next_obs, next_goals)
-
-        """
-        Alpha Loss forward
-        """
-        alpha_loss = self.calculate_entropy_tuning_loss(obs_embeddings)
-        
-        """
-        Policy Loss forward
-        """
-        policy_loss = self.calculate_actor_loss(obs_embeddings)
-
-        """
-        QF Loss forward
-        """
-        qf1_loss, qf2_loss = self.calculate_critic_losses(obs_embeddings, next_obs_embeddings, rewards, actions, dones)
-
-        """
-        Save some statistics for eval
-        """
-        eval_statistics = OrderedDict()
-        if not skip_statistics:
-            eval_statistics['QF1 Loss'] = np.mean(get_numpy(qf1_loss))
-            eval_statistics['QF2 Loss'] = np.mean(get_numpy(qf2_loss))
-            eval_statistics['Policy Loss'] = np.mean(get_numpy(
-                policy_loss
-            ))
-            eval_statistics.update(create_stats_ordered_dict(
-                'Q1 Predictions',
-                get_numpy(q1_pred),
-            ))
-            eval_statistics.update(create_stats_ordered_dict(
-                'Q2 Predictions',
-                get_numpy(q2_pred),
-            ))
-            eval_statistics.update(create_stats_ordered_dict(
-                'Q Targets',
-                get_numpy(q_target),
-            ))
-            eval_statistics.update(create_stats_ordered_dict(
-                'Log Pi',
-                get_numpy(log_pi),
-            ))
-            policy_statistics = add_prefix(pi.get_diagnostics(), "policy/")
-            eval_statistics.update(policy_statistics)
-            
-            eval_statistics['Alpha'] = self.alpha.item()
-            eval_statistics['Alpha Loss'] = alpha_loss.item()
-
-        loss = SACLosses(
-            policy_loss=policy_loss,
-            qf1_loss=qf1_loss,
-            qf2_loss=qf2_loss,
-            alpha_loss=alpha_loss,
-        )
-
-        return loss, eval_statistics
+    
 
     # get what to print
     def get_diagnostics(self):

@@ -168,7 +168,7 @@ class PPO(nn.Module):
                 # clear grad on computing graph
                 self.optimizer.zero_grad()
 
-                # compute totatl loss
+                # compute total loss
                 total_loss = (
                     value_loss * self.value_loss_coef
                     + action_loss

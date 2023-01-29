@@ -93,14 +93,16 @@ class SACTrainer(metaclass=abc.ABCMeta):
         self.qf_criterion = nn.MSELoss()
 
         self.discount = discount
+
+        # how many updates are trained so far
         self._n_train_steps_total = 0
 
         # align target q to q at the very beginning
         self.target_qf1 = copy.deepcopy(self.qf1)
         self.target_qf2 = copy.deepcopy(self.qf2)
 
-        self._need_to_update_eval_statistics = True
-        self.eval_statistics = OrderedDict()
+        #self._need_to_update_eval_statistics = True
+        #self.eval_statistics = OrderedDict()
     
     def get_device(self):
         return self.qf1.get_device()
@@ -137,6 +139,7 @@ class SACTrainer(metaclass=abc.ABCMeta):
         # self.qf1_optimizer.step()
         # self.qf2_optimizer.step()
 
+    # one update
     def train_from_torch(self, batch):
         gt.blank_stamp()
 
@@ -208,16 +211,26 @@ class SACTrainer(metaclass=abc.ABCMeta):
         """
         self._n_train_steps_total += 1
 
-        print("Done")
-        exit()
+        stats = {
+            "policy_loss": policy_loss.item(),
+            "q1_loss": qf1_loss.item(),
+            "q2_loss": qf2_loss.item(),
+            "alpha_loss": alpha_loss.item(),
+            "alpha": self.log_alpha.detach().exp().item()
+        }
+        
+        # print("Done")
+        # exit()
 
-        if self._need_to_update_eval_statistics:
-            self.eval_statistics = stats
-            # Compute statistics using only one batch per epoch
-            self._need_to_update_eval_statistics = False
+        # if self._need_to_update_eval_statistics:
+        #     self.eval_statistics = stats
+        #     # Compute statistics using only one batch per epoch
+        #     self._need_to_update_eval_statistics = False
         
         gt.stamp('sac training', unique=False)
 
+        return stats
+    
         
     def try_update_target_networks(self):
         # copy q to target q at the first update
@@ -326,28 +339,25 @@ class SACTrainer(metaclass=abc.ABCMeta):
         #     ('num train calls', self._num_train_steps),
         # ])
         stats = OrderedDict([
-            ('num train calls', self._n_train_steps_total),
+            ('Train/total_num_train_updates', self._n_train_steps_total),
         ])
 
-        stats.update(self.eval_statistics)
+        #stats.update(self.eval_statistics)
         return stats
 
     def end_epoch(self, epoch):
-        self._need_to_update_eval_statistics = True
+        #self._need_to_update_eval_statistics = True
+        return
     
+    # train for one update
     def train(self, np_batch):
-        #self._num_train_steps += 1
+        
         tensor_batch = np_to_pytorch_batch(np_batch, self.get_device())
-        # for k, np_array in tensor_batch.items():
-        #     print("------------------")
-        #     print(k)
-        #     print(np_array.dtype)
-        #     print(np_array.device)
-        # print("------------------")
-        # print(self.get_device())
-        # exit()
+        
+        stats = self.train_from_torch(tensor_batch)
 
-        self.train_from_torch(tensor_batch)
+        return stats
+
 
     # 6 networks
     @property

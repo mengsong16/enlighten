@@ -18,7 +18,7 @@ def load_behavior_dataset_meta(behavior_dataset_path, split_name):
     episode_list = pickle.load(open(behavior_dataset_meta_split_path, "rb" ))
 
     print("Behavior data split: %s"%split_name)
-    print("Loaded %d episodes"%(len(episode_list)))
+    print("Loaded %d episode meta data."%(len(episode_list)))
     
     return episode_list
 

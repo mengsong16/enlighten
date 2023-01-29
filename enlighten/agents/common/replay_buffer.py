@@ -101,9 +101,10 @@ class EnvReplayBuffer():
     def num_steps_can_sample(self):
         return self._size
 
+    # get stats: call at the end of each epoch
     def get_diagnostics(self):
         return OrderedDict([
-            ('size', self._size)
+            ('Replay_buffer/buffer_size', self._size)
         ])
     
     def add_path(self, path):

@@ -156,12 +156,14 @@ def randint(*sizes, torch_device=None, **kwargs):
     return torch.randint(*sizes, **kwargs, device=torch_device)
 
 
+# convert one list/tuple to mean/std/min/max dictionary
 def create_stats_ordered_dict(
         name,
         data,
         stat_prefix=None,
         always_show_all_stats=True,
         exclude_max_min=False,
+        exclude_std=False
 ):
     if stat_prefix is not None:
         name = "{}{}".format(stat_prefix, name)
@@ -193,11 +195,17 @@ def create_stats_ordered_dict(
             and not always_show_all_stats):
         return OrderedDict({name: float(data)})
 
-    stats = OrderedDict([
-        (name + ' Mean', np.mean(data)),
-        (name + ' Std', np.std(data)),
-    ])
+    if not exclude_std:
+        stats = OrderedDict([
+            (name + '_mean', np.mean(data)),
+            (name + '_std', np.std(data)),
+        ])
+    else:
+        stats = OrderedDict([
+            (name + '_mean', np.mean(data))
+        ])
+
     if not exclude_max_min:
-        stats[name + ' Max'] = np.max(data)
-        stats[name + ' Min'] = np.min(data)
+        stats[name + '_max'] = np.max(data)
+        stats[name + '_min'] = np.min(data)
     return stats

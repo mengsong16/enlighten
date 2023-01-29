@@ -82,10 +82,15 @@ hidden_layer: 2
 
 # training
 num_epochs: 3000
-num_trains_per_train_loop: 1000
+# each epoch has one training loop
+# how many updates does one loop have
+num_trains_per_train_loop: 10 #1000
 num_expl_steps_per_train_loop: 1000
 num_expl_steps_before_training: 500 #1000
 batch_size: 256
+
+# save checkpoint
+save_every_epochs: 1 
 
 # SAC
 discount: 0.99
@@ -95,11 +100,9 @@ encoder_lr: 3.0e-4
 policy_lr: 3.0e-4
 qf_lr: 3.0e-4
 
-# checkpoints and evaluation
+# evaluation (use current config file to evaluate)
 eval_checkpoint_folder: "checkpoints"
 eval_checkpoint_file: ["ckpt.9.pth"]
-# use checkpoint config file
-eval_use_ckpt_config: false
 # save evaluation results here
 eval_dir: "evaluation"
 eval_splits: ["same_scene_val", "across_scene_val", "same_start_goal_val"]

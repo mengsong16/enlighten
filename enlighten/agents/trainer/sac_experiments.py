@@ -126,6 +126,15 @@ class SACExperiment():
             soft_target_tau=float(self.config.get("soft_target_tau")),
             target_update_period=int(self.config.get("target_update_period"))
         )
+
+        # set experiment name (must before instantiate TorchBatchRLAlgorithm)
+        self.set_experiment_name()
+
+        # init wandb (must before instantiate TorchBatchRLAlgorithm)
+        self.log_to_wandb = self.config.get("log_to_wandb")
+        if self.log_to_wandb:
+            self.init_wandb()
+
         self.algorithm = TorchBatchRLAlgorithm(
             trainer=self.trainer,
             exploration_env=self.env,
@@ -137,17 +146,15 @@ class SACExperiment():
             num_expl_steps_per_train_loop=int(self.config.get("num_expl_steps_per_train_loop")),
             num_trains_per_train_loop=int(self.config.get("num_trains_per_train_loop")),
             num_expl_steps_before_training=int(self.config.get("num_expl_steps_before_training")),
+            save_every_epochs=int(self.config.get("save_every_epochs")),
+            checkpoint_folder_name = self.project_name + "-" + self.group_name + "-" + self.experiment_name,
+            log_to_wandb=self.log_to_wandb
         )
         # move all networks to the device
         #self.algorithm.to(self.device)
         
-        # set experiment name
-        self.set_experiment_name()
-
-        # init wandb
-        self.log_to_wandb = self.config.get("log_to_wandb")
-        if self.log_to_wandb:
-            self.init_wandb()
+    
+        
         
     
     def create_env_dataset(self, config_filename):
@@ -244,8 +251,8 @@ class SACExperiment():
         return actions
 
     def train(self):
+        print("======> Start training from epoch 0 to epoch %d"%(int(self.config.get('num_epochs'))-1))
         self.algorithm.train()
-    
     
     
     def test_rollouts(self):

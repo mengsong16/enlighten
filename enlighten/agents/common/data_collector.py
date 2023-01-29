@@ -122,6 +122,8 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
         self._sample = sample
         # paths collected in the current epoch
         self._epoch_paths = deque(maxlen=self._max_num_epoch_paths_saved)
+        # return of paths collected in the current epoch
+        self._epoch_returns = []
         self._render = render
         self._rollout_fn = rollout_fn
 
@@ -156,6 +158,10 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
 
             num_steps_collected += path_len
             paths.append(path)
+
+
+            path_return = np.mean(path['rewards'])
+            self._epoch_returns.append(path_return)
         
         self._num_paths_total += len(paths)
         self._num_steps_total += num_steps_collected
@@ -166,19 +172,27 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
     def get_epoch_paths(self):
         return self._epoch_paths
 
+    # clear epochs collected in the current epoch 
+    # call at the end of each epoch
     def end_epoch(self, epoch):
         self._epoch_paths = deque(maxlen=self._max_num_epoch_paths_saved)
+        self._epoch_returns = []
 
+     # get stats: call at the end of each epoch
     def get_diagnostics(self):
         epoch_path_lens = [len(path['actions']) for path in self._epoch_paths]
         stats = OrderedDict([
-            ('num steps total', self._num_steps_total),
-            ('num paths total', self._num_paths_total),
+            ('Exploration/num_steps_total', self._num_steps_total),
+            ('Exploration/num_paths_total', self._num_paths_total),
         ])
+        # mean/std/max/min
+        # dict_A.update(dict_B): append dict_B to dict_A
         stats.update(create_stats_ordered_dict(
-            "epoch path length",
+            "Exploration/epoch_path_length",
             epoch_path_lens,
             always_show_all_stats=True,
+            exclude_max_min=True,
+            exclude_std=True
         ))
         return stats
 

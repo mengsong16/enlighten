@@ -385,10 +385,10 @@ class SACTrainer(metaclass=abc.ABCMeta):
     # 6 networks
     def get_snapshot(self):
         return dict(
-            policy=self.policy,
-            qf1=self.qf1,
-            qf2=self.qf2,
-            target_qf1=self.target_qf1,
-            target_qf2=self.target_qf2,
-            encoder=self.encoder
+            policy=self.policy.state_dict(),
+            qf1=self.qf1.state_dict(),
+            qf2=self.qf2.state_dict(),
+            target_qf1=self.target_qf1.state_dict(),
+            target_qf2=self.target_qf2.state_dict(),
+            encoder=self.encoder.state_dict()
         )

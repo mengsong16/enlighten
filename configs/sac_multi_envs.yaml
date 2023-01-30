@@ -1,7 +1,6 @@
 # for online sac dataset
 behavior_dataset_path: "/dataset/behavior_dataset_gibson_1_scene_Rancocas_2000" 
 
-
 # dummy initial setup 
 scene_id: /home/meng/habitat-sim/data/scene_datasets/habitat-test-scenes/van-gogh-room.glb
 agent_initial_position: [3, 0, 1]
@@ -81,16 +80,16 @@ hidden_size: 512
 hidden_layer: 2
 
 # training
-num_epochs: 3000
+num_epochs: 100 #3000
 # each epoch has one training loop
 # how many updates does one loop have
-num_trains_per_train_loop: 10 #1000
+num_trains_per_train_loop: 100 #1000 
 num_expl_steps_per_train_loop: 1000
-num_expl_steps_before_training: 500 #1000
+num_expl_steps_before_training: 1000
 batch_size: 256
 
 # save checkpoint
-save_every_epochs: 1 
+save_every_epochs: 10 
 
 # SAC
 discount: 0.99
@@ -101,15 +100,12 @@ policy_lr: 3.0e-4
 qf_lr: 3.0e-4
 
 # evaluation (use current config file to evaluate)
-eval_checkpoint_folder: "checkpoints"
-eval_checkpoint_file: ["ckpt.9.pth"]
-# save evaluation results here
-eval_dir: "evaluation"
-eval_splits: ["same_scene_val", "across_scene_val", "same_start_goal_val"]
-eval_experiment_folder: "pointgoal_baseline_multienv_1_scene_Rancocas_2000_observation_mlp_5m"  #"pointgoal_baseline_multienv_1_scene_Rancocas_whole_5m" "pointgoal_baseline_multienv_4_scene_3m" 
+eval_dir: "evaluation"  # save to
+eval_experiment_folder: "sac-multienv_1_scene_rancocas_2000-s1-20230130-003910" 
+eval_checkpoint_file: ["ckpt_4.pth"]
 
 # logs
-log_to_wandb: false
+log_to_wandb: true
 algorithm_name: "sac"
 experiment_name:  "multienv_1_scene_Rancocas_2000" 
 

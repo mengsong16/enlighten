@@ -21,6 +21,7 @@ import pickle
 import matplotlib.pyplot as plt
 from enlighten.agents.models.rnn_seq_model import DDBC
 from enlighten.agents.models.q_network import QNetwork
+from enlighten.agents.models.sac_agent import SACAgent
 
 # evaluate an agent across scene single env
 class AcrossEnvBaseEvaluator:
@@ -50,10 +51,16 @@ class AcrossEnvBaseEvaluator:
         self.max_ep_len = int(self.config.get("max_steps_per_episode"))  
 
         # goal form
-        self.goal_form = self.config.get("goal_form") 
-        if self.goal_form not in ["rel_goal", "distance_to_goal", "abs_goal"]:
-            print("Undefined goal form: %s"%(self.goal_form))
-            exit()
+        if "goal_form" in self.config:
+            self.goal_form = self.config.get("goal_form") 
+            if self.goal_form not in ["rel_goal", "distance_to_goal", "abs_goal"]:
+                print("Undefined goal form: %s"%(self.goal_form))
+                exit()
+        else:
+            if self.config.get("goal_gps_compass"):
+                self.goal_form = "rel_goal"
+            else:
+                self.goal_form = "abs_goal"
         
         # state form
         self.state_form = self.config.get("state_form", "observation") 
@@ -205,6 +212,8 @@ class AcrossEnvBaseEvaluator:
                 temperature=float(self.config.get("temperature", 1.0)),
                 prob_convert_method=self.config.get("prob_convert_method", "softmax")
             )
+        elif "sac" in self.algorithm_name:
+            model = SACAgent(self.config)
         else:
             print("Error: undefined algorithm name: %s"%(self.algorithm_name))
             exit()
@@ -221,16 +230,21 @@ class AcrossEnvBaseEvaluator:
             exit()  
         
         # load checkpoint
+        # Note that this requires the current py file import the classes of all the models appearing in the values
         checkpoint = torch.load(checkpoint_path)
+
         # load weights
-        #model.load_state_dict(checkpoint["model_state_dict"])
-        if "state_dict" in checkpoint.keys():
-            model.load_state_dict(checkpoint["state_dict"])
-        elif "model_state_dict" in checkpoint.keys():
-            model.load_state_dict(checkpoint["model_state_dict"])
+        if "sac" in self.algorithm_name:
+            model.load(checkpoint)
         else:
-            print("Error: unknown model state dict key")
-            exit()
+            #model.load_state_dict(checkpoint["model_state_dict"])
+            if "state_dict" in checkpoint.keys():
+                model.load_state_dict(checkpoint["state_dict"])
+            elif "model_state_dict" in checkpoint.keys():
+                model.load_state_dict(checkpoint["model_state_dict"])
+            else:
+                print("Error: unknown model state dict key")
+                exit()
 
         return model
     

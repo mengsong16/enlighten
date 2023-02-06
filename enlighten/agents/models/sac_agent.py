@@ -173,7 +173,7 @@ class SACAgent:
         return actions
     
     def load(self, checkpoint):
-        #self.policy.load_state_dict(checkpoint["policy"])
+        self.policy.load_state_dict(checkpoint["policy"])
         self.qf1.load_state_dict(checkpoint["qf1"])
         self.qf2.load_state_dict(checkpoint["qf2"])
         self.target_qf1.load_state_dict(checkpoint["target_qf1"])

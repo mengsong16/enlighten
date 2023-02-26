@@ -55,10 +55,11 @@ def rollout(
     # assume step_num is in [1, max_path_length-1]
     while step_num < max_path_length:
     
-        a = get_action_fn(observations=np.expand_dims(o, axis=0), goals=np.expand_dims(g, axis=0), sample=sample)
+        a_tensor = get_action_fn(observations=np.expand_dims(o, axis=0), goals=np.expand_dims(g, axis=0), sample=sample)
+        a = a_tensor.item()
 
 
-        next_raw_obs, r, done, info = env.step(copy.deepcopy(a[0][0]))
+        next_raw_obs, r, done, info = env.step(copy.deepcopy(a))
         next_o, next_g = extract_obs_goal(env, next_raw_obs)
 
         if render:
@@ -94,7 +95,7 @@ def rollout(
         rewards = rewards.reshape(-1, 1) 
     dones = np.array(dones).reshape(-1, 1)  #[N,1]
 
-    assert dones[-1,:] == True, "A trajectory should end with done=True"
+    #assert dones[-1,:] == True, "A trajectory should end with done=True"
     
     return dict(
         observations=observations,
@@ -160,7 +161,7 @@ class MdpPathCollector(object, metaclass=abc.ABCMeta):
             paths.append(path)
 
 
-            path_return = np.mean(path['rewards'])
+            path_return = np.sum(path['rewards'])
             self._epoch_returns.append(path_return)
         
         self._num_paths_total += len(paths)

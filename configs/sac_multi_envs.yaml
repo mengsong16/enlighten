@@ -105,7 +105,7 @@ eval_experiment_folder: "sac-multienv_1_scene_rancocas_2000-s1-20230130-003910"
 eval_checkpoint_file: ["ckpt_4.pth"]
 
 # logs
-log_to_wandb: true
+log_to_wandb: false #true
 algorithm_name: "sac"
 experiment_name:  "multienv_1_scene_Rancocas_2000" 
 

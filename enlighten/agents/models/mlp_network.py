@@ -44,6 +44,12 @@ class MLPNetwork(nn.Module):
             if dropout > 0:    
                 self.mlp_module.append(nn.Dropout(dropout))
             
+            # last layer n+1 (hidden --> output)
+            # hidden_layer = n
+            self.mlp_module.extend([
+                nn.Linear(hidden_dim, output_dim)
+            ])
+            
             self.mlp_module = nn.Sequential(*self.mlp_module)
         else:
             print("Error: the number of hidden layers < 0")
